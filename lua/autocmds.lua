@@ -2,6 +2,8 @@
 -- go right into find-files
 vim.api.nvim_create_autocmd('VimEnter', {
   callback = function()
+    vim.cmd [[au VimEnter * AnyFoldActivate]]
+
     require('lualine').setup()
     vim.cmd('COQnow')
 
@@ -11,9 +13,8 @@ vim.api.nvim_create_autocmd('VimEnter', {
   end,
 })
 
-vim.api.nvim_exec(
-  [[
-    if exists(":AnyFoldActivate") | autocmd Filetype * AnyFoldActivate | endif
-  ]],
-  false
-)
+vim.api.nvim_create_autocmd('Bufenter', {
+  callback = function()
+    vim.cmd [[au Bufenter Makefile,Dockerfile set filetype=bash]]
+  end,
+})

@@ -5,35 +5,34 @@ vim.g.mapleader = ' '
 -- Note that some of these require plugins
 
 -- buffer navigation
--- highlight the word underneath your cursor and all instances of it
-nmap('n', '<leader>s',       ':/<C-r><C-w>/<CR>',                       {noremap = true})
+nmap('n', '<leader>s',       ':/<C-r><C-w>/<CR>',                                                 {noremap = true})
+nmap('n', '<leader>j',       ':lua require("neoscroll").scroll("0.25", "true", "250", nil)<CR>',  {noremap = true})
+nmap('n', '<leader>k',       ':lua require("neoscroll").scroll("-0.25", "true", "250", nil)<CR>', {noremap = true})
 
 -- directory/tree navigation
+nmap('n', '<leader><tab>',   ':CHADopen<CR>',                                   {noremap = true})
+nmap('n', '<leader>f',      ':lua require"telescope.builtin".treesitter{}<CR>', {noremap = true})
+nmap('n', '<leader>p',      ':Telescope find_files<CR>',                        {noremap = true})
+nmap('n', '<leader>g',      ':Telescope live_grep<CR>',                         {noremap = true})
 
--- show dir tree
--- can be used with <leader>m (mouse mode) or you can navigate around with hjkl
--- 'o' will open dirs
--- 'O' opens dir recursively
-nmap('n', '<leader><tab>',   ':NERDTreeToggle<CR>',                     {noremap = true})
+-- tab navigation
+nmap('n', '<leader>n',       ':tabnext<CR>',                                    {noremap = true})
+nmap('n', '<leader>b',       ':tabprevious<CR>',                                {noremap = true})
+nmap('n', '<leader>o',       ':tabe<space>',                                    {noremap = true})
 
--- Telescope.nvim fuzzy finders - start typing and GOOOOOO
--- hitting <enter> selects a file and opens it
--- <esc><esc> closes the panel
--- <Ctrl>v -- opens the panel in a split pane veritically
--- <Ctrl>x -- opens horizontally
--- <Ctrl> + movement-key (h,j,k,l) -- will move your cursor into a different panel
-nmap('n', '<leader>p',       ':Telescope find_files<CR>',               {noremap = true}) -- fuzzy-find files by path/name
-nmap('n', '<leader>g',       ':Telescope live_grep<CR>',                {noremap = true}) -- live-grep files; requires ripgrep (see readme)
+-- editor visuals & "ergonomics"
+nmap('n', '<leader>z',       ':ZenMode | Twilight!!<CR>',                       {noremap = true})
+nmap('n', '<leader>m',       ':set mouse=a<CR>',                                {noremap = true})
+nmap('n', '<leader>M',       ':set mouse=c<CR>',                                {noremap = true})
 
--- tab navigation (not panes like above)
--- use this along with tabs to fit more on the screen
-nmap('n', '<leader>n',       ':tabnext<CR>',                            {noremap = true}) -- go to next tab
-nmap('n', '<leader>b',       ':tabprevious<CR>',                        {noremap = true}) -- go to previous tab
-nmap('n', '<leader>o',       ':tabe<space>',                            {noremap = true}) -- open new tab
+-- misc 
+nmap('n', '<leader>w',       ':w<CR>',                                          {noremap = true})
+nmap('n', '<leader><space>', ':noh <bar> e<CR>',                                {noremap = true})
+nmap('n', '<leader>q',       ':q<CR>',                                          {noremap = true})
 
--- misc
-nmap('n', '<leader><space>', ':noh <bar> e<CR>',                        {noremap = true}) -- remove text highlights
-nmap('n', '<leader>w',       ':w<CR>',                                  {noremap = true}) -- save current buffer/file
-nmap('n', '<leader>q',       ':q<CR>',                                  {noremap = true}) -- quit/close current buffer/file
-nmap('n', '<leader>m',       ':set mouse=a<CR>',                        {noremap = true}) -- turn ON mouse mode
-nmap('n', '<leader>M',       ':set mouse=c<CR>',                        {noremap = true}) -- turn OFF mouse mode
+-- utility scripts
+-- pretty-format JSON in the current buffer/file
+nmap('n', '<leader>J',       ':%!python3 -m json.tool --sort-keys<CR>',         {noremap = true})
+
+-- DEADGE
+nmap('n', '<leader>F',       ':CellularAutomaton make_it_rain<CR>',             {noremap = true})
