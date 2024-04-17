@@ -10,10 +10,10 @@ nmap('n', '<leader>j',       ':lua require("neoscroll").scroll("0.25", "true", "
 nmap('n', '<leader>k',       ':lua require("neoscroll").scroll("-0.25", "true", "250", nil)<CR>', {noremap = true})
 
 -- directory/tree navigation
-nmap('n', '<leader><tab>',   ':CHADopen<CR>',                                   {noremap = true})
-nmap('n', '<leader>f',      ':lua require"telescope.builtin".treesitter{}<CR>', {noremap = true})
-nmap('n', '<leader>p',      ':Telescope find_files<CR>',                        {noremap = true})
-nmap('n', '<leader>g',      ':Telescope live_grep<CR>',                         {noremap = true})
+nmap('n', '<leader><tab>',   ':CHADopen<CR>',                                                     {noremap = true})
+nmap('n', '<leader>f',      ':lua require"telescope.builtin".treesitter{}<CR>',                   {noremap = true})
+nmap('n', '<leader>p',      ':lua require"telescope.builtin".find_files({ hidden = true })<CR>',  {noremap = true})
+nmap('n', '<leader>g',      ':Telescope live_grep<CR>',                                           {noremap = true})
 
 -- tab navigation
 nmap('n', '<leader>n',       ':tabnext<CR>',                                    {noremap = true})
