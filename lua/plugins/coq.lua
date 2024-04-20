@@ -1,7 +1,8 @@
 vim.g.coq_settings = {
   auto_start = true,
   clients = {
-    tabnine = { enabled = true }
+    tabnine = { enabled = false },
+    buffers = { enabled = true }
   }
 }
 
