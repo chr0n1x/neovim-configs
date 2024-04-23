@@ -1,3 +1,12 @@
+require('telescope').setup{
+  defaults = {
+    file_ignore_patterns = {
+      "node_modules",
+      ".git"
+    }
+  }
+}
+
 require('nvim-treesitter.configs').setup {
   ensure_installed = {'vim', 'lua', 'bash', 'yaml', 'json', 'hcl', 'make', 'go' },
   highlight = {
