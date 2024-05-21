@@ -86,6 +86,14 @@ return require('packer').startup(function(use)
     config = function() require 'plugins/leap' end
   }
 
+  use {
+    "antosha417/nvim-lsp-file-operations",
+    requires = {
+      "nvim-lua/plenary.nvim",
+      "nvim-tree/nvim-tree.lua",
+    },
+    config = function() require("lsp-file-operations").setup() end,
+  }
   -- copy-pasta from https://github.com/ThePrimeagen/init.lua/blob/master/lua/theprimeagen/packer.lua
   use {
     'VonHeikemen/lsp-zero.nvim',
@@ -103,11 +111,14 @@ return require('packer').startup(function(use)
         {'saadparwaiz1/cmp_luasnip'},
         {'hrsh7th/cmp-nvim-lsp'},
         {'hrsh7th/cmp-nvim-lua'},
+        {'folke/neodev.nvim' },
+        {'folke/neodev.nvim' },
 
         -- Snippets
         {'L3MON4D3/LuaSnip'},
         {'rafamadriz/friendly-snippets'},
-    }
+    },
+    config = function() require 'plugins/mason-lsp' end
   }
 
   -- git things
