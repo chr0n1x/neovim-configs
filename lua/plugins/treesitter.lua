@@ -11,7 +11,7 @@ require('nvim-treesitter.configs').setup {
   ensure_installed = {
     'vim', 'lua', 'bash', 'yaml',
     'json', 'hcl', 'make', 'go',
-    'typescript', 'dockerfile', 'markdown',
+    'typescript', 'markdown',
     'bash', 'ruby'
   },
   highlight = {
@@ -31,6 +31,6 @@ require('nvim-treesitter.configs').setup {
       node_incremental = "<C-space>",
       scope_incremental = false,
       node_decremental = "<bs>",
+    },
   },
-},
 }
