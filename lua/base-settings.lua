@@ -2,13 +2,14 @@ local opts = vim.opt
 
 -- base vim config - bools
 opts.autoread       = true
-opts.autoindent     = false
+opts.autoindent     = true
 opts.cursorline     = true
 opts.expandtab      = true
 opts.gdefault       = true
 opts.hidden         = true
 opts.hlsearch       = true
 opts.ignorecase     = true
+opts.smartcase      = true
 opts.incsearch      = true
 opts.lazyredraw     = true
 opts.compatible     = false
@@ -27,18 +28,20 @@ opts.wildmenu       = true
 vim.api.nvim_command([[filetype plugin indent on]])
 
 opts.backspace      = 'indent,eol,start'
-opts.completeopt    = "menu,menuone,noselect"
+opts.completeopt    = 'menu,menuone,noselect'
+opts.clipboard:append('unnamedplus')
 opts.encoding       = 'utf-8'
 opts.formatoptions  = 'qrn1'
-opts.foldexpr       = "v:lua.vim.treesitter.foldexpr()"
+opts.foldexpr       = 'v:lua.vim.treesitter.foldexpr()'
 opts.foldlevelstart = 99
 opts.foldmethod     = 'syntax'
-opts.foldtext       = "v:lua.vim.treesitter.foldtext()"
+opts.foldtext       = 'v:lua.vim.treesitter.foldtext()'
 opts.guifont        = 'Consolas 20'
 opts.laststatus     = 2
 opts.mouse          = 'c'
 opts.regexpengine   = 1
 opts.shiftwidth     = 2
+opts.signcolumn     = 'yes'
 opts.softtabstop    = 2
 opts.scrolloff      = 3
 opts.syntax         = 'on'

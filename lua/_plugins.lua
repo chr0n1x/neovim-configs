@@ -41,6 +41,9 @@ return require('packer').startup(function(use)
   }
   use {
     'nvim-treesitter/nvim-treesitter',
+    requires = {
+      { 'windwp/nvim-ts-autotag' }
+    },
     run = ':TSUpdate',
     config = function() require 'plugins/treesitter' end
   }
@@ -51,12 +54,32 @@ return require('packer').startup(function(use)
     'folke/twilight.nvim',
     config = function() require('twilight').setup() end
   }
+  use {
+    'rmagatti/auto-session',
+    config = function() require('plugins/auto-session') end
+  }
+  use {
+    'numToStr/Comment.nvim',
+    requires = { { 'JoosepAlviste/nvim-ts-context-commentstring' } },
+    config = function() require('plugins/comments') end
+  }
+  use {
+    'kylechui/nvim-surround',
+    tag = "*",
+    config = function() require("nvim-surround").setup({}) end
+  }
 
   -- finders, navigation
+  -- TODO: not sure what other things I need to apt-get for this here
+  use { 'nvim-telescope/telescope-fzf-native.nvim', run = 'make' }
   use { 'ms-jpq/chadtree' }
   use {
     'nvim-telescope/telescope.nvim',
-    requires = { {'nvim-lua/plenary.nvim'} }
+    requires = {
+      {'nvim-lua/plenary.nvim'},
+      {'nvim-telescope/telescope-fzf-native.nvim'},
+    },
+    config = function() require('plugins/telescope') end
   }
   use {'stevearc/dressing.nvim'}
   use {
@@ -107,12 +130,18 @@ return require('packer').startup(function(use)
       "karb94/neoscroll.nvim",
       config = function() require 'plugins/neoscroll' end
   }
+  use {
+    'folke/which-key.nvim',
+    config = function()
+      vim.o.timeout = true
+      vim.o.timeoutlen = 500
+      require("which-key").setup {}
+    end
+  }
 
   if packer_bootstrapped then
     require('packer').sync()
     -- I have no idea if this actually works
     vim.api.nvim_command [[UpdateRemotePlugins]]
-
-    require('nvim-treesitter.configs').setup { endwise = { enable = true } }
   end
 end)
