@@ -36,6 +36,7 @@ opts.foldmethod     = 'syntax'
 opts.foldtext       = "v:lua.vim.treesitter.foldtext()"
 opts.guifont        = 'Consolas 20'
 opts.laststatus     = 2
+opts.mouse          = 'c'
 opts.regexpengine   = 1
 opts.shiftwidth     = 2
 opts.softtabstop    = 2
