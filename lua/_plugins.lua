@@ -32,12 +32,11 @@ return require('packer').startup(function(use)
       'ms-jpq/coq_nvim',
       after = 'packer.nvim',
       branch = 'coq',
-      config = function() require 'plugins/coq' end
-  }
-  use {
-    'ms-jpq/coq.artifacts',
-    after = 'coq_nvim',
-    branch = 'artifacts'
+      config = function() require 'plugins/coq' end,
+      requires = {
+        { 'ms-jpq/coq.artifacts', branch = 'artifacts' },
+        { 'ms-jpq/coq.thirdparty', branch = '3p', module = 'coq_3p' },
+      }
   }
   use {
     'nvim-treesitter/nvim-treesitter',
