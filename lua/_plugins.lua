@@ -36,6 +36,7 @@ return require('packer').startup(function(use)
       requires = {
         { 'ms-jpq/coq.artifacts', branch = 'artifacts' },
         { 'ms-jpq/coq.thirdparty', branch = '3p', module = 'coq_3p' },
+        { 'github/copilot.vim', branch = 'release' },
       }
   }
   use {
