@@ -86,6 +86,10 @@ return require('packer').startup(function(use)
     'ggandor/leap.nvim',
     config = function() require 'plugins/leap' end
   }
+  use {
+    "alexghergh/nvim-tmux-navigation",
+    config = function() require 'plugins/tmux' end
+  }
 
   use {
     "antosha417/nvim-lsp-file-operations",
