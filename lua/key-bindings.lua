@@ -33,6 +33,7 @@ nmap('n', '<leader>M',       ':set mouse=c<CR>',                                
 nmap('n', '<leader>w',       ':w<CR>',                                          {noremap = true, desc = 'Save buff. Or manage sessions.'})
 nmap('n', '<leader><space>', ':noh <bar> e<CR>',                                {noremap = true})
 nmap('n', '<leader>q',       ':q<CR>',                                          {noremap = true})
+nmap('n', 'er',              ':',                                               {noremap = true, desc = 'Quick-enter into command mode'})
 
 -- utility scripts
 -- pretty-format JSON in the current buffer/file
