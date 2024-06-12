@@ -86,6 +86,10 @@ return require('packer').startup(function(use)
     'ggandor/leap.nvim',
     config = function() require 'plugins/leap' end
   }
+  use {
+    "alexghergh/nvim-tmux-navigation",
+    config = function() require 'plugins/tmux' end
+  }
 
   -- copy-pasta from https://github.com/ThePrimeagen/init.lua/blob/master/lua/theprimeagen/packer.lua
   use {
