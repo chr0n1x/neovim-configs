@@ -30,7 +30,7 @@ nmap('n', '<leader>m',       ':set mouse=a<CR>',                                
 nmap('n', '<leader>M',       ':set mouse=c<CR>',                                {noremap = true})
 
 -- misc 
-nmap('n', '<leader>w',       ':w<CR>',                                          {noremap = true})
+nmap('n', '<leader>w',       ':w<CR>',                                          {noremap = true, desc = 'Save buff. Or manage sessions.'})
 nmap('n', '<leader><space>', ':noh <bar> e<CR>',                                {noremap = true})
 nmap('n', '<leader>q',       ':q<CR>',                                          {noremap = true})
 
