@@ -22,6 +22,8 @@ return require('packer').startup(function(use)
   -- base requirements
   use 'wbthomason/packer.nvim'
   use { 'kyazdani42/nvim-web-devicons', after = 'packer.nvim' }
+  -- this particular one for some reason can't just be required for some
+  use 'nvim-lua/plenary.nvim'
 
   -- editing super-chargers
   use {
@@ -89,6 +91,12 @@ return require('packer').startup(function(use)
   use {
     "alexghergh/nvim-tmux-navigation",
     config = function() require 'plugins/tmux' end
+  }
+  use {
+    "ThePrimeagen/harpoon",
+    branch = "harpoon2",
+    requires = { 'nvim-lua/plenary.nvim' },
+    config = function() require 'plugins/harpoon' end
   }
 
   use {
