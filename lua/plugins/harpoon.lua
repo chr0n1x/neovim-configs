@@ -34,4 +34,4 @@ local function toggle_telescope(harpoon_files)
 end
 
 vim.keymap.set("n", "<leader>hs", function() toggle_telescope(harpoon:list()) end,
-    { desc = "Open harpoon window" })
+    { desc = "Show harpoon list via Telescope." })
