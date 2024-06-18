@@ -5,6 +5,7 @@ harpoon:setup()
 -- REQUIRED
 
 vim.keymap.set("n", "<leader>hh", function() harpoon:list():add() end, { desc = 'Add focused buffer to harpoon list.'})
+vim.keymap.set("n", "<leader>hr", function() harpoon:list():remove() end, { desc = 'Remove focused buffer to harpoon list.'})
 vim.keymap.set("n", "<leader>H", function() harpoon:list():clear() end, { desc = 'Clear entire harpoon list.'})
 
 -- show previous/next buffers stored within Harpoon list; wraps the list
@@ -32,5 +33,5 @@ local function toggle_telescope(harpoon_files)
     }):find()
 end
 
-vim.keymap.set("n", "<C-e>", function() toggle_telescope(harpoon:list()) end,
+vim.keymap.set("n", "<leader>hs", function() toggle_telescope(harpoon:list()) end,
     { desc = "Open harpoon window" })
