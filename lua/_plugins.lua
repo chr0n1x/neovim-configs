@@ -31,17 +31,6 @@ return require('packer').startup(function(use)
     config = function() require('plugins/zen-mode') end
   }
   use {
-      'ms-jpq/coq_nvim',
-      after = 'packer.nvim',
-      branch = 'coq',
-      config = function() require 'plugins/coq' end,
-      requires = {
-        { 'ms-jpq/coq.artifacts', branch = 'artifacts' },
-        { 'ms-jpq/coq.thirdparty', branch = '3p', module = 'coq_3p' },
-        { 'github/copilot.vim', branch = 'release' },
-      }
-  }
-  use {
     'nvim-treesitter/nvim-treesitter',
     requires = {
       { 'windwp/nvim-ts-autotag' }
@@ -106,25 +95,29 @@ return require('packer').startup(function(use)
   -- copy-pasta from https://github.com/ThePrimeagen/init.lua/blob/master/lua/theprimeagen/packer.lua
   use {
     'VonHeikemen/lsp-zero.nvim',
-    branch = 'v1.x',
+    branch = 'v3.x',
     requires = {
-        -- LSP Support
-        {'neovim/nvim-lspconfig'},
-        {'williamboman/mason.nvim'},
-        {'williamboman/mason-lspconfig.nvim'},
+      -- LSP Support
+      {'neovim/nvim-lspconfig'},
+      {'williamboman/mason.nvim'},
+      {'williamboman/mason-lspconfig.nvim'},
 
-        -- Autocompletion
-        {'hrsh7th/nvim-cmp'},
-        {'hrsh7th/cmp-buffer'},
-        {'hrsh7th/cmp-path'},
-        {'saadparwaiz1/cmp_luasnip'},
-        {'hrsh7th/cmp-nvim-lsp'},
-        {'hrsh7th/cmp-nvim-lua'},
+      -- Autocompletion
+      {'hrsh7th/nvim-cmp'},
+      {'hrsh7th/cmp-buffer'},
+      {'hrsh7th/cmp-path'},
+      {'saadparwaiz1/cmp_luasnip'},
+      {'hrsh7th/cmp-nvim-lsp'},
+      {'hrsh7th/cmp-nvim-lua'},
 
-        -- Snippets
-        {'L3MON4D3/LuaSnip'},
-        {'rafamadriz/friendly-snippets'},
-    }
+      -- Snippets
+      {'L3MON4D3/LuaSnip'},
+      {'rafamadriz/friendly-snippets'},
+
+      -- other trash
+      { 'github/copilot.vim', branch = 'release' },
+    },
+    config = function() require 'plugins/lsp' end
   }
 
   -- git things
