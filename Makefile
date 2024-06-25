@@ -5,7 +5,6 @@ default: packer-setup
 packer-setup:
 	nvim --headless -c 'autocmd User PackerComplete quitall' -c 'PackerSync'
 	nvim --headless -c 'autocmd User PackerComplete quitall' -c 'PackerInstall'
-	nvim --headless -c 'autocmd User COQdeps quitall'
 
 # this is OPTIONAL to run. don't use this if you're managing your own symlinks
 # via scripts or stow
