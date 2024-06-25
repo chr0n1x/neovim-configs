@@ -14,7 +14,7 @@ nmap('n', '<leader>j',       ':lua require("neoscroll").scroll("0.25", "true", "
 nmap('n', '<leader>k',       ':lua require("neoscroll").scroll("-0.25", "true", "250", nil)<CR>', {noremap = true, desc = 'NeoScroll (smooth) up'})
 
 -- directory/tree navigation
-nmap('n', '<leader><tab>',   ':CHADopen<CR>',                                                     {noremap = true})
+nmap('n', '<leader><tab>',   ':NvimTreeToggle<CR>',                                                     {noremap = true})
 nmap('n', '<leader>f',      ':lua require"telescope.builtin".treesitter{}<CR>',                   {noremap = true, desc = 'Telescope Find with Treesitter' })
 nmap('n', '<leader>p',      ':lua require"telescope.builtin".find_files({ hidden = true })<CR>',  {noremap = true, desc = 'Telescope File Fuzzy Find' })
 nmap('n', '<leader>g',      ':Telescope live_grep<CR>',                                           {noremap = true, desc = 'Telescope LiveGrep in CWD' })

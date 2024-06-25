@@ -74,7 +74,11 @@ return require('packer').startup(function(use)
   -- finders, navigation
   -- TODO: not sure what other things I need to apt-get for this here
   use { 'nvim-telescope/telescope-fzf-native.nvim', run = 'make' }
-  use { 'ms-jpq/chadtree' }
+  use {
+    'nvim-tree/nvim-tree.lua',
+    requires = { { 'nvim-tree/nvim-web-devicons' } },
+    config = function() require 'plugins/nvim-tree' end
+  }
   use {
     'nvim-telescope/telescope.nvim',
     requires = {
