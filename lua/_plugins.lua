@@ -19,9 +19,10 @@ return require('packer').startup(function(use)
         open_fn = require('packer.util').float,
       }
   },
+
   -- base requirements
-  use 'wbthomason/packer.nvim'
-  use { 'kyazdani42/nvim-web-devicons', after = 'packer.nvim' }
+  use { 'wbthomason/packer.nvim' }
+  use { 'nvim-tree/nvim-web-devicons', after = 'packer.nvim' }
   -- this particular one for some reason can't just be required for some
   use 'nvim-lua/plenary.nvim'
 
@@ -64,9 +65,14 @@ return require('packer').startup(function(use)
   -- TODO: not sure what other things I need to apt-get for this here
   use { 'nvim-telescope/telescope-fzf-native.nvim', run = 'make' }
   use {
-    'nvim-tree/nvim-tree.lua',
-    requires = { { 'nvim-tree/nvim-web-devicons' } },
-    config = function() require 'plugins/nvim-tree' end
+    "nvim-neo-tree/neo-tree.nvim",
+    branch = "v3.x",
+    requires = {
+      "nvim-lua/plenary.nvim",
+      "nvim-tree/nvim-web-devicons", -- not strictly required, but recommended
+      "MunifTanjim/nui.nvim",
+      "3rd/image.nvim", -- Optional image support in preview window: See `# Preview Mode` for more information
+    }
   }
   use {
     'nvim-telescope/telescope.nvim',
