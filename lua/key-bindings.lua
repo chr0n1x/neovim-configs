@@ -2,32 +2,23 @@ local nmap = vim.api.nvim_set_keymap
 
 vim.g.mapleader = ' '
 
--- Note that some of these require plugins
 -- these are put here because most of these I consider core functionality
 -- that's ingrained in my muscle memory. There may be more key mappings in the
 -- plugins/ dir tied to specific plugins. in nvim itself, hit <Space> and do
 -- nothing to let the which-key plugin list possible keymappings
 
 -- buffer navigation
-nmap('n', '<leader>s',       ':/<C-r><C-w>/<CR>',                                                 {noremap = true, desc = 'Search word underneath cursor' })
-nmap('n', '<leader>j',       ':lua require("neoscroll").scroll("0.25", "true", "250", nil)<CR>',  {noremap = true, desc = 'NeoScroll (smooth) down' })
-nmap('n', '<leader>k',       ':lua require("neoscroll").scroll("-0.25", "true", "250", nil)<CR>', {noremap = true, desc = 'NeoScroll (smooth) up'})
-
--- directory/tree navigatioh
-nmap('n', '<leader><tab>',   ':Neotree toggle<CR>',                                               {noremap = true, desc = 'NeoTreeeee' })
-nmap('n', '<leader>f',      ':lua require"telescope.builtin".treesitter{}<CR>',                   {noremap = true, desc = 'Telescope Find with Treesitter' })
-nmap('n', '<leader>p',      ':lua require"telescope.builtin".find_files({ hidden = true })<CR>',  {noremap = true, desc = 'Telescope File Fuzzy Find' })
-nmap('n', '<leader>g',      ':Telescope live_grep<CR>',                                           {noremap = true, desc = 'Telescope LiveGrep in CWD' })
+nmap('n', '<leader>s',       ':/<C-r><C-w>/<CR>',                               {noremap = true, desc = 'Search word underneath cursor' })
 
 -- tab navigation
-nmap('n', '<leader>n',       ':tabnext<CR>',                                    {noremap = true})
-nmap('n', '<leader>b',       ':tabprevious<CR>',                                {noremap = true})
-nmap('n', '<leader>o',       ':tabe<space>',                                    {noremap = true})
+nmap('n', '<leader>n',       ':tabnext<CR>',                                    {noremap = true, desc = 'Tab; next' })
+nmap('n', '<leader>b',       ':tabprevious<CR>',                                {noremap = true, desc = 'Tab; prev' })
+nmap('n', '<leader>o',       ':tabe<space>',                                    {noremap = true, desc = 'Tab; open' })
 
 -- editor visuals & "ergonomics"
-nmap('n', '<leader>z',       ':ZenMode | Twilight!!<CR>',                       {noremap = true})
-nmap('n', '<leader>m',       ':set mouse=a<CR>',                                {noremap = true})
-nmap('n', '<leader>M',       ':set mouse=c<CR>',                                {noremap = true})
+nmap('n', '<leader>z',       ':ZenMode | Twilight!!<CR>',                       {noremap = true, desc = 'Zenmode, center.' })
+nmap('n', '<leader>m',       ':set mouse=a<CR>',                                {noremap = true, desc = 'Turn ON mouse mode.' })
+nmap('n', '<leader>M',       ':set mouse=c<CR>',                                {noremap = true, desc = 'Turn OFF mouse mode.' })
 
 -- misc 
 nmap('n', '<leader>w',       ':w<CR>',                                          {noremap = true, desc = 'Save buff. Or manage sessions.'})

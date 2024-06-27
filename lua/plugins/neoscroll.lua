@@ -13,4 +13,8 @@ local mappings = {}
 mappings['<C-b>'] = {'scroll', {'-vim.api.nvim_win_get_height(0)', 'true', '125', [['quadratic']]}}
 mappings['<C-f>'] = {'scroll', { 'vim.api.nvim_win_get_height(0)', 'true', '125', [['quadratic']]}}
 
+local nmap = vim.api.nvim_set_keymap
+nmap('n', '<leader>j',       ':lua require("neoscroll").scroll("0.25", "true", "250", nil)<CR>',  {noremap = true, desc = 'NeoScroll (smooth) down' })
+nmap('n', '<leader>k',       ':lua require("neoscroll").scroll("-0.25", "true", "250", nil)<CR>', {noremap = true, desc = 'NeoScroll (smooth) up'})
+
 require('neoscroll.config').set_mappings(mappings)
