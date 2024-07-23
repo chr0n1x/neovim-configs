@@ -62,9 +62,16 @@ require('luasnip.loaders.from_vscode').lazy_load()
 
 cmp.setup({
   sources = {
-    {name = 'buffer', keyword_length = 2},
+    {
+      name = 'buffer',
+      keyword_length = 2,
+      option = {
+        get_bufnrs = function()
+          return vim.api.nvim_list_bufs()
+        end
+      }
+    },
     {name = 'nvim_lsp'},
-    {name = 'luasnip', keyword_length = 2},
     {
       name = 'tmux',
       option = {
@@ -72,6 +79,7 @@ cmp.setup({
         capture_history = true,
       }
     },
+    {name = 'luasnip', keyword_length = 8},
     {name = 'path'},
     {name = 'copilot'},
   },
