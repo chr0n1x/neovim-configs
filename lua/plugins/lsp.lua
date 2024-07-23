@@ -65,6 +65,13 @@ cmp.setup({
     {name = 'buffer', keyword_length = 2},
     {name = 'nvim_lsp'},
     {name = 'luasnip', keyword_length = 2},
+    {
+      name = 'tmux',
+      option = {
+        all_panes = true,
+        capture_history = true,
+      }
+    },
     {name = 'path'},
     {name = 'copilot'},
   },
