@@ -8,7 +8,7 @@ vim.g.mapleader = ' '
 -- nothing to let the which-key plugin list possible keymappings
 
 -- buffer navigation
-nmap('n', '<leader>s',       ':/<C-r><C-w>/<CR>',                               {noremap = true, desc = 'Search word underneath cursor' })
+nmap('n', '<leader>/',       ':/<C-r><C-w>/<CR>',                               {noremap = true, desc = 'Search word underneath cursor' })
 
 -- tab navigation
 nmap('n', '<leader>n',       ':tabnext<CR>',                                    {noremap = true, desc = 'Tab; next' })
