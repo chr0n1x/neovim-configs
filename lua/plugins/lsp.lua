@@ -9,7 +9,7 @@ vim.api.nvim_create_autocmd('LspAttach', {
     vim.keymap.set('n', '<leader>lh', function() vim.lsp.buf.signature_help() end,    { buffer = event.buf, desc = 'LSP signature help' })
     vim.keymap.set('n', '<leader>lw', function() vim.lsp.buf.workspace_symbol() end,  { buffer = event.buf, desc = 'LSP search for symbol in workspace' })
 
-    vim.keymap.set('n', '<leader>ld', function() vim.diagnostic.open_float() end,     { buffer = event.buf, desc = 'LSP open diagnostics' })
+    vim.keymap.set('n', '<leader>lD', function() vim.diagnostic.open_float() end,     { buffer = event.buf, desc = 'LSP open diagnostics' })
     vim.keymap.set('n', '[d', function() vim.diagnostic.goto_next() end,              { buffer = event.buf, desc = 'LSP go to next diagnostic' })
     vim.keymap.set('n', ']d', function() vim.diagnostic.goto_prev() end,              { buffer = event.buf, desc = 'LSP go to prev diagnostic' })
 
@@ -23,7 +23,7 @@ local lsp_capabilities = require('cmp_nvim_lsp').default_capabilities()
 
 require('mason').setup({})
 require('mason-lspconfig').setup({
-  ensure_installed = {'tsserver', 'rust_analyzer'},
+  ensure_installed = {},
   handlers = {
     function(server_name)
       require('lspconfig')[server_name].setup({
