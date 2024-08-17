@@ -11,9 +11,3 @@ vim.api.nvim_create_autocmd('VimEnter', {
     -- end
   end,
 })
-
-vim.api.nvim_create_autocmd('Bufenter', {
-  callback = function()
-    vim.cmd [[au Bufenter Makefile,Dockerfile set filetype=bash]]
-  end,
-})
