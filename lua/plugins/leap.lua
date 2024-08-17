@@ -1,4 +1,4 @@
-leap = require('leap')
+local leap = require('leap')
 
 leap.create_default_mappings()
 

@@ -5,9 +5,5 @@ vim.api.nvim_create_autocmd('VimEnter', {
     vim.cmd [[au VimEnter * AnyFoldActivate]]
 
     require('lualine').setup()
-
-    -- if vim.fn.argv(0) == '' then
-    --   require('telescope.builtin').find_files({ hidden = true })
-    -- end
   end,
 })

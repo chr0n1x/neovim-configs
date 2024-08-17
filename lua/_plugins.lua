@@ -18,7 +18,7 @@ return require('packer').startup(function(use)
       display = {
         open_fn = require('packer.util').float,
       }
-  },
+  }
 
   -- base requirements
   use { 'wbthomason/packer.nvim' }
