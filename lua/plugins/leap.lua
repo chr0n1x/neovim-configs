@@ -1,7 +1,5 @@
 local leap = require('leap')
 
-leap.create_default_mappings()
-
 -- disable jumping to first match
 leap.opts.safe_labels = {}
 
