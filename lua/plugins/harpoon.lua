@@ -9,10 +9,10 @@ vim.keymap.set("n", "<leader>hr", function() harpoon:list():remove() end, { desc
 vim.keymap.set("n", "<leader>H", function() harpoon:list():clear() end, { desc = 'Clear entire harpoon list.'})
 
 -- show previous/next buffers stored within Harpoon list; wraps the list
-harpoon_wrapped_display_prev = function() harpoon:list():prev({ ui_nav_wrap = true }) end
+local harpoon_wrapped_display_prev = function() harpoon:list():prev({ ui_nav_wrap = true }) end
 vim.keymap.set("n", "<leader>hk", harpoon_wrapped_display_prev, { desc = 'Show previous buffer in harpoon list.'})
 
-harpoon_wrapped_display_next = function() harpoon:list():next({ ui_nav_wrap = true }) end
+local harpoon_wrapped_display_next = function() harpoon:list():next({ ui_nav_wrap = true }) end
 vim.keymap.set("n", "<leader>hj", harpoon_wrapped_display_next, { desc = 'Show next buffer in harpoon list.'})
 
 -- basic telescope configuration

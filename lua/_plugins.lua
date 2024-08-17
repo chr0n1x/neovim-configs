@@ -1,4 +1,5 @@
 -- Auto install plugin
+local packer_bootstrapped = false
 local fn = vim.fn
 local install_path = fn.stdpath('data') ..
   '/site/pack/packer/start/packer.nvim'
@@ -14,11 +15,11 @@ if fn.empty(fn.glob(install_path)) > 0 then
 end
 
 return require('packer').startup(function(use)
-  config = {
-      display = {
-        open_fn = require('packer.util').float,
-      }
-  }
+  -- config = {
+  --     display = {
+  --       open_fn = require('packer.util').float,
+  --     }
+  -- }
 
   -- base requirements
   use { 'wbthomason/packer.nvim' }
