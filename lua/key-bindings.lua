@@ -21,9 +21,9 @@ nmap('n', '<leader>M',       ':set mouse=c<CR>',                                
 
 -- misc 
 nmap('n', '<leader>w',       ':w<CR>',                                          {noremap = true, desc = 'Save buff. Or manage sessions.'})
-nmap('n', '<leader><space>', ':noh <bar> e<CR>',                                {noremap = true})
-nmap('n', '<leader>q',       ':q<CR>',                                          {noremap = true})
-nmap('n', 'er',              ':',                                               {noremap = true, desc = 'Quick-enter into command mode'})
+nmap('n', '<leader><space>', ':noh <bar> e<CR>',                                {noremap = true, desc = 'Close any highlights.'})
+nmap('n', '<leader>q',       ':q<CR>',                                          {noremap = true, desc = 'Close buffer (:q).'})
+nmap('n', 'er',              ':',                                               {noremap = true, desc = 'Quick-enter into command mode.'})
 
 -- utility scripts
 -- pretty-format JSON in the current buffer/file
