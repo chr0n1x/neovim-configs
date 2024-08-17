@@ -81,7 +81,7 @@ cmp.setup({
     },
     {name = 'luasnip', keyword_length = 8},
     {name = 'path'},
-    {name = 'copilot'},
+    -- {name = 'copilot'},
   },
   mapping = cmp.mapping.preset.insert({
     -- custom mappings
