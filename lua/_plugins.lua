@@ -15,12 +15,6 @@ if fn.empty(fn.glob(install_path)) > 0 then
 end
 
 return require('packer').startup(function(use)
-  -- config = {
-  --     display = {
-  --       open_fn = require('packer.util').float,
-  --     }
-  -- }
-
   -- base requirements
   use { 'wbthomason/packer.nvim' }
   use { 'nvim-tree/nvim-web-devicons', after = 'packer.nvim' }
@@ -28,10 +22,6 @@ return require('packer').startup(function(use)
   use 'nvim-lua/plenary.nvim'
 
   -- editing super-chargers
-  use {
-    'folke/zen-mode.nvim',
-    config = function() require('plugins/zen-mode') end
-  }
   use {
     'nvim-treesitter/nvim-treesitter',
     requires = {
@@ -43,10 +33,6 @@ return require('packer').startup(function(use)
   use 'nvim-treesitter/playground'
   use 'pseewald/vim-anyfold'
   use 'Yggdroot/indentLine'
-  use {
-    'folke/twilight.nvim',
-    config = function() require('twilight').setup() end
-  }
   use {
     'rmagatti/auto-session',
     config = function() require('plugins/auto-session') end

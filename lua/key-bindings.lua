@@ -8,7 +8,7 @@ vim.g.mapleader = ' '
 -- nothing to let the which-key plugin list possible keymappings
 
 -- buffer navigation
-nmap('n', '<leader>/',       ':/<C-r><C-w>/<CR>',                               {noremap = true, desc = 'Search word underneath cursor' })
+nmap('n', '<leader>s',       ':/<C-r><C-w>/<CR>',                               {noremap = true, desc = 'Search word underneath cursor' })
 
 -- tab navigation
 nmap('n', '<leader>n',       ':tabnext<CR>',                                    {noremap = true, desc = 'Tab; next' })
@@ -16,7 +16,6 @@ nmap('n', '<leader>b',       ':tabprevious<CR>',                                
 nmap('n', '<leader>o',       ':tabe<space>',                                    {noremap = true, desc = 'Tab; open' })
 
 -- editor visuals & "ergonomics"
-nmap('n', '<leader>z',       ':ZenMode | Twilight!!<CR>',                       {noremap = true, desc = 'Zenmode, center.' })
 nmap('n', '<leader>m',       ':set mouse=a<CR>',                                {noremap = true, desc = 'Turn ON mouse mode.' })
 nmap('n', '<leader>M',       ':set mouse=c<CR>',                                {noremap = true, desc = 'Turn OFF mouse mode.' })
 

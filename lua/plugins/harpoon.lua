@@ -33,5 +33,7 @@ local function toggle_telescope(harpoon_files)
     }):find()
 end
 
+vim.keymap.set("n", "<leader>h", function() toggle_telescope(harpoon:list()) end,
+    { desc = "Harpoon commands (default: show list in Telescope)." })
 vim.keymap.set("n", "<leader>hs", function() toggle_telescope(harpoon:list()) end,
     { desc = "Show harpoon list via Telescope." })
