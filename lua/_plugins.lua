@@ -123,7 +123,7 @@ return require('packer').startup(function(use)
       {'rafamadriz/friendly-snippets'},
 
       -- other trash
-      { 'github/copilot.vim', branch = 'release' },
+      -- { 'github/copilot.vim', branch = 'release' },
     },
     config = function() require 'plugins/lsp' end
   }
