@@ -15,3 +15,15 @@ vim.keymap.set('n', 's', function ()
   )
   leap.leap { target_windows = focusable_windows }
 end)
+
+-- https://github.com/ggandor/leap.nvim/issues/256
+-- TODO: does not work with multiple panes. for now
+vim.api.nvim_create_autocmd("User", {
+  pattern = "LeapEnter",
+  callback = function()
+    vim.api.nvim_create_autocmd("CursorMoved", {
+      once = true,
+      callback = function() require('neoscroll').zz({ half_win_duration = 250 }) end
+    })
+  end
+})
