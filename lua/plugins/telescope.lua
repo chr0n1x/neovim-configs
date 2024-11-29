@@ -15,8 +15,9 @@ telescope.setup({
 })
 
 local nmap = vim.api.nvim_set_keymap
-nmap('n', '<leader>f',      ':lua require"telescope.builtin".treesitter({ hidden = true, file_ignore_patterns = {".git/"} })<CR>',  {noremap = true, desc = 'Telescope Find with Treesitter' })
-nmap('n', '<leader>p',      ':lua require"telescope.builtin".find_files({ hidden = true, file_ignore_patterns = {".git/"} })<CR>',  {noremap = true, desc = 'Telescope File Fuzzy Find' })
-nmap('n', '<leader>g',      ':lua require"telescope.builtin".live_grep({ hidden = true, file_ignore_patterns = {".git/"} })<CR>',   {noremap = true, desc = 'Telescope LiveGrep in CWD' })
+nmap('n', '<leader>f', ':lua require"telescope.builtin".treesitter({ hidden = true, file_ignore_patterns = {".git/"} })<CR>',     {noremap = true, desc = 'Telescope: token.' })
+nmap('n', '<leader>g', ':lua require"telescope.builtin".live_grep({ hidden = true, file_ignore_patterns = {".git/"} })<CR>',      {noremap = true, desc = 'Telescope: [rip]grep cwd.' })
+nmap('n', '<leader>p', ':lua require"telescope.builtin".find_files({ hidden = true, file_ignore_patterns = {".git/"} })<CR>',     {noremap = true, desc = 'Telescope: search cwd for file.' })
+nmap('n', '<leader>r', ':lua require"telescope.builtin".lsp_references({ hidden = true, file_ignore_patterns = {".git/"} })<CR>', {noremap = true, desc = 'Telescope: show references for token under cursor.' })
 
 telescope.load_extension("fzf")
