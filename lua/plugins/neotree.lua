@@ -8,7 +8,8 @@ require("neo-tree").setup({
   window = {
     -- I hate this thing with a passion
     mappings = {
-      ['/'] = 'noop'
+      ['/'] = 'noop',
+      ['s'] = 'noop'
     }
   }
 })
