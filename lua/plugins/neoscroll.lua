@@ -1,4 +1,5 @@
-require('neoscroll').setup({
+neoscroll = require('neoscroll')
+neoscroll.setup({
     hide_cursor = true,            -- Hide cursor while scrolling
     stop_eof = true,               -- Stop at <EOF> when scrolling downwards
     respect_scrolloff = false,     -- Stop scrolling when the cursor reaches the scrolloff margin of the file
@@ -9,12 +10,17 @@ require('neoscroll').setup({
     performance_mode = false,      -- Disable "Performance Mode" on all buffers.
 })
 
-local mappings = {}
-mappings['<C-b>'] = {'scroll', {'-vim.api.nvim_win_get_height(0)', 'true', '125', [['quadratic']]}}
-mappings['<C-f>'] = {'scroll', { 'vim.api.nvim_win_get_height(0)', 'true', '125', [['quadratic']]}}
+local keymap = {
+  ["<C-b>"]     = function() neoscroll.ctrl_b({ duration = 125 }) end;
+  ["<C-f>"]     = function() neoscroll.ctrl_f({ duration = 125 }) end;
+  ["<leader>j"] = function() neoscroll.scroll(0.25, { move_cursor=true; duration = 250 }) end;
+  ["<leader>k"] = function() neoscroll.scroll(-0.25, { move_cursor=true; duration = 250 }) end;
+  ["zt"]        = function() neoscroll.zt({ half_win_duration = 250 }) end;
+  ["zz"]        = function() neoscroll.zz({ half_win_duration = 250 }) end;
+  ["zb"]        = function() neoscroll.zb({ half_win_duration = 250 }) end;
 
-local nmap = vim.api.nvim_set_keymap
-nmap('n', '<leader>j',       ':lua require("neoscroll").scroll("0.25", "true", "250", nil)<CR>',  {noremap = true, desc = 'NeoScroll (smooth) down' })
-nmap('n', '<leader>k',       ':lua require("neoscroll").scroll("-0.25", "true", "250", nil)<CR>', {noremap = true, desc = 'NeoScroll (smooth) up'})
-
-require('neoscroll.config').set_mappings(mappings)
+}
+local modes = { 'n', 'v', 'x' }
+for key, func in pairs(keymap) do
+  vim.keymap.set(modes, key, func)
+end
