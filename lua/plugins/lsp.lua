@@ -1,6 +1,7 @@
--- taken directly from
+-- taken mostly from
 -- https://lsp-zero.netlify.app/v3.x/blog/theprimeagens-config-from-2022.html
 
+-- ALL THE KEYBINDS
 vim.api.nvim_create_autocmd('LspAttach', {
   group = vim.api.nvim_create_augroup('user_lsp_attach', {clear = true}),
   callback = function(event)
@@ -19,9 +20,72 @@ vim.api.nvim_create_autocmd('LspAttach', {
   end,
 })
 
+--
+-- SNIPPET PRIORITY, ETC
+--
+-- ngl - no idea what this is doing
 local lsp_capabilities = require('cmp_nvim_lsp').default_capabilities()
+local cmp = require('cmp')
+local cmp_select = {behavior = cmp.SelectBehavior.Select}
+-- this is the function that loads the extra snippets to luasnip
+-- from rafamadriz/friendly-snippets
+require('luasnip.loaders.from_vscode').lazy_load()
+cmp.setup({
+  sources = {
+    {name = 'nvim_lsp' },
+    {name = 'path'},
+    {name = 'luasnip', keyword_length = 8},
+    {
+      name = 'buffer',
+      keyword_length = 2,
+      option = {
+        get_bufnrs = function()
+          return vim.api.nvim_list_bufs()
+        end
+      }
+    },
+    {
+      name = 'tmux',
+      option = {
+        all_panes = true,
+        capture_history = true,
+      }
+    },
+    -- {name = 'copilot'},
+  },
 
-require('mason').setup({})
+  mapping = cmp.mapping.preset.insert({
+    -- custom mappings
+    ['<Tab>'] = cmp.mapping.select_next_item(cmp_select),
+    ['<CR>'] = cmp.mapping.confirm({ select = true }),
+
+    ['<C-p>'] = cmp.mapping.select_prev_item(cmp_select),
+    ['<C-n>'] = cmp.mapping.select_next_item(cmp_select),
+    ['<C-y>'] = cmp.mapping.confirm({ select = true }),
+    ['<C-Space>'] = cmp.mapping.complete(),
+  }),
+
+  snippet = {
+    expand = function(args)
+      require('luasnip').lsp_expand(args.body)
+    end,
+  },
+})
+
+-- UI DECORATIONS
+-- Change the Diagnostic symbols in the sign column (gutter)
+-- (not in youtube nvim video)
+local signs = { Error = " ", Warn = " ", Hint = "󰠠 ", Info = " " }
+for type, icon in pairs(signs) do
+  local hl = "DiagnosticSign" .. type
+  vim.fn.sign_define(hl, { text = icon, texthl = hl, numhl = "" })
+end
+
+-- SETTING UP LSP
+require('mason').setup({
+  -- https://github.com/williamboman/nvim-lsp-installer/discussions/509
+  PATH = "prepend",
+})
 require('mason-lspconfig').setup({
   ensure_installed = {},
   handlers = {
@@ -52,58 +116,3 @@ require('mason-lspconfig').setup({
     end,
   }
 })
-
-local cmp = require('cmp')
-local cmp_select = {behavior = cmp.SelectBehavior.Select}
-
--- this is the function that loads the extra snippets to luasnip
--- from rafamadriz/friendly-snippets
-require('luasnip.loaders.from_vscode').lazy_load()
-
-cmp.setup({
-  sources = {
-    {
-      name = 'buffer',
-      keyword_length = 2,
-      option = {
-        get_bufnrs = function()
-          return vim.api.nvim_list_bufs()
-        end
-      }
-    },
-    {name = 'nvim_lsp', priority = 1000 },
-    {
-      name = 'tmux',
-      option = {
-        all_panes = true,
-        capture_history = true,
-      }
-    },
-    {name = 'luasnip', keyword_length = 8},
-    {name = 'path'},
-    -- {name = 'copilot'},
-  },
-  mapping = cmp.mapping.preset.insert({
-    -- custom mappings
-    ['<Tab>'] = cmp.mapping.select_next_item(cmp_select),
-    ['<CR>'] = cmp.mapping.confirm({ select = true }),
-
-    ['<C-p>'] = cmp.mapping.select_prev_item(cmp_select),
-    ['<C-n>'] = cmp.mapping.select_next_item(cmp_select),
-    ['<C-y>'] = cmp.mapping.confirm({ select = true }),
-    ['<C-Space>'] = cmp.mapping.complete(),
-  }),
-  snippet = {
-    expand = function(args)
-      require('luasnip').lsp_expand(args.body)
-    end,
-  },
-})
-
--- Change the Diagnostic symbols in the sign column (gutter)
--- (not in youtube nvim video)
-local signs = { Error = " ", Warn = " ", Hint = "󰠠 ", Info = " " }
-for type, icon in pairs(signs) do
-  local hl = "DiagnosticSign" .. type
-  vim.fn.sign_define(hl, { text = icon, texthl = hl, numhl = "" })
-end

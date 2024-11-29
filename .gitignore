@@ -2,3 +2,4 @@ nvim/plugin/
 .nvimlog
 *.swp
 plugin/
+.cache/
