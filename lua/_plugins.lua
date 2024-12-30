@@ -143,6 +143,20 @@ return require('packer').startup(function(use)
     end
   }
 
+  use {
+    "anuvyklack/windows.nvim",
+     requires = {
+        "anuvyklack/middleclass",
+        "anuvyklack/animation.nvim"
+     },
+     config = function()
+        vim.o.winwidth = 10
+        vim.o.winminwidth = 10
+        vim.o.equalalways = false
+        require('windows').setup()
+     end
+  }
+
   if packer_bootstrapped then
     require('packer').sync()
     -- I have no idea if this actually works
