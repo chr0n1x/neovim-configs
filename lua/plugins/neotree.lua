@@ -9,7 +9,6 @@ require("neo-tree").setup({
     -- I hate this thing with a passion
     mappings = {
       ['/'] = 'noop',
-      ['s'] = 'noop'
     }
   }
 })
