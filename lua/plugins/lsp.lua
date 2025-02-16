@@ -37,7 +37,7 @@ cmp.setup({
     {name = 'luasnip', keyword_length = 8},
     {
       name = 'buffer',
-      keyword_length = 2,
+      keyword_length = 3,
       option = {
         get_bufnrs = function()
           return vim.api.nvim_list_bufs()
