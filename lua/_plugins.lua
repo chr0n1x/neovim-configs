@@ -157,6 +157,11 @@ return require('packer').startup(function(use)
      end
   }
 
+  use {
+    "ramilito/kubectl.nvim",
+    config = function() require("kubectl").setup() end,
+  }
+
   if packer_bootstrapped then
     require('packer').sync()
     -- I have no idea if this actually works
