@@ -4,7 +4,7 @@ local fn = vim.fn
 local install_path = fn.stdpath('data') ..
   '/site/pack/packer/start/packer.nvim'
 if fn.empty(fn.glob(install_path)) > 0 then
-  packer_bootstrapped = fn.system(
+  fn.system(
     {
       'git', 'clone',
       '--depth', '1',
@@ -12,6 +12,8 @@ if fn.empty(fn.glob(install_path)) > 0 then
       install_path
     }
   )
+
+  packer_bootstrapped = (not vim.v.shell_error)
 end
 
 return require('packer').startup(function(use)
