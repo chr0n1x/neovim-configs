@@ -31,6 +31,10 @@ local cmp_select = {behavior = cmp.SelectBehavior.Select}
 -- from rafamadriz/friendly-snippets
 require('luasnip.loaders.from_vscode').lazy_load()
 cmp.setup({
+  -- prevents LSPs from sending out preselect opts/flags
+  completion = { completeopt = "noselect" },
+  preselect = cmp.PreselectMode.None,
+
   sources = {
     {name = 'nvim_lsp' },
     {name = 'path'},
