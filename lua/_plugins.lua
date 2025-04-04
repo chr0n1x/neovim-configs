@@ -135,6 +135,10 @@ return require('packer').startup(function(use)
 
   -- misc awesome things
   use {
+    'sphamba/smear-cursor.nvim',
+    config = function() require('smear_cursor').enabled = true end
+  }
+  use {
     'hoob3rt/lualine.nvim',
     after = 'nvim-web-devicons',
     config = function() require 'plugins/lualine' end
