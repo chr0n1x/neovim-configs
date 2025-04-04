@@ -1,19 +1,24 @@
 return {
   'nvim-telescope/telescope.nvim',
-  -- lazily load so that we eager load treesitter
-  lazy = true,
+
+  lazy = false,
+
   dependencies = {
-    'nvim-lua/plenary.nvim',
-    'stevearc/dressing.nvim',
-    { 'nvim-telescope/telescope-fzf-native.nvim', run = 'make' }
+    'nvim-telescope/telescope-fzf-native.nvim',
+    build = 'make'
   },
+
   init = function()
     local telescope = require("telescope")
     local actions = require("telescope.actions")
 
     telescope.setup({
       defaults = {
-        path_display = { "smart" },
+        path_display = {
+          "smart"
+        },
+        prompt_prefix = "> ",
+        extensions_list = {"fzf", "terms", "themes"},
         mappings = {
           i = {
             ["<C-k>"] = actions.move_selection_previous, -- move to prev result

@@ -60,6 +60,10 @@ return {
 
   {
     'shaunsingh/nord.nvim',
+    lazy = false,
+    init = function()
+      require('nord').set()
+    end
   },
 
   {
