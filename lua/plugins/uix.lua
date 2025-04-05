@@ -20,10 +20,7 @@ return {
       scroll = { enabled = true },
       statuscolumn = { enabled = true },
       words = { enabled = true },
-    },
-    init = function()
-      vim.opt.winborder='rounded'
-    end
+    }
   },
 
   {
