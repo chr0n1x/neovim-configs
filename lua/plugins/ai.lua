@@ -1,6 +1,5 @@
 local openwebui_url = os.getenv("OPEN_WEBUI_URL")
 local openwebui_jwt = os.getenv("OPEN_WEBUI_JWT")
-
 if openwebui_url == "" or openwebui_jwt == "" then
   return {}
 end
@@ -11,6 +10,11 @@ return {
   -- explicitly listing here, want to notify when we're connecting to anything
   dependencies = { "folke/snacks.nvim" },
   opts = {
+    display = {
+      chat = {
+        show_settings = true
+      }
+    },
     strategies = {
       chat = { adapter = "gemma3" },
       inline = {
@@ -60,6 +64,9 @@ return {
   },
   init = function()
     local notifier = require('snacks.notifier')
-    notifier.notify('using codecompanion AI via ' .. openwebui_url, vim.log.levels.INFO)
+    notifier.notify('! Using codecompanion AI via ' .. openwebui_url, vim.log.levels.INFO)
+
+    -- TODO: too tired/lazy to figure out a way to do this "correctly"
+    vim.keymap.set('n', '<leader>c', ':CodeCompanionActions<CR>', { desc = 'CodeCompanion: Actions.' })
   end
 }

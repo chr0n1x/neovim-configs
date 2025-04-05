@@ -8,7 +8,8 @@ return {
     'hrsh7th/cmp-nvim-lsp',
     'hrsh7th/cmp-nvim-lua',
     'andersevenrud/cmp-tmux',
-    'L3MON4D3/LuaSnip'
+    'L3MON4D3/LuaSnip',
+    'olimorris/codecompanion.nvim',
   },
 
   init = function()
@@ -35,6 +36,13 @@ return {
             capture_history = true,
           }
         },
+        { name = "codecompanion_models" },
+        { name = "codecompanion_slash_commands" },
+        { name = "codecompanion_tools" },
+        { name = "codecompanion_variables" },
+        per_filetype = {
+          codecompanion = { "codecompanion" },
+        }
       },
 
       mapping = cmp.mapping.preset.insert({
