@@ -2,9 +2,8 @@ return {
   'olimorris/codecompanion.nvim',
   opts = {
     strategies = {
-      chat = {
-        adapter = "gemma3"
-      }
+      chat = { adapter = "gemma3" },
+      inline = { adapter = "gemma3" }
     },
 
     adapters = {
@@ -14,7 +13,7 @@ return {
         log_level = "TRACE",
       },
 
-      gemma3_4B = function()
+      gemma3 = function()
         return require("codecompanion.adapters").extend("openai_compatible", {
           opts = {
             allow_insecure = true,
