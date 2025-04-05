@@ -12,16 +12,14 @@ return {
         vim.keymap.set('n', '<leader>ld', function() vim.lsp.buf.definition() end,       { buffer = event.buf, desc = 'LSP go to definition' })
         vim.keymap.set('n', '<leader>lh', function() vim.lsp.buf.signature_help() end,   { buffer = event.buf, desc = 'LSP signature help' })
         vim.keymap.set('n', '<leader>lw', function() vim.lsp.buf.workspace_symbol() end, { buffer = event.buf, desc = 'LSP search for symbol in workspace' })
-
         vim.keymap.set('n', '<leader>lD', function() vim.diagnostic.open_float() end,    { buffer = event.buf, desc = 'LSP open diagnostics' })
-        vim.keymap.set('n', '[d', function() vim.diagnostic.goto_next() end,             { buffer = event.buf, desc = 'LSP go to next diagnostic' })
-        vim.keymap.set('n', ']d', function() vim.diagnostic.goto_prev() end,             { buffer = event.buf, desc = 'LSP go to prev diagnostic' })
-
         vim.keymap.set('n', '<leader>lr', function() vim.lsp.buf.references() end,       { buffer = event.buf, desc = 'LSP buffer/edit symbol actions (default: show refs for current symbol)' })
         vim.keymap.set('n', '<leader>lra', function() vim.lsp.buf.code_action() end,     { buffer = event.buf, desc = 'LSP code action' })
         vim.keymap.set('n', '<leader>lrr', function() vim.lsp.buf.rename() end,          { buffer = event.buf, desc = 'LSP rename' })
       end,
     })
+
+    local lsp_capabilities = require('cmp_nvim_lsp').default_capabilities()
 
     require('mason').setup({
       -- https://github.com/williamboman/nvim-lsp-installer/discussions/509
