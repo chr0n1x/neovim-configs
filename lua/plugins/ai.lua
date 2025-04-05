@@ -1,9 +1,31 @@
+local openwebui_url = os.getenv("OPEN_WEBUI_URL")
+local openwebui_jwt = os.getenv("OPEN_WEBUI_JWT")
+
+if openwebui_url == "" or openwebui_jwt == "" then
+  return {}
+end
+
 return {
   'olimorris/codecompanion.nvim',
+
+  -- explicitly listing here, want to notify when we're connecting to anything
+  dependencies = { "folke/snacks.nvim" },
   opts = {
     strategies = {
       chat = { adapter = "gemma3" },
-      inline = { adapter = "gemma3" }
+      inline = {
+        adapter = "gemma3",
+        keymaps = {
+          accept_change = {
+            modes = { n = "ga" },
+            description = "Accept the suggested change",
+          },
+          reject_change = {
+            modes = { n = "gr" },
+            description = "Reject the suggested change",
+          }
+        }
+      }
     },
 
     adapters = {
@@ -21,8 +43,8 @@ return {
           },
 
           env = {
-            url = os.getenv("OPEN_WEBUI_URL"),
-            api_key = os.getenv("OPEN_WEBUI_JWT"),
+            url = openwebui_url,
+            api_key = openwebui_jwt,
             chat_url = "/api/chat/completions",
             models_endpoint = "/api/models",
           },
@@ -34,5 +56,9 @@ return {
         })
       end,
     }
-  }
+  },
+  init = function()
+    local notifier = require('snacks.notifier')
+    notifier.notify('using codecompanion AI via ' .. openwebui_url, vim.log.levels.INFO)
+  end
 }
