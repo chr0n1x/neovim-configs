@@ -4,14 +4,22 @@ return {
     { 'windwp/nvim-ts-autotag' },
     { 'nvim-treesitter/playground' }
   },
-  run = ':TSUpdate',
+  build = ':TSUpdate',
+  config = function ()
+    local configs = require("nvim-treesitter.configs")
+    configs.setup({
+      ensure_installed = {
+        'vim', 'lua', 'bash', 'yaml',
+        'json', 'hcl', 'make', 'go',
+        'typescript', 'markdown', 'markdown_inline',
+        'bash', 'ruby', 'python'
+      },
+      sync_install = false,
+      highlight = { enable = true },
+      indent = { enable = true },
+    })
+  end,
   opts = {
-    ensure_installed = {
-      'vim', 'lua', 'bash', 'yaml',
-      'json', 'hcl', 'make', 'go',
-      'typescript', 'markdown',
-      'bash', 'ruby'
-    },
     highlight = {
       enable = true,
       additional_vim_regex_highlighting = true,
