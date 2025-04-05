@@ -5,10 +5,7 @@ return {
 
     -- disable jumping to first match
     leap.opts.safe_labels = {}
-
-    -- Or just set to grey directly, e.g. { fg = '#777777' },
-    -- if Comment is saturated.
-    vim.api.nvim_set_hl(0, 'LeapBackdrop', { link = 'Comment' })
+    vim.api.nvim_set_hl(0, 'LeapBackdrop', { link = 'Comment', fg = '#777777' })
 
     -- use leap in all visible windows
     vim.keymap.set('n', 's', function ()
