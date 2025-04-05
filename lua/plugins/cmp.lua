@@ -8,6 +8,7 @@ return {
     'hrsh7th/cmp-nvim-lsp',
     'hrsh7th/cmp-nvim-lua',
     'andersevenrud/cmp-tmux',
+    'L3MON4D3/LuaSnip'
   },
 
   init = function()
