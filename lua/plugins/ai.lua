@@ -56,7 +56,7 @@ return {
             -- NOTE: startup time might be better with 1B
             -- 1080ti over proxmox pci passthrough to talos os is takes a few seconds for 4B
             -- and 12B takes FOREVER, t/s is also not too good
-            model = { default = "gemma3:1B" },
+            model = { default = "gemma3:4B" },
           },
         })
       end,
