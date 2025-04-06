@@ -1,6 +1,7 @@
 return {
   'ggandor/leap.nvim',
-  init = function()
+  lazy = false,
+  config = function()
     local leap = require('leap')
 
     -- disable jumping to first match
