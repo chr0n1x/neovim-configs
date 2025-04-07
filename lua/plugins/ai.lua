@@ -1,6 +1,10 @@
 local openwebui_url = os.getenv("OPEN_WEBUI_URL")
 local openwebui_jwt = os.getenv("OPEN_WEBUI_JWT")
-if openwebui_url == "" or openwebui_jwt == "" then
+local either_empty = function ()
+  return openwebui_jwt == "" or openwebui_jwt == nil or
+    openwebui_url == "" or openwebui_url == nil
+end
+if either_empty() then
   return {}
 end
 
