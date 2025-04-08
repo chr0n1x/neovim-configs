@@ -3,3 +3,4 @@ nvim/plugin/
 *.swp
 plugin/
 .cache/
+chroma.log
