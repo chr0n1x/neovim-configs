@@ -1,53 +1,76 @@
 local openwebui_url = os.getenv("OPEN_WEBUI_URL")
 local openwebui_jwt = os.getenv("OPEN_WEBUI_JWT")
-local either_empty = function ()
+local no_openwebui_cfg = function ()
   return openwebui_jwt == "" or openwebui_jwt == nil or
     openwebui_url == "" or openwebui_url == nil
 end
-if either_empty() then
+
+local ollama_url = os.getenv("OLLAMA_HOST")
+local no_ollama_cfg = function ()
+  return ollama_url == "" or ollama_url == nil
+end
+
+if no_openwebui_cfg() and no_ollama_cfg() then
   return {}
 end
 
-return {
-  'olimorris/codecompanion.nvim',
+local default_adapter = "ollama"
+if not no_openwebui_cfg() then
+  default_adapter = "gemma3"
+end
 
-  -- explicitly listing here, want to notify when we're connecting to anything
-  dependencies = { "folke/snacks.nvim" },
-  opts = {
-    display = {
-      chat = {
-        show_settings = true
-      }
+return {
+  {
+    'olimorris/codecompanion.nvim',
+
+    config = true,
+
+    dependencies = {
+      -- explicitly listing here, want to notify when we're connecting to anything
+      "folke/snacks.nvim",
+      "nvim-lua/plenary.nvim",
+      "nvim-treesitter/nvim-treesitter",
+      "Davidyz/VectorCode",
+      "ibhagwan/fzf-lua",
     },
-    strategies = {
-      chat = { adapter = "gemma3" },
-      inline = {
-        adapter = "gemma3",
-        keymaps = {
-          accept_change = {
-            modes = { n = "ga" },
-            description = "Accept the suggested change",
+    -- fx here is to ensure that we can require vectorcode.integrations below
+    opts = function(_, opts)
+      opts = opts or {}
+      opts.adapters = opts.adapters or {}
+
+      opts.strategies = {
+        chat = {
+          adapter = default_adapter,
+          slash_commands = {
+            codebase = require("vectorcode.integrations").codecompanion.chat.make_slash_command(),
           },
-          reject_change = {
-            modes = { n = "gr" },
-            description = "Reject the suggested change",
+          tools = {
+            vectorcode = {
+              description = "Run VectorCode to retrieve the project context.",
+              callback = require("vectorcode.integrations").codecompanion.chat.make_tool(),
+            }
+          },
+        },
+        inline = {
+          adapter = default_adapter,
+          keymaps = {
+            accept_change = {
+              modes = { n = "ga" },
+              description = "Accept the suggested change",
+            },
+            reject_change = {
+              modes = { n = "gr" },
+              description = "Reject the suggested change",
+            }
           }
         }
       }
-    },
 
-    adapters = {
-      opts = {
-        allow_insecure = true,
-        show_defaults = false,
-        log_level = "TRACE",
-      },
-
-      gemma3 = function()
+      opts.adapters["gemma3"] = function()
         return require("codecompanion.adapters").extend("openai_compatible", {
           opts = {
-            allow_insecure = true,
-            show_defaults = false,
+            show_defaults = true,
+            display = { show_settings = true }
           },
 
           env = {
@@ -63,14 +86,44 @@ return {
             model = { default = "gemma3:4B" },
           },
         })
-      end,
-    }
-  },
-  init = function()
-    local notifier = require('snacks.notifier')
-    notifier.notify('! Using codecompanion AI via ' .. openwebui_url, vim.log.levels.INFO)
+      end
 
-    -- TODO: too tired/lazy to figure out a way to do this "correctly"
-    vim.keymap.set('n', '<leader>c', ':CodeCompanionActions<CR>', { desc = 'CodeCompanion: Actions.' })
-  end
+      opts.adapters["ollama"] = function()
+        return require("codecompanion.adapters").extend("ollama", {
+          opts = {
+            allow_insecure = true,
+            show_defaults = true,
+          },
+          env = {
+            url = ollama_url,
+            api_key = "OLLAMA_API_KEY",
+          },
+          headers = {
+            ["Content-Type"] = "application/json",
+            ["Authorization"] = "Bearer ${api_key}",
+          },
+          parameters = {
+            sync = true,
+          },
+        })
+      end
+
+      return opts
+    end,
+
+    init = function()
+      -- TODO: too tired/lazy to figure out a way to do this "correctly"
+      vim.keymap.set('n', '<leader>c', ':CodeCompanionActions<CR>', { desc = 'CodeCompanion: Actions.' })
+
+      local notifier = require('snacks.notifier')
+      if not no_openwebui_cfg() then
+        notifier.notify('codecompanion adapter ' .. default_adapter .. 'AI via ' .. openwebui_url .. ' enabled', vim.log.levels.INFO)
+        return
+      end
+
+      if not no_ollama_cfg() then
+        notifier.notify('codecompanion adapter ' .. default_adapter .. 'AI via ' .. ollama_url .. ' enabled', vim.log.levels.INFO)
+      end
+    end
+  }
 }
