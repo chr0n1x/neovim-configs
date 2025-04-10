@@ -1,3 +1,5 @@
+if IN_PERF_MODE then return {} end
+
 local openwebui_url = os.getenv("OPEN_WEBUI_URL")
 local openwebui_jwt = os.getenv("OPEN_WEBUI_JWT")
 local no_openwebui_cfg = function ()

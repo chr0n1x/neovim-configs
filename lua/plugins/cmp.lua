@@ -1,5 +1,10 @@
+if IN_PERF_MODE then return {} end
+
 return {
   'hrsh7th/nvim-cmp',
+
+  events = { "BufWritePost", "InsertEnter", "BufReadPost" },
+  lazy = true,
 
   dependencies = {
     'hrsh7th/cmp-emoji',
@@ -20,29 +25,34 @@ return {
         {name = 'nvim_lsp' },
         {name = 'path'},
         {name = 'luasnip', keyword_length = 8},
+
         {
           name = 'buffer',
-          keyword_length = 3,
+          keyword_length = 8,
           option = {
             get_bufnrs = function()
               return vim.api.nvim_list_bufs()
             end
           }
         },
+
         {
           name = 'tmux',
+          keyword_length = 4,
           option = {
             all_panes = true,
             capture_history = true,
           }
         },
+
+        per_filetype = {
+          codecompanion = { "codecompanion" },
+        },
+
         { name = "codecompanion_models" },
         { name = "codecompanion_slash_commands" },
         { name = "codecompanion_tools" },
         { name = "codecompanion_variables" },
-        per_filetype = {
-          codecompanion = { "codecompanion" },
-        }
       },
 
       mapping = cmp.mapping.preset.insert({

@@ -1,3 +1,5 @@
+if IN_PERF_MODE then return {} end
+
 return {
   'williamboman/mason.nvim',
   dependencies = {

@@ -1,24 +1,24 @@
-return {
+local uix_plugins = {
   {
     "folke/snacks.nvim",
     priority = 1000,
     lazy = false,
     opts = {
-      -- your configuration comes here
-      -- or leave it empty to use the default settings
-      -- refer to the configuration section below
       bigfile = { enabled = true },
-      dashboard = { enabled = true },
-      explorer = { enabled = true },
-      indent = { enabled = true },
+      dashboard = { enabled = DISABLED_FOR_PERF },
+      -- consistently clashes and screws w/ the UI when using cmp
+      -- TODO: optionally enable/disable w/ cmp in "lite" envs
+      explorer = { enabled = false },
+      indent = { enabled = DISABLED_FOR_PERF },
       input = { enabled = true },
-      picker = { enabled = true },
-      notifier = { enabled = true },
+      picker = { enabled = false },
+      notifier = { enabled = DISABLED_FOR_PERF },
       quickfile = { enabled = true },
       scope = { enabled = true },
-      scroll = { enabled = true },
-      statuscolumn = { enabled = true },
+      scroll = { enabled = false },
+      statuscolumn = { enabled = DISABLED_FOR_PERF },
       words = { enabled = true },
+      popupmenu = { enabled = false },
     }
   },
 
@@ -49,10 +49,6 @@ return {
     }
   },
 
-  {
-    "sphamba/smear-cursor.nvim",
-    opts = {},
-  },
 
   {
     'shaunsingh/nord.nvim',
@@ -76,10 +72,23 @@ return {
       require('windows').setup()
     end
   },
-
-  {
-    'MeanderingProgrammer/render-markdown.nvim',
-    dependencies = { 'nvim-treesitter/nvim-treesitter' },
-    opts = {}
-  }
 }
+
+if not IN_PERF_MODE then
+  table.insert(
+    uix_plugins,
+    -- initially did not like this, but very useful for REALLY big screens
+    { "sphamba/smear-cursor.nvim", opts = {} }
+  )
+
+  table.insert(
+    uix_plugins,
+    {
+      'MeanderingProgrammer/render-markdown.nvim',
+      dependencies = { 'nvim-treesitter/nvim-treesitter' },
+      opts = {}
+    }
+  )
+end
+
+return uix_plugins

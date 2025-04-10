@@ -1,3 +1,5 @@
+if IN_PERF_MODE then return {} end
+
 return {
   "folke/trouble.nvim",
   lazy = true,
