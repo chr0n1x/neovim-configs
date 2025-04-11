@@ -1,18 +1,26 @@
 local uix_plugins = {
   {
+    'rcarriga/nvim-notify',
+    priority = 1001,
+    lazy = false,
+    config = function ()
+      vim.notify = require("notify")
+    end,
+    keys = {
+      { '<leader>e', ':Telescope notify<CR>', { desc = "View notifications in Telescope." } },
+      { '<leader>ee', ':Telescope notify<CR>', { desc = "View notifications in Telescope." } },
+      { '<leader>ec', ':NotificationsClear<CR>', { desc = "Clear notifications." } },
+    }
+  },
+
+  -- I hate the notification plugins in this thing w/ a passion
+  {
     "folke/snacks.nvim",
     priority = 1000,
     lazy = false,
     opts = {
       dashboard = { enabled = DISABLED_IF_IN_PERF_MODE },
       indent = { enabled = DISABLED_IF_IN_PERF_MODE },
-      notify = { enabled = DISABLED_IF_IN_PERF_MODE },
-      notifier = {
-        enabled = DISABLED_IF_IN_PERF_MODE,
-        history = true,
-        level = vim.log.levels.TRACE,
-        timeout = 8000,
-      },
       scope = { enabled = true },
       statuscolumn = { enabled = DISABLED_IF_IN_PERF_MODE },
       layout = { enabled = true },
