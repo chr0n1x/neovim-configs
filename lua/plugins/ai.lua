@@ -11,11 +11,9 @@ local run_shell_cmd = function(shcmd)
   return result
 end
 
-local default_adapter = "ollama"
-if OPENWEBUI_ENABLED then
-  default_adapter = "gemma3"
-end
-local vectorcode_exists = pcall(run_shell_cmd, "which vectorcode")
+local ollama_model = 'qwen2.5-coder:7b-base-q6_K'
+local vectorcode_exists = pcall(run_shell_cmd, 'which vectorcode')
+local ollama_qwen_pulled = pcall(run_shell_cmd, 'ollama ls | grep ' .. ollama_model)
 
 local deps = {
   "nvim-lua/plenary.nvim",
@@ -27,10 +25,10 @@ end
 
 local cc_strats = {
   chat = {
-    adapter = default_adapter,
+    adapter = DEFAULT_AI_ADAPTER,
   },
   inline = {
-    adapter = default_adapter,
+    adapter = DEFAULT_AI_ADAPTER,
     keymaps = {
       accept_change = {
         modes = { n = "ga" },
@@ -61,7 +59,7 @@ local ai_plugins = {
       opts = opts or {}
 
       opts.adapters = opts.adapters or {}
-      opts.adapters["gemma3"] = function()
+      opts.adapters["openwebui"] = function()
         return require("codecompanion.adapters").extend("openai_compatible", {
           opts = {
             show_defaults = true,
@@ -78,7 +76,7 @@ local ai_plugins = {
             -- NOTE: startup time might be better with 1B
             -- 1080ti over proxmox pci passthrough to talos os is takes a few seconds for 4B
             -- and 12B takes FOREVER, t/s is also not too good
-            model = { default = "gemma3:4B" },
+            model = { default = "gemma3:27B" },
           },
         })
       end
@@ -120,7 +118,7 @@ local ai_plugins = {
       if OPENWEBUI_ENABLED then
         vim.notify(
           'codecompanion adapter ' ..
-            default_adapter .. ' AI via ' ..
+            DEFAULT_AI_ADAPTER .. ' AI via ' ..
             OPENWEBUI_URL .. ' enabled',
           vim.log.levels.INFO
         )
@@ -128,10 +126,16 @@ local ai_plugins = {
       end
 
       if OLLAMA_ENABLED then
-        vim.notify('codecompanion adapter ' .. default_adapter .. ' AI via ' .. OLLAMA_URL .. ' enabled', vim.log.levels.INFO)
+        vim.notify(
+          'codecompanion adapter ' ..
+            DEFAULT_AI_ADAPTER ..
+            ' AI via ' .. OLLAMA_URL ..
+            ' enabled',
+          vim.log.levels.INFO
+        )
       end
     end
-  }
+  },
 }
 
 if vectorcode_exists then
@@ -160,7 +164,7 @@ if vectorcode_exists then
       "Davidyz/VectorCode",
       lazy = false,
       build = "uvenv upgrade vectorcode",
-      version = "*",
+      -- version = "*",
       dependencies = { "nvim-lua/plenary.nvim" },
 
       keys = {
@@ -204,6 +208,39 @@ if vectorcode_exists then
             desc = "Register buffer for VectorCode",
           }
         )
+      end
+    }
+  )
+end
+
+if DEFAULT_AI_ADAPTER == "ollama" and ollama_qwen_pulled then
+  table.insert(
+    ai_plugins,
+    {
+      'tzachar/cmp-ai',
+      dependencies = 'nvim-lua/plenary.nvim',
+      config = function()
+        local cmp_ai = require('cmp_ai.config')
+
+        cmp_ai:setup({
+          max_lines = 50,
+          provider = 'Ollama',
+          provider_options = {
+            model = ollama_model,
+            prompt = function(lines_before, lines_after)
+              -- You may include filetype and/or other project-wise context in this string as well.
+              -- Consult model documentation in case there are special tokens for this.
+              return "<|fim_prefix|>" .. lines_before .. "<|fim_suffix|>" .. lines_after .. "<|fim_middle|>"
+            end,
+          },
+          notify = true,
+          notify_callback = function(msg)
+            vim.notify("Ollama-CMP: " .. msg)
+          end,
+          run_on_every_keystroke = false,
+        })
+
+        vim.notify('started cmp with Ollama model: ' .. ollama_model, vim.log.levels.INFO)
       end
     }
   )

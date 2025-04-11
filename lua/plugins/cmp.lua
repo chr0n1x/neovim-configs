@@ -55,12 +55,14 @@ end
 if OPENWEBUI_ENABLED or OLLAMA_ENABLED then
   table.insert(deps, 'olimorris/codecompanion.nvim')
   table.insert(deps, 'Davidyz/VectorCode')
+  table.insert(deps, 'tzachar/cmp-ai')
 
   table.insert(sources_list, {name = 'nvim_lsp' })
-  table.insert(sources_list, { name = "codecompanion_models" })
-  table.insert(sources_list, { name = "codecompanion_slash_commands" })
-  table.insert(sources_list, { name = "codecompanion_tools" })
-  table.insert(sources_list, { name = "codecompanion_variables" })
+  table.insert(sources_list, { name = 'cmp_ai' })
+  table.insert(sources_list, { name = 'codecompanion_models' })
+  table.insert(sources_list, { name = 'codecompanion_slash_commands' })
+  table.insert(sources_list, { name = 'codecompanion_tools' })
+  table.insert(sources_list, { name = 'codecompanion_variables' })
 
   sources_list["per_filetype"] = { codecompanion = { "codecompanion" } }
 end
@@ -77,9 +79,28 @@ return {
   config = function()
     local cmp = require('cmp')
     local cmp_select = {behavior = cmp.SelectBehavior.Select}
+    local compare = require('cmp.config.compare')
+    local compare_cfg = {
+      compare.offset,
+      compare.exact,
+      compare.score,
+      compare.recently_used,
+      compare.kind,
+      compare.sort_text,
+      compare.length,
+      compare.order,
+    }
+
+    if OLLAMA_ENABLED and DEFAULT_AI_ADAPTER == "ollama" then
+      table.insert(compare_cfg, 1, require('cmp_ai.compare'))
+    end
+
     cmp.setup({
       sources = sources_list,
-
+      sorting = {
+        priority_weight = 2,
+        comparators = compare_cfg,
+      },
       mapping = cmp.mapping.preset.insert({
         ['<Tab>'] = cmp.mapping.select_next_item(cmp_select),
         ['<CR>'] = cmp.mapping.confirm({ select = true }),
