@@ -2,12 +2,10 @@ if IN_PERF_MODE then return {} end
 if OLLAMA_DISABLED and OPENWEBUI_DISABLED then return {} end
 
 require('../util/shell')
+local task_notifications = require('../util/task_notifications')
 
 -- notification things
-local setup_notification_cfg = {
-  title = "AI Plugin Setup",
-  -- render = "compact"
-}
+local setup_notification_cfg = { title = "AI Plugin Setup", }
 
 local deps = {
   "nvim-lua/plenary.nvim",
@@ -235,58 +233,8 @@ if USING_OLLAMA then
         local cmp_ai = require('cmp_ai.config')
         local title = "Ollama-CMP"
         local msg = "querying ollama " .. OLLAMA_DEFAULT_MODEL
-
-        -- https://github.com/rcarriga/nvim-notify/issues/71
-        local spinner_frames = { "⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷" }
-
-        local function update_spinner(notif_data)
-          local new_spinner = (notif_data.spinner + 1) % #spinner_frames
-          notif_data.spinner = new_spinner
-
-          if notif_data.notification == nil then
-            return
-          end
-
-          notif_data.notification = vim.notify(
-            msg, nil,
-            {
-              hide_from_history = true,
-              icon = spinner_frames[new_spinner],
-              replace = notif_data.notification,
-            }
-          )
-
-          vim.defer_fn(function() update_spinner(notif_data) end, 64)
-        end
-
-        local notif_data = {}
         local start_notification = function()
-          notif_data.spinner = 1
-          if not notif_data.notification == nil then
-            vim.notify(
-                msg .. " aborted", vim.log.levels.WARN,
-                {
-                  title = title,
-                  timeout= 1500,
-                  hide_from_history=false,
-                  icon = " ",
-                  replace = notif_data.notification,
-                }
-              )
-            notif_data.notification = nil
-          end
-
-          notif_data.notification = vim.notify(
-            msg,
-            vim.log.levels.INFO,
-            {
-              title = title,
-              icon = spinner_frames[1],
-              timeout = false,
-              hide_from_history = true,
-            }
-          )
-          require('plenary.async').run(function() update_spinner(notif_data) end)
+          task_notifications.start(title, msg)
         end
 
         cmp_ai:setup({
@@ -304,18 +252,7 @@ if USING_OLLAMA then
           notify_callback = {
             on_start = start_notification,
             on_end = function ()
-              vim.notify(
-                msg, vim.log.levels.INFO,
-                {
-                  title = title,
-                  timeout= 1500,
-                  hide_from_history=false,
-                  icon = "",
-                  replace = notif_data.notification,
-                }
-              )
-
-              notif_data.notification = nil
+              task_notifications.clear(title)
             end,
           },
           -- notifications cannot keep up when this is set to true
