@@ -11,6 +11,7 @@ local uix_plugins = {
         enabled = DISABLED_IF_IN_PERF_MODE,
         history = true,
         level = vim.log.levels.TRACE,
+        timeout = 8000,
       },
       scope = { enabled = true },
       statuscolumn = { enabled = DISABLED_IF_IN_PERF_MODE },
