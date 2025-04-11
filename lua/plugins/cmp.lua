@@ -62,7 +62,7 @@ if OPENWEBUI_ENABLED or OLLAMA_ENABLED then
 
   sources_list["per_filetype"] = { codecompanion = { "codecompanion" } }
 
-  if USING_OLLAMA then
+  if USING_OLLAMA and OLLAMA_MODEL_PRESENT then
     table.insert(deps, 'tzachar/cmp-ai')
     table.insert(sources_list, { name = 'cmp_ai' })
   end
@@ -92,7 +92,7 @@ return {
       compare.order,
     }
 
-    if USING_OLLAMA then
+    if USING_OLLAMA and OLLAMA_MODEL_PRESENT then
       table.insert(compare_cfg, 1, require('cmp_ai.compare'))
     end
 
