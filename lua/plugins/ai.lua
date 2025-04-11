@@ -216,8 +216,6 @@ if vectorcode_exists then
 end
 
 if USING_OLLAMA then
-  notif_data = {}
-
   table.insert(
     ai_plugins,
     {
@@ -258,11 +256,26 @@ if USING_OLLAMA then
             }
           )
 
-          vim.defer_fn(function() update_spinner(notif_data) end, 256)
+          vim.defer_fn(function() update_spinner(notif_data) end, 64)
         end
 
+        local notif_data = {}
         local start_notification = function()
           notif_data.spinner = 1
+          if not notif_data.notification == nil then
+            vim.notify(
+                msg .. " aborted", vim.log.levels.WARN,
+                {
+                  title = title,
+                  timeout= 1500,
+                  hide_from_history=false,
+                  icon = " ",
+                  replace = notif_data.notification,
+                }
+              )
+            notif_data.notification = nil
+          end
+
           notif_data.notification = vim.notify(
             msg,
             vim.log.levels.INFO,
@@ -295,7 +308,7 @@ if USING_OLLAMA then
                 msg, vim.log.levels.INFO,
                 {
                   title = title,
-                  timeout= 2000,
+                  timeout= 1500,
                   hide_from_history=false,
                   icon = "",
                   replace = notif_data.notification,
@@ -305,9 +318,9 @@ if USING_OLLAMA then
               notif_data.notification = nil
             end,
           },
+          -- notifications cannot keep up when this is set to true
           run_on_every_keystroke = false,
         })
-
 
         vim.notify(
           'started cmp with Ollama model: ' .. OLLAMA_DEFAULT_MODEL,
