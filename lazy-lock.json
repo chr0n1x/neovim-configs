@@ -1,6 +1,6 @@
 {
   "LuaSnip": { "branch": "master", "commit": "c9b9a22904c97d0eb69ccb9bab76037838326817" },
-  "VectorCode": { "branch": "main", "commit": "d166cc625f09860aed90fdbea80017d1c82e275d" },
+  "VectorCode": { "branch": "main", "commit": "16e78ed8865c557e96fa245f6804b9ddd4f2f621" },
   "animation.nvim": { "branch": "main", "commit": "fb77091ab72ec9971aee0562e7081182527aaa6a" },
   "cmp-ai": { "branch": "main", "commit": "f5e4dcbf763770880d0a01fe2bc139eb47597261" },
   "cmp-buffer": { "branch": "main", "commit": "b74fab3656eea9de20a9b8116afa3cfc4ec09657" },
