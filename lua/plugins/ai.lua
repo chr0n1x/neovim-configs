@@ -3,6 +3,12 @@ if OLLAMA_DISABLED and OPENWEBUI_DISABLED then return {} end
 
 require('../util/shell')
 
+-- notification things
+local setup_notification_cfg = {
+  title = "AI Plugin Setup",
+  -- render = "compact"
+}
+
 local deps = {
   "nvim-lua/plenary.nvim",
   "nvim-treesitter/nvim-treesitter",
@@ -109,7 +115,8 @@ local ai_plugins = {
           'codecompanion adapter ' ..
             DEFAULT_AI_ADAPTER .. ' AI via ' ..
             OPENWEBUI_URL .. ' enabled',
-          vim.log.levels.INFO
+          vim.log.levels.INFO,
+          setup_notification_cfg
         )
       end
 
@@ -119,7 +126,8 @@ local ai_plugins = {
             DEFAULT_AI_ADAPTER ..
             ' AI via ' .. OLLAMA_URL ..
             ' enabled',
-          vim.log.levels.INFO
+          vim.log.levels.INFO,
+          setup_notification_cfg
         )
       end
     end
@@ -127,11 +135,16 @@ local ai_plugins = {
 }
 
 if vectorcode_exists then
+  local vc_notification_cfg = { title = "VectorCode", render = "compact" }
   local vectorise_codebase = function ()
     local ext = vim.fn.expand('%:e')
     local partial_glob = vim.fn.expand('%:h') .. "/**/*." .. ext
     if #ext == 0 then
-      vim.notify("Not Vectorising, no files found in " .. partial_glob, vim.log.levels.ERROR)
+      vim.notify(
+        "Not Vectorising, no files found in " .. partial_glob,
+        vim.log.levels.ERROR,
+        vc_notification_cfg
+      )
       return
     end
 
@@ -140,7 +153,7 @@ if vectorcode_exists then
       'vectorcode vectorise ' .. file_glob,
       {
         on_exit = function()
-          vim.notify("vectorised code in " .. partial_glob)
+          vim.notify("vectorised code in " .. partial_glob, vim.log.levels.INFO, vc_notification_cfg)
         end
       }
     )
@@ -167,7 +180,8 @@ if vectorcode_exists then
         if not ok or cw_gitdir == nil then
           vim.notify(
             "not in git repo, not initializing vectorcode; err: " .. cw_gitdir,
-            vim.log.levels.WARN
+            vim.log.levels.WARN,
+            setup_notification_cfg
           )
           return
         end
@@ -175,9 +189,9 @@ if vectorcode_exists then
         local vc_cmd = "vectorcode --project_root=" .. cw_gitdir:gsub("%s+", "") .. " init 2>&1 | tee"
         local vectocode_started, vectorcode_init_out = pcall(RUN_SHELL_CMD, vc_cmd)
         if vectocode_started then
-          vim.notify(vectorcode_init_out, vim.log.levels.INFO)
+          vim.notify(vectorcode_init_out, vim.log.levels.INFO, setup_notification_cfg)
         else
-          vim.notify(vectorcode_init_out, vim.log.levels.WARN)
+          vim.notify(vectorcode_init_out, vim.log.levels.WARN, setup_notification_cfg)
         end
 
         vim.api.nvim_create_autocmd(
@@ -202,21 +216,65 @@ if vectorcode_exists then
 end
 
 if USING_OLLAMA then
+  notif_data = {}
+
   table.insert(
     ai_plugins,
     {
-      'tzachar/cmp-ai',
+      'chr0n1x/cmp-ai',
+      -- 'tzachar/cmp-ai',
       dependencies = 'nvim-lua/plenary.nvim',
       config = function()
         if OLLAMA_MODEL_NOT_PRESENT then
           vim.notify(
             "Ollama CMP Config error for model " .. OLLAMA_DEFAULT_MODEL .. " (model does not exist)",
-            vim.log.levels.WARN
+            vim.log.levels.WARN,
+            setup_notification_cfg
           )
           return
         end
 
         local cmp_ai = require('cmp_ai.config')
+        local title = "Ollama-CMP"
+        local msg = "querying ollama " .. OLLAMA_DEFAULT_MODEL
+
+        -- https://github.com/rcarriga/nvim-notify/issues/71
+        local spinner_frames = { "⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷" }
+
+        local function update_spinner(notif_data)
+          local new_spinner = (notif_data.spinner + 1) % #spinner_frames
+          notif_data.spinner = new_spinner
+
+          if notif_data.notification == nil then
+            return
+          end
+
+          notif_data.notification = vim.notify(
+            msg, nil,
+            {
+              hide_from_history = true,
+              icon = spinner_frames[new_spinner],
+              replace = notif_data.notification,
+            }
+          )
+
+          vim.defer_fn(function() update_spinner(notif_data) end, 256)
+        end
+
+        local start_notification = function()
+          notif_data.spinner = 1
+          notif_data.notification = vim.notify(
+            msg,
+            vim.log.levels.INFO,
+            {
+              title = title,
+              icon = spinner_frames[1],
+              timeout = false,
+              hide_from_history = true,
+            }
+          )
+          require('plenary.async').run(function() update_spinner(notif_data) end)
+        end
 
         cmp_ai:setup({
           max_lines = 50,
@@ -230,13 +288,32 @@ if USING_OLLAMA then
             end,
           },
           notify = true,
-          notify_callback = function(msg)
-            vim.notify("Ollama-CMP: " .. msg)
-          end,
+          notify_callback = {
+            on_start = start_notification,
+            on_end = function ()
+              vim.notify(
+                msg, vim.log.levels.INFO,
+                {
+                  title = title,
+                  timeout= 2000,
+                  hide_from_history=false,
+                  icon = "",
+                  replace = notif_data.notification,
+                }
+              )
+
+              notif_data.notification = nil
+            end,
+          },
           run_on_every_keystroke = false,
         })
 
-        vim.notify('started cmp with Ollama model: ' .. OLLAMA_DEFAULT_MODEL, vim.log.levels.INFO)
+
+        vim.notify(
+          'started cmp with Ollama model: ' .. OLLAMA_DEFAULT_MODEL,
+          vim.log.levels.INFO,
+          setup_notification_cfg
+        )
       end
     }
   )
