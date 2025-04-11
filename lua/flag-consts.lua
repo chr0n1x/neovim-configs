@@ -1,3 +1,5 @@
+require('../util/shell')
+
 -- prevent a bunch of plugins from loading when on a machine like...
 -- an rpi zero
 IN_PERF_MODE = os.getenv("NVIM_LAZY_N_LITE") == "true"
@@ -20,8 +22,20 @@ OPENWEBUI_ENABLED = not OPENWEBUI_DISABLED
 OLLAMA_URL = os.getenv("OLLAMA_HOST")
 OLLAMA_DISABLED = OLLAMA_URL == "" or OLLAMA_URL == nil
 OLLAMA_ENABLED = not OLLAMA_DISABLED
+OLLAMA_DEFAULT_MODEL = 'qwen2.5-coder:7b-base-q6_K'
+local _, ollama_qwen_pulled_ec = pcall(
+  RUN_SHELL_CMD, 'ollama ls | grep ' .. OLLAMA_DEFAULT_MODEL
+)
+OLLAMA_MODEL_PRESENT = (ollama_qwen_pulled_ec == 0)
+OLLAMA_MODEL_NOT_PRESENT = not OLLAMA_MODEL_PRESENT
 
+-- where we actually decide _WHICH_ LLM provider/engine to use
+-- I don't want to enable two at a time
 DEFAULT_AI_ADAPTER = "ollama"
 if OPENWEBUI_ENABLED then
   DEFAULT_AI_ADAPTER = "openwebui"
 end
+-- NOTE: this flag only indicates whether we WANT to use ollama
+-- the model itself can still not exist
+USING_OLLAMA = OLLAMA_ENABLED and DEFAULT_AI_ADAPTER == "ollama"
+USING_OPENWEBUI = not USING_OLLAMA

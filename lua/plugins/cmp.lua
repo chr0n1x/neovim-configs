@@ -1,4 +1,3 @@
-
 -- deps that don't destroy a machine with less resources
 -- or are absolutely required
 local deps = {
@@ -20,7 +19,6 @@ local sources_list = {
       end
     }
   },
-
 }
 
 -- TODO: not sure if there are other simpler ones to add by default
@@ -55,16 +53,19 @@ end
 if OPENWEBUI_ENABLED or OLLAMA_ENABLED then
   table.insert(deps, 'olimorris/codecompanion.nvim')
   table.insert(deps, 'Davidyz/VectorCode')
-  table.insert(deps, 'tzachar/cmp-ai')
 
   table.insert(sources_list, {name = 'nvim_lsp' })
-  table.insert(sources_list, { name = 'cmp_ai' })
   table.insert(sources_list, { name = 'codecompanion_models' })
   table.insert(sources_list, { name = 'codecompanion_slash_commands' })
   table.insert(sources_list, { name = 'codecompanion_tools' })
   table.insert(sources_list, { name = 'codecompanion_variables' })
 
   sources_list["per_filetype"] = { codecompanion = { "codecompanion" } }
+
+  if USING_OLLAMA then
+    table.insert(deps, 'tzachar/cmp-ai')
+    table.insert(sources_list, { name = 'cmp_ai' })
+  end
 end
 
 
@@ -91,7 +92,7 @@ return {
       compare.order,
     }
 
-    if OLLAMA_ENABLED and DEFAULT_AI_ADAPTER == "ollama" then
+    if USING_OLLAMA then
       table.insert(compare_cfg, 1, require('cmp_ai.compare'))
     end
 

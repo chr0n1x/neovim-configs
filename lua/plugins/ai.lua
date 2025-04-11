@@ -1,24 +1,13 @@
 if IN_PERF_MODE then return {} end
 if OLLAMA_DISABLED and OPENWEBUI_DISABLED then return {} end
 
-local run_shell_cmd = function(shcmd)
-  local handle = io.popen(shcmd)
-  if handle == nil then return end
-
-  local result = handle:read("*a")
-  handle:close()
-
-  return result
-end
-
-local ollama_model = 'qwen2.5-coder:7b-base-q6_K'
-local vectorcode_exists = pcall(run_shell_cmd, 'which vectorcode')
-local ollama_qwen_pulled = pcall(run_shell_cmd, 'ollama ls | grep ' .. ollama_model)
+require('../util/shell')
 
 local deps = {
   "nvim-lua/plenary.nvim",
   "nvim-treesitter/nvim-treesitter",
 }
+local vectorcode_exists = pcall(RUN_SHELL_CMD, 'which vectorcode')
 if vectorcode_exists then
   table.insert(deps, "Davidyz/VectorCode")
 end
@@ -122,7 +111,6 @@ local ai_plugins = {
             OPENWEBUI_URL .. ' enabled',
           vim.log.levels.INFO
         )
-        return
       end
 
       if OLLAMA_ENABLED then
@@ -175,7 +163,7 @@ if vectorcode_exists then
       config = function ()
         if not vectorcode_exists then return end
 
-        local ok, cw_gitdir = pcall(run_shell_cmd, "git rev-parse --git-dir 2&> /dev/null")
+        local ok, cw_gitdir = pcall(RUN_SHELL_CMD, "git rev-parse --git-dir 2&> /dev/null")
         if not ok or cw_gitdir == nil then
           vim.notify(
             "not in git repo, not initializing vectorcode; err: " .. cw_gitdir,
@@ -185,7 +173,7 @@ if vectorcode_exists then
         end
 
         local vc_cmd = "vectorcode --project_root=" .. cw_gitdir:gsub("%s+", "") .. " init 2>&1 | tee"
-        local vectocode_started, vectorcode_init_out = pcall(run_shell_cmd, vc_cmd)
+        local vectocode_started, vectorcode_init_out = pcall(RUN_SHELL_CMD, vc_cmd)
         if vectocode_started then
           vim.notify(vectorcode_init_out, vim.log.levels.INFO)
         else
@@ -213,20 +201,28 @@ if vectorcode_exists then
   )
 end
 
-if DEFAULT_AI_ADAPTER == "ollama" and ollama_qwen_pulled then
+if USING_OLLAMA then
   table.insert(
     ai_plugins,
     {
       'tzachar/cmp-ai',
       dependencies = 'nvim-lua/plenary.nvim',
       config = function()
+        if OLLAMA_MODEL_NOT_PRESENT then
+          vim.notify(
+            "Ollama CMP Config error for model " .. OLLAMA_DEFAULT_MODEL .. " (model does not exist)",
+            vim.log.levels.WARN
+          )
+          return
+        end
+
         local cmp_ai = require('cmp_ai.config')
 
         cmp_ai:setup({
           max_lines = 50,
           provider = 'Ollama',
           provider_options = {
-            model = ollama_model,
+            model = OLLAMA_DEFAULT_MODEL,
             prompt = function(lines_before, lines_after)
               -- You may include filetype and/or other project-wise context in this string as well.
               -- Consult model documentation in case there are special tokens for this.
@@ -240,7 +236,7 @@ if DEFAULT_AI_ADAPTER == "ollama" and ollama_qwen_pulled then
           run_on_every_keystroke = false,
         })
 
-        vim.notify('started cmp with Ollama model: ' .. ollama_model, vim.log.levels.INFO)
+        vim.notify('started cmp with Ollama model: ' .. OLLAMA_DEFAULT_MODEL, vim.log.levels.INFO)
       end
     }
   )
