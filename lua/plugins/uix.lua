@@ -4,21 +4,18 @@ local uix_plugins = {
     priority = 1000,
     lazy = false,
     opts = {
-      bigfile = { enabled = true },
-      dashboard = { enabled = DISABLED_FOR_PERF },
-      -- consistently clashes and screws w/ the UI when using cmp
-      -- TODO: optionally enable/disable w/ cmp in "lite" envs
-      explorer = { enabled = false },
-      indent = { enabled = DISABLED_FOR_PERF },
-      input = { enabled = true },
-      picker = { enabled = false },
-      notifier = { enabled = DISABLED_FOR_PERF },
-      quickfile = { enabled = true },
+      dashboard = { enabled = DISABLED_IF_IN_PERF_MODE },
+      indent = { enabled = DISABLED_IF_IN_PERF_MODE },
+      notify = { enabled = DISABLED_IF_IN_PERF_MODE },
+      notifier = {
+        enabled = DISABLED_IF_IN_PERF_MODE,
+        history = true,
+        level = vim.log.levels.TRACE,
+      },
       scope = { enabled = true },
-      scroll = { enabled = false },
-      statuscolumn = { enabled = DISABLED_FOR_PERF },
-      words = { enabled = true },
-      popupmenu = { enabled = false },
+      statuscolumn = { enabled = DISABLED_IF_IN_PERF_MODE },
+      layout = { enabled = true },
+      win = { enabled = DISABLED_IF_IN_PERF_MODE },
     }
   },
 
@@ -71,7 +68,7 @@ local uix_plugins = {
       vim.o.equalalways = false
       require('windows').setup()
     end
-  },
+  }
 }
 
 if not IN_PERF_MODE then

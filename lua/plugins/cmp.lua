@@ -1,59 +1,84 @@
-if IN_PERF_MODE then return {} end
+
+-- deps that don't destroy a machine with less resources
+-- or are absolutely required
+local deps = {
+    'folke/snacks.nvim', -- lowkey UGH; for downstream notifications
+
+    'hrsh7th/cmp-buffer',
+    'hrsh7th/cmp-path',
+}
+
+-- default sources that don't kill the machine when trying to load
+local sources_list = {
+  {name = 'path'},
+  {
+    name = 'buffer',
+    keyword_length = 8,
+    option = {
+      get_bufnrs = function()
+        return vim.api.nvim_list_bufs()
+      end
+    }
+  },
+
+}
+
+-- TODO: not sure if there are other simpler ones to add by default
+local snippet_configs = {}
+
+if not IN_PERF_MODE then
+  table.insert(deps, 'hrsh7th/cmp-nvim-lsp')
+  table.insert(deps, 'hrsh7th/cmp-nvim-lua')
+  table.insert(deps, 'L3MON4D3/LuaSnip')
+  table.insert(deps, 'andersevenrud/cmp-tmux')
+
+  table.insert(sources_list, {name = 'nvim_lsp' })
+  table.insert(sources_list, {name = 'luasnip', keyword_length = 8})
+  table.insert(
+    sources_list,
+    {
+      name = 'tmux',
+      keyword_length = 4,
+      option = {
+        all_panes = true,
+        capture_history = true,
+      }
+    }
+  )
+
+  snippet_configs["expand"] = function(args)
+    require('luasnip').lsp_expand(args.body)
+  end
+end
+
+-- always add these if AI configs are detected; I hopefully know what Im doing
+if OPENWEBUI_ENABLED or OLLAMA_ENABLED then
+  table.insert(deps, 'olimorris/codecompanion.nvim')
+  table.insert(deps, 'Davidyz/VectorCode')
+
+  table.insert(sources_list, {name = 'nvim_lsp' })
+  table.insert(sources_list, { name = "codecompanion_models" })
+  table.insert(sources_list, { name = "codecompanion_slash_commands" })
+  table.insert(sources_list, { name = "codecompanion_tools" })
+  table.insert(sources_list, { name = "codecompanion_variables" })
+
+  sources_list["per_filetype"] = { codecompanion = { "codecompanion" } }
+end
+
 
 return {
   'hrsh7th/nvim-cmp',
 
-  events = { "BufWritePost", "InsertEnter", "BufReadPost" },
-  lazy = true,
+  events = { "BuffRead" },
+  lazy = false,
 
-  dependencies = {
-    'hrsh7th/cmp-emoji',
-    'hrsh7th/cmp-buffer',
-    'hrsh7th/cmp-path',
-    'hrsh7th/cmp-nvim-lsp',
-    'hrsh7th/cmp-nvim-lua',
-    'andersevenrud/cmp-tmux',
-    'L3MON4D3/LuaSnip',
-    'olimorris/codecompanion.nvim',
-  },
+  dependencies = deps,
 
-  init = function()
+  config = function()
     local cmp = require('cmp')
     local cmp_select = {behavior = cmp.SelectBehavior.Select}
     cmp.setup({
-      sources = {
-        {name = 'nvim_lsp' },
-        {name = 'path'},
-        {name = 'luasnip', keyword_length = 8},
-
-        {
-          name = 'buffer',
-          keyword_length = 8,
-          option = {
-            get_bufnrs = function()
-              return vim.api.nvim_list_bufs()
-            end
-          }
-        },
-
-        {
-          name = 'tmux',
-          keyword_length = 4,
-          option = {
-            all_panes = true,
-            capture_history = true,
-          }
-        },
-
-        per_filetype = {
-          codecompanion = { "codecompanion" },
-        },
-
-        { name = "codecompanion_models" },
-        { name = "codecompanion_slash_commands" },
-        { name = "codecompanion_tools" },
-        { name = "codecompanion_variables" },
-      },
+      sources = sources_list,
 
       mapping = cmp.mapping.preset.insert({
         ['<Tab>'] = cmp.mapping.select_next_item(cmp_select),
@@ -64,11 +89,7 @@ return {
         ['<C-Space>'] = cmp.mapping.complete(),
       }),
 
-      snippet = {
-        expand = function(args)
-          require('luasnip').lsp_expand(args.body)
-        end,
-      },
+      snippet = snippet_configs,
     })
 
     -- UI DECORATIONS
