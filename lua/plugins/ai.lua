@@ -197,8 +197,9 @@ if USING_OLLAMA then
   table.insert(
     ai_plugins,
     {
-      'chr0n1x/cmp-ai',
       -- 'tzachar/cmp-ai',
+      'chr0n1x/cmp-ai',
+      branch = "dev",
       dependencies = 'nvim-lua/plenary.nvim',
       config = function()
         if OLLAMA_MODEL_NOT_PRESENT then

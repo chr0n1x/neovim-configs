@@ -64,7 +64,7 @@ if OPENWEBUI_ENABLED or OLLAMA_ENABLED then
 
   if USING_OLLAMA and OLLAMA_MODEL_PRESENT then
     -- table.insert(deps, 'tzachar/cmp-ai')
-    table.insert(deps, 'chr0n1x/cmp-ai')
+    table.insert(deps, { 'chr0n1x/cmp-ai', branch = "dev" })
     table.insert(sources_list, { name = 'cmp_ai' })
   end
 end
