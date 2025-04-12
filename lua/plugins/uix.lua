@@ -1,3 +1,4 @@
+
 local uix_plugins = {
   {
     'rcarriga/nvim-notify',
@@ -19,7 +20,26 @@ local uix_plugins = {
     priority = 1000,
     lazy = false,
     opts = {
-      dashboard = { enabled = DISABLED_IF_IN_PERF_MODE },
+      dashboard = {
+        enabled = DISABLED_IF_IN_PERF_MODE,
+        preset = {
+          header = [[
+░░░░░░░█▐▓▓░████▄▄▄█▀▄▓▓▓▌█
+░░░░░▄█▌▀▄▓▓▄▄▄▄▀▀▀▄▓▓▓▓▓▌█
+░░░▄█▀▀▄▓█▓▓▓▓▓▓▓▓▓▓▓▓▀░▓▌█
+░░█▀▄▓▓▓███▓▓▓███▓▓▓▄░░▄▓▐█▌
+░█▌▓▓▓▀▀▓▓▓▓███▓▓▓▓▓▓▓▄▀▓▓▐█
+▐█▐██▐░▄▓▓▓▓▓▀▄░▀▓▓▓▓▓▓▓▓▓▌█▌
+█▌███▓▓▓▓▓▓▓▓▐░░▄▓▓███▓▓▓▄▀▐█
+█▐█▓▀░░▀▓▓▓▓▓▓▓▓▓██████▓▓▓▓▐█
+▌▓▄▌▀░▀░▐▀█▄▓▓██████████▓▓▓▌█▌
+▌▓▓▓▄▄▀▀▓▓▓▀▓▓▓▓▓▓▓▓█▓█▓█▓▓▌█▌
+█▐▓▓▓▓▓▓▄▄▄▓▓▓▓▓▓█▓█▓█▓█▓▓▓▐█
+Forever MoonJanglin'
+]],
+
+        }
+      },
       indent = { enabled = DISABLED_IF_IN_PERF_MODE },
       scope = { enabled = true },
       statuscolumn = { enabled = DISABLED_IF_IN_PERF_MODE },
