@@ -53,10 +53,11 @@ end
 function M.start(task_name, msg)
   M.cache[task_name] = M.cache[task_name] or {}
 
+  -- TODO: dont know if I should be aborting anything
   -- clear out everything before setting any defaults
-  if not M.cache[task_name].notification == nil then
-    M.clear(task_name, "")
-  end
+  -- if not M.cache[task_name].notification == nil then
+  --   M.clear(task_name, "")
+  -- end
 
   M.cache[task_name].spinner = 1
   M.cache[task_name].msg = msg
