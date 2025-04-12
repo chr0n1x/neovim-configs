@@ -32,6 +32,9 @@ function M.clear(task_name, icon)
   end
 
   icon = icon or ""
+  if icon == vim.log.levels.WARN then
+    icon = ""
+  end
 
   vim.notify(
     M.cache[task_name].msg, vim.log.levels.INFO,
@@ -52,7 +55,7 @@ function M.start(task_name, msg)
 
   -- clear out everything before setting any defaults
   if not M.cache[task_name].notification == nil then
-    M.clear_notification(task_name, "")
+    M.clear(task_name, "")
   end
 
   M.cache[task_name].spinner = 1
