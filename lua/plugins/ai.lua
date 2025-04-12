@@ -5,7 +5,11 @@ require('../util/shell')
 local task_notifications = require('../util/task_notifications')
 
 -- notification things
-local setup_notification_cfg = { title = "AI Plugin Setup", }
+local setup_notification_cfg = {
+  title = "AI Plugin Setup",
+  style = "minimal",
+  timeout = 1000,
+}
 
 local deps = {
   "nvim-lua/plenary.nvim",
@@ -147,13 +151,12 @@ if vectorcode_exists then
     end
 
     local file_glob = vim.fn.expand('%:p:h') .. "/**/*." .. ext
+    local task_name = "VectorCoderizing Codebase"
+    local msg = "running `vectorcode vectorise` in " .. partial_glob
+    task_notifications.start(task_name, msg)
     vim.fn.jobstart(
       'vectorcode vectorise ' .. file_glob,
-      {
-        on_exit = function()
-          vim.notify("vectorised code in " .. partial_glob, vim.log.levels.INFO, vc_notification_cfg)
-        end
-      }
+      { on_exit = function() task_notifications.clear(task_name) end }
     )
   end
 
@@ -172,26 +175,6 @@ if vectorcode_exists then
       },
 
       config = function ()
-        if not vectorcode_exists then return end
-
-        local ok, cw_gitdir = pcall(RUN_SHELL_CMD, "git rev-parse --git-dir 2&> /dev/null")
-        if not ok or cw_gitdir == nil then
-          vim.notify(
-            "not in git repo, not initializing vectorcode; err: " .. cw_gitdir,
-            vim.log.levels.WARN,
-            setup_notification_cfg
-          )
-          return
-        end
-
-        local vc_cmd = "vectorcode --project_root=" .. cw_gitdir:gsub("%s+", "") .. " init 2>&1 | tee"
-        local vectocode_started, vectorcode_init_out = pcall(RUN_SHELL_CMD, vc_cmd)
-        if vectocode_started then
-          vim.notify(vectorcode_init_out, vim.log.levels.INFO, setup_notification_cfg)
-        else
-          vim.notify(vectorcode_init_out, vim.log.levels.WARN, setup_notification_cfg)
-        end
-
         vim.api.nvim_create_autocmd(
           'LspAttach',
           {
@@ -199,10 +182,7 @@ if vectorcode_exists then
               local cacher = require("vectorcode.config").get_cacher_backend()
               local bufnr = vim.api.nvim_get_current_buf()
               cacher.async_check("config", function()
-                cacher.register_buffer(
-                  bufnr,
-                  { n_query = 10, }
-                )
+                cacher.register_buffer(bufnr, { n_query = 10, })
               end, nil)
             end,
             desc = "Register buffer for VectorCode",
@@ -231,10 +211,10 @@ if USING_OLLAMA then
         end
 
         local cmp_ai = require('cmp_ai.config')
-        local title = "Ollama-CMP"
+        local task_name = "Ollama-CMP"
         local msg = "querying ollama " .. OLLAMA_DEFAULT_MODEL
         local start_notification = function()
-          task_notifications.start(title, msg)
+          task_notifications.start(task_name, msg)
         end
 
         cmp_ai:setup({
@@ -251,9 +231,7 @@ if USING_OLLAMA then
           notify = true,
           notify_callback = {
             on_start = start_notification,
-            on_end = function ()
-              task_notifications.clear(title)
-            end,
+            on_end = function () task_notifications.clear(task_name) end,
           },
           -- notifications cannot keep up when this is set to true
           run_on_every_keystroke = false,

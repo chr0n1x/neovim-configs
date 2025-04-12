@@ -23,7 +23,7 @@ local function update_spinner(task_name)
     }
   )
 
-  vim.defer_fn(function() update_spinner(task_name) end, 64)
+  vim.defer_fn(function() update_spinner(task_name) end, 100)
 end
 
 function M.clear(task_name, icon)
