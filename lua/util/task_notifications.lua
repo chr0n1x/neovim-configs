@@ -1,29 +1,29 @@
 -- https://github.com/rcarriga/nvim-notify/issues/71
 
-local async = require("plenary.async")
-
 -- spinner frames from https://github.com/ryanoasis/nerd-fonts/blob/master/assets/Mononoki/Mononoki%20Regular%20Nerd%20Font%20Complete.ttf
 local spinner_frames = { "⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷" }
+local async = require("plenary.async")
 
 local M = { cache = {} }
 
 local function update_spinner(task_name)
-  if M.cache[task_name] == nil then
-    return
-  end
-  if M.cache[task_name].notification == nil then
+  if M.cache[task_name] ~= nil then
     return
   end
 
   local new_spinner = (M.cache[task_name].spinner + 1) % #spinner_frames
   M.cache[task_name].spinner = new_spinner
+  local updated_notif_opts = {
+    hide_from_history = true,
+    icon = spinner_frames[new_spinner],
+  }
+
+  if not M.cache[task_name].notification ~= nil then
+    updated_notif_opts.replace = M.cache[task_name].notification
+  end
+
   M.cache[task_name].notification = vim.notify(
-    M.cache[task_name].msg, nil,
-    {
-      hide_from_history = true,
-      icon = spinner_frames[new_spinner],
-      replace = M.cache[task_name].notification,
-    }
+    M.cache[task_name].msg, nil, updated_notif_opts
   )
 
   vim.defer_fn(function() update_spinner(task_name) end, 100)
@@ -56,7 +56,7 @@ function M.clear(task_name, icon)
     clear_notification_opts
   )
 
-  M.cache[task_name] = {}
+  M.cache[task_name] = nil
 end
 
 function M.start(task_name, msg)

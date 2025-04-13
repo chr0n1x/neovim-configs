@@ -215,6 +215,7 @@ if USING_OLLAMA then
         local task_name = "Ollama-CMP"
         local msg = "querying ollama " .. OLLAMA_DEFAULT_MODEL
         local start_notification = function()
+          task_notifications.clear(task_name, vim.log.levels.WARN)
           task_notifications.start(task_name, msg)
         end
 
