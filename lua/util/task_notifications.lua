@@ -34,7 +34,7 @@ local function update_spinner(task_name)
     render = notif_style,
   }
 
-  if not M.cache[task_name].notification ~= nil then
+  if M.cache[task_name].notification ~= nil then
     updated_notif_opts.replace = M.cache[task_name].notification
   end
 
@@ -42,7 +42,7 @@ local function update_spinner(task_name)
     M.cache[task_name].msg, nil, updated_notif_opts
   )
 
-  vim.defer_fn(function() update_spinner(task_name) end, 64)
+  vim.defer_fn(function() update_spinner(task_name) end, 100)
 end
 
 
@@ -59,7 +59,7 @@ function M.clear(task_name, log_level)
     hide_from_history = false,
   }
 
-  if not M.cache[task_name].notification ~= nil then
+  if M.cache[task_name].notification ~= nil then
     clear_notification_opts.replace =
       M.cache[task_name].notification
   end
@@ -90,5 +90,6 @@ function M.start(task_name, msg)
   )
   async.run(function() update_spinner(task_name) end)
 end
+
 
 return M

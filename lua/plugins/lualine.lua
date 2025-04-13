@@ -41,6 +41,7 @@ end
 if USING_OLLAMA and OLLAMA_MODEL_PRESENT then
   sections.lualine_c = {
     function ()
+      -- TODO: IWANNA MAKE THIS FAST AF BOI
       return  "🦙 " .. spinner[os.date('%S') % #spinner + 1]
     end
   }

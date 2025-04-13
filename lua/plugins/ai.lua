@@ -220,7 +220,7 @@ if USING_OLLAMA then
         end
 
         cmp_ai:setup({
-          max_lines = 50,
+          max_lines = 8, -- HOLY MOLY CAN BAD THINGS HAPPEN WHEN THIS IS TOO MUCH
           provider = 'Ollama',
           provider_options = {
             model = OLLAMA_DEFAULT_MODEL,
@@ -236,7 +236,12 @@ if USING_OLLAMA then
             on_end = function () task_notifications.clear(task_name) end,
           },
           -- notifications cannot keep up when this is set to true
+          -- HELL - they can barely keep up now
           run_on_every_keystroke = false,
+
+          -- TODO: EXPERIMENTAL
+          max_timeout = true,
+          cancel_existing_completions = true,
         })
 
         vim.notify(
