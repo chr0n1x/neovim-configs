@@ -31,6 +31,10 @@ if not IN_PERF_MODE then
   table.insert(deps, 'andersevenrud/cmp-tmux')
 
   table.insert(sources_list, {name = 'nvim_lsp' })
+  table.insert(sources_list, {
+    name = "lazydev",
+    group_index = 0, -- set group index to 0 to skip loading LuaLS completions
+  })
   table.insert(sources_list, {name = 'luasnip', keyword_length = 8})
   table.insert(
     sources_list,
@@ -54,7 +58,6 @@ if OPENWEBUI_ENABLED or OLLAMA_ENABLED then
   table.insert(deps, 'olimorris/codecompanion.nvim')
   table.insert(deps, 'Davidyz/VectorCode')
 
-  table.insert(sources_list, {name = 'nvim_lsp' })
   table.insert(sources_list, { name = 'codecompanion_models' })
   table.insert(sources_list, { name = 'codecompanion_slash_commands' })
   table.insert(sources_list, { name = 'codecompanion_tools' })
