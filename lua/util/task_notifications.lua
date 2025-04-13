@@ -3,6 +3,7 @@
 -- spinner frames from https://github.com/ryanoasis/nerd-fonts/blob/master/assets/Mononoki/Mononoki%20Regular%20Nerd%20Font%20Complete.ttf
 local spinner_frames = { "⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷" }
 local async = require("plenary.async")
+
 local M = { cache = {} }
 local notif_style = "wrapped-compact"
 
@@ -21,7 +22,7 @@ end
 
 
 local function update_spinner(task_name)
-  if M.cache[task_name] ~= nil then
+  if M.cache[task_name] == nil then
     return
   end
 
@@ -41,12 +42,12 @@ local function update_spinner(task_name)
     M.cache[task_name].msg, nil, updated_notif_opts
   )
 
-  vim.defer_fn(function() update_spinner(task_name) end, 32)
+  vim.defer_fn(function() update_spinner(task_name) end, 64)
 end
 
 
 function M.clear(task_name, log_level)
-  if not M.cache[task_name] then
+  if M.cache[task_name] == nil then
     return
   end
 
@@ -54,7 +55,7 @@ function M.clear(task_name, log_level)
     title = task_name,
     icon = log_icon(log_level),
     render = notif_style,
-    timeout= 1000,
+    timeout = 1000,
     hide_from_history = false,
   }
 
