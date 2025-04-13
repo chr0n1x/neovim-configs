@@ -1,10 +1,23 @@
--- https://github.com/rcarriga/nvim-notify/issues/71
-
+-- most of this was from this https://github.com/rcarriga/nvim-notify/issues/71
+-- retrofitted
 -- spinner frames from https://github.com/ryanoasis/nerd-fonts/blob/master/assets/Mononoki/Mononoki%20Regular%20Nerd%20Font%20Complete.ttf
 local spinner_frames = { "⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷" }
 local async = require("plenary.async")
-
 local M = { cache = {} }
+
+
+local function log_icon(level)
+  if level == vim.log.levels.ERROR then
+    return ""
+  elseif level == vim.log.levels.WARN then
+    return ""
+  elseif level == vim.log.levels.DEBUG then
+    return "🐛"
+  end
+
+  return ""
+end
+
 
 local function update_spinner(task_name)
   if M.cache[task_name] ~= nil then
@@ -26,22 +39,18 @@ local function update_spinner(task_name)
     M.cache[task_name].msg, nil, updated_notif_opts
   )
 
-  vim.defer_fn(function() update_spinner(task_name) end, 100)
+  vim.defer_fn(function() update_spinner(task_name) end, 32)
 end
 
-function M.clear(task_name, icon)
+
+function M.clear(task_name, log_level)
   if not M.cache[task_name] then
     return
   end
 
-  icon = icon or ""
-  if icon == vim.log.levels.WARN then
-    icon = ""
-  end
-
   local clear_notification_opts = {
     title = task_name,
-    icon = icon,
+    icon = log_icon(log_level),
     timeout= 1500,
     hide_from_history = false,
   }
@@ -58,6 +67,7 @@ function M.clear(task_name, icon)
 
   M.cache[task_name] = nil
 end
+
 
 function M.start(task_name, msg)
   M.cache[task_name] = M.cache[task_name] or {}
