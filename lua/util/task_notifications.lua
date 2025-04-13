@@ -4,6 +4,7 @@
 local spinner_frames = { "⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷" }
 local async = require("plenary.async")
 local M = { cache = {} }
+local notif_style = "wrapped-compact"
 
 
 local function log_icon(level)
@@ -29,6 +30,7 @@ local function update_spinner(task_name)
   local updated_notif_opts = {
     hide_from_history = true,
     icon = spinner_frames[new_spinner],
+    render = notif_style,
   }
 
   if not M.cache[task_name].notification ~= nil then
@@ -51,7 +53,8 @@ function M.clear(task_name, log_level)
   local clear_notification_opts = {
     title = task_name,
     icon = log_icon(log_level),
-    timeout= 1500,
+    render = notif_style,
+    timeout= 1000,
     hide_from_history = false,
   }
 
@@ -79,6 +82,7 @@ function M.start(task_name, msg)
     {
       title = task_name,
       icon = spinner_frames[1],
+      render = notif_style,
       timeout = false,
       hide_from_history = true,
     }
