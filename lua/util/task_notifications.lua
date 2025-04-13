@@ -1,5 +1,8 @@
 -- https://github.com/rcarriga/nvim-notify/issues/71
 
+local async = require("plenary.async")
+
+-- spinner frames from https://github.com/ryanoasis/nerd-fonts/blob/master/assets/Mononoki/Mononoki%20Regular%20Nerd%20Font%20Complete.ttf
 local spinner_frames = { "⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷" }
 
 local M = { cache = {} }
@@ -27,7 +30,7 @@ local function update_spinner(task_name)
 end
 
 function M.clear(task_name, icon)
-  if M.cache[task_name].notification == nil then
+  if not M.cache[task_name] then
     return
   end
 
@@ -36,15 +39,21 @@ function M.clear(task_name, icon)
     icon = ""
   end
 
+  local clear_notification_opts = {
+    title = task_name,
+    icon = icon,
+    timeout= 1500,
+    hide_from_history = false,
+  }
+
+  if not M.cache[task_name].notification ~= nil then
+    clear_notification_opts.replace =
+      M.cache[task_name].notification
+  end
+
   vim.notify(
     M.cache[task_name].msg, vim.log.levels.INFO,
-    {
-      title = task_name,
-      icon = icon,
-      timeout= 1500,
-      hide_from_history = false,
-      replace = M.cache[task_name].notification,
-    }
+    clear_notification_opts
   )
 
   M.cache[task_name] = {}
@@ -52,13 +61,6 @@ end
 
 function M.start(task_name, msg)
   M.cache[task_name] = M.cache[task_name] or {}
-
-  -- TODO: dont know if I should be aborting anything
-  -- clear out everything before setting any defaults
-  -- if not M.cache[task_name].notification == nil then
-  --   M.clear(task_name, "")
-  -- end
-
   M.cache[task_name].spinner = 1
   M.cache[task_name].msg = msg
   M.cache[task_name].notification = vim.notify(
@@ -71,7 +73,7 @@ function M.start(task_name, msg)
       hide_from_history = true,
     }
   )
-  require('plenary.async').run(function() update_spinner(task_name) end)
+  async.run(function() update_spinner(task_name) end)
 end
 
 return M
