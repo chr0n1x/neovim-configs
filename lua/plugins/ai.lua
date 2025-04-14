@@ -260,8 +260,10 @@ if USING_OLLAMA then
           -- HELL - they can barely keep up now
           run_on_every_keystroke = false,
 
+          -- testing this again to see what happens
+
           -- TODO: EXPERIMENTAL
-          max_timeout = true,
+          max_timeout_seconds = '8',
           cancel_existing_completions = true,
         })
 
