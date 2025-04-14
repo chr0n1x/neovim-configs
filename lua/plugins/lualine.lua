@@ -41,8 +41,7 @@ end
 if USING_OLLAMA and OLLAMA_MODEL_PRESENT then
   sections.lualine_c = {
     function ()
-      -- TODO: IWANNA MAKE THIS FAST AF BOI
-      return  "🦙 " .. spinner[os.date('%S') % #spinner + 1]
+      return  "🦙 " .. OLLAMA_DEFAULT_MODEL .. "  detected ✓"
     end
   }
 end
@@ -50,6 +49,7 @@ end
 return {
     'hoob3rt/lualine.nvim',
     lazy = false,
+    priority = 1000,
     dependencies = deps,
     opts = {
       options = {

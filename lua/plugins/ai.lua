@@ -232,8 +232,29 @@ if USING_OLLAMA then
           },
           notify = true,
           notify_callback = {
-            on_start = start_notification,
-            on_end = function () task_notifications.clear(task_name) end,
+            -- on_start = start_notification,
+            on_start = function ()
+              local conf = require('lualine').get_config()
+              conf.sections.lualine_c = {
+                {
+                  function ()
+                    local spinner = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }
+                    -- TODO: IWANNA MAKE THIS FAST AF BOI
+                    return  "🦙 " .. spinner[os.date('%S') % #spinner + 1] .. " " .. OLLAMA_DEFAULT_MODEL
+                  end
+                }
+              }
+              require('lualine').setup(conf)
+            end,
+
+            -- on_end = function () task_notifications.clear(task_name) end,
+            on_end = function ()
+              local conf = require('lualine').get_config()
+              conf.sections.lualine_c = {
+                { function () return  "🦙 ✓ " .. OLLAMA_DEFAULT_MODEL end }
+              }
+              require('lualine').setup(conf)
+            end,
           },
           -- notifications cannot keep up when this is set to true
           -- HELL - they can barely keep up now
