@@ -16,12 +16,18 @@ local function log_icon(level)
   elseif level == vim.log.levels.DEBUG then
     return "🐛"
   end
-
   return ""
 end
 
 
-local function update_spinner(task_name)
+local function update_spinner(task_name, curr_wait_defer)
+  curr_wait_defer = curr_wait_defer or 0
+  if curr_wait_defer >= 8000 then
+    M.clear(task_name, vim.log.levels.WARN)
+    return
+  end
+  curr_wait_defer = curr_wait_defer + 100
+
   if M.cache[task_name] == nil then
     return
   end
@@ -42,7 +48,10 @@ local function update_spinner(task_name)
     M.cache[task_name].msg, nil, updated_notif_opts
   )
 
-  vim.defer_fn(function() update_spinner(task_name) end, 100)
+  vim.defer_fn(
+    function() update_spinner(task_name, curr_wait_defer) end,
+    64
+  )
 end
 
 
