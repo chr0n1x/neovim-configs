@@ -123,11 +123,11 @@ local ai_plugins = {
       local statusmsg = 'codecompanion AI adapter(s) configured:\n\n'
 
       if OPENWEBUI_ENABLED then
-        statusmsg = statusmsg .. OPENWEBUI_MODEL .. ' via ' ..
+        statusmsg = statusmsg .. '> ' .. OPENWEBUI_MODEL .. ' via ' ..
           OPENWEBUI_URL .. ' (' .. OPENWEBUI_ADAPTER_NAME .. ') \n'
       end
       if OLLAMA_ENABLED then
-        statusmsg = statusmsg .. OLLAMA_MODEL .. ' via ' ..
+        statusmsg = statusmsg .. '> ' .. OLLAMA_MODEL .. ' via ' ..
           OLLAMA_URL .. ' (' .. OLLAMA_ADAPTER_NAME .. ') \n'
       end
       statusmsg = statusmsg .. "\n(cmp-ai is separate)"
@@ -196,7 +196,7 @@ if vectorcode_exists then
   )
 end
 
-if OLLAMA_ENABLED then
+if OLLAMA_ENABLED and OLLAMA_MODEL_PRESENT then
   table.insert(
     ai_plugins,
     {
@@ -215,12 +215,14 @@ if OLLAMA_ENABLED then
         end
 
         local cmp_ai = require('cmp_ai.config')
-        local task_name = "Ollama-CMP"
-        local msg = "querying ollama " .. OLLAMA_MODEL
-        local start_notification = function()
-          task_notifications.clear(task_name, vim.log.levels.WARN)
-          task_notifications.start(task_name, msg)
-        end
+        -- local task_name = "Ollama-CMP"
+        -- local msg = "querying ollama " .. OLLAMA_MODEL
+        -- local start_notification = function()
+        --   task_notifications.clear(task_name, vim.log.levels.WARN)
+        --   task_notifications.start(task_name, msg)
+        -- end
+
+        print('here')
 
         cmp_ai:setup({
           max_lines = 8, -- HOLY MOLY CAN BAD THINGS HAPPEN WHEN THIS IS TOO MUCH
@@ -237,6 +239,7 @@ if OLLAMA_ENABLED then
           notify_callback = {
             -- on_start = start_notification,
             on_start = function ()
+  print('onstart')
               local conf = require('lualine').get_config()
               conf.sections.lualine_c = {
                 {
@@ -252,6 +255,7 @@ if OLLAMA_ENABLED then
 
             -- on_end = function () task_notifications.clear(task_name) end,
             on_end = function ()
+  print('onend')
               local conf = require('lualine').get_config()
               conf.sections.lualine_c = {
                 { function () return  "🦙 ✓ " .. OLLAMA_MODEL end }
@@ -263,11 +267,10 @@ if OLLAMA_ENABLED then
           -- HELL - they can barely keep up now
           run_on_every_keystroke = false,
 
-          -- testing this again to see what happens
-
           -- TODO: EXPERIMENTAL
           max_timeout_seconds = '8',
           cancel_existing_completions = true,
+          log_errors = false,
         })
 
         vim.notify(

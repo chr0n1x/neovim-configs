@@ -36,10 +36,10 @@ if IN_PERF_MODE then
   sections.lualine_c = {
     function () return " AI cmp disabled (perf. mode)" end
   }
-elseif USING_OLLAMA and OLLAMA_MODEL_PRESENT then
+elseif OLLAMA_ENABLED and OLLAMA_MODEL_PRESENT then
   sections.lualine_c = {
     function ()
-      return  "🦙 " .. OLLAMA_DEFAULT_MODEL .. "  detected ✓"
+      return  "🦙 " .. OLLAMA_MODEL .. " detected ✓"
     end
   }
 end
