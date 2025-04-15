@@ -130,6 +130,7 @@ local ai_plugins = {
         statusmsg = statusmsg .. OLLAMA_MODEL .. ' via ' ..
           OLLAMA_URL .. ' (' .. OLLAMA_ADAPTER_NAME .. ') \n'
       end
+      statusmsg = statusmsg .. "\n(cmp-ai is separate)"
 
       if OLLAMA_ENABLED or OPENWEBUI_ENABLED then
         vim.notify(statusmsg, vim.log.levels.INFO, setup_notification_cfg)
