@@ -49,7 +49,7 @@ local ai_plugins = {
     dependencies = deps,
 
     keys = {
-      { '<leader>c', ':CodeCompanionActions<CR>', { desc = 'CodeCompanion: Actions.' } },
+      { '<leader>c', ':CodeCompanionActions<CR>', desc = 'CodeCompanion: Actions.' },
     },
 
     config = function (_, opts)
@@ -170,8 +170,8 @@ if vectorcode_exists then
       dependencies = { "nvim-lua/plenary.nvim" },
 
       keys = {
-        { '<leader>v', ':VectorCode register<CR>', { desc = 'VectorCode' } },
-        { '<leader>vv', vectorise_codebase, { desc = 'vectorise current codebase.' } },
+        { '<leader>v', ':VectorCode register<CR>', desc = 'VectorCode register' },
+        { '<leader>vv', vectorise_codebase, desc = 'vectorise current codebase.' },
       },
 
       config = function ()

@@ -22,7 +22,7 @@ OPENWEBUI_ENABLED = not OPENWEBUI_DISABLED
 OLLAMA_URL = os.getenv("OLLAMA_HOST")
 OLLAMA_DISABLED = OLLAMA_URL == "" or OLLAMA_URL == nil
 OLLAMA_ENABLED = not OLLAMA_DISABLED
-OLLAMA_DEFAULT_MODEL = 'qwen2.5-coder:7b-base-q6_K'
+OLLAMA_DEFAULT_MODEL = 'qwen2.5-coder:14b-base-q6_K'
 local ok, out = pcall(
   RUN_SHELL_CMD, 'ollama ls | grep ' .. OLLAMA_DEFAULT_MODEL
 )

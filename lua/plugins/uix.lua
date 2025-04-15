@@ -8,9 +8,9 @@ local uix_plugins = {
       vim.notify = require("notify")
     end,
     keys = {
-      { '<leader>e', ':lua require("notify").dismiss()<CR>', { desc = "Clear notifications." } },
-      { '<leader>ec', ':lua require("notify").dismiss()<CR>', { desc = "Clear notifications." } },
-      { '<leader>eh', ':Telescope notify<CR>', { desc = "View notifications in Telescope." } },
+      { '<leader>e', ':lua require("notify").dismiss()<CR>', desc = "Clear notifications." },
+      { '<leader>ec', ':lua require("notify").dismiss()<CR>', desc = "Clear notifications." },
+      { '<leader>eh', ':Telescope notify<CR>', desc = "View notifications in Telescope." },
     }
   },
 
