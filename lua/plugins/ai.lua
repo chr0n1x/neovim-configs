@@ -39,6 +39,13 @@ local cc_strats = {
   }
 }
 
+if OLLAMA_ENABLED then
+  cc_strats.inline.adapter = OLLAMA_ADAPTER_NAME
+end
+if OPENWEBUI_ENABLED then
+  cc_strats.chat.adapter = OPENWEBUI_ADAPTER_NAME
+end
+
 -- starting configuration here, above are just general flags
 
 local ai_plugins = {
@@ -56,46 +63,47 @@ local ai_plugins = {
       opts = opts or {}
 
       opts.adapters = opts.adapters or {}
-      opts.adapters["openwebui"] = function()
-        return require("codecompanion.adapters").extend("openai_compatible", {
-          opts = {
-            show_defaults = true,
-            display = { show_settings = true }
-          },
 
-          env = {
-            url = OPENWEBUI_URL,
-            api_key = OPENWEBUI_JWT,
-            chat_url = "/api/chat/completions",
-            models_endpoint = "/api/models",
-          },
-          schema = {
-            -- NOTE: startup time might be better with 1B
-            -- 1080ti over proxmox pci passthrough to talos os is takes a few seconds for 4B
-            -- and 12B takes FOREVER, t/s is also not too good
-            model = { default = "gemma3:27B" },
-          },
-        })
+      if OPENWEBUI_ENABLED then
+        opts.adapters["openwebui"] = function()
+          return require("codecompanion.adapters").extend("openai_compatible", {
+            opts = {
+              show_defaults = true,
+              display = { show_settings = true }
+            },
+
+            env = {
+              url = OPENWEBUI_URL,
+              api_key = OPENWEBUI_JWT,
+              chat_url = "/api/chat/completions",
+              models_endpoint = "/api/models",
+            },
+            schema = {
+              model = { default = OPENWEBUI_MODEL },
+            },
+          })
+        end
       end
-      opts.adapters["ollama"] = function()
-        return require("codecompanion.adapters").extend("ollama", {
-          model = "qwen2.5-coder:7b",
-          opts = {
-            allow_insecure = true,
-            show_defaults = true,
-          },
-          env = {
-            url = OLLAMA_URL,
-            api_key = "OLLAMA_API_KEY",
-          },
-          headers = {
-            ["Content-Type"] = "application/json",
-            ["Authorization"] = "Bearer ${api_key}",
-          },
-          parameters = {
-            sync = true,
-          },
-        })
+
+      if OLLAMA_ENABLED then
+        opts.adapters["ollama"] = function()
+          return require("codecompanion.adapters").extend("ollama", {
+            model = OLLAMA_MODEL,
+            opts = {
+              allow_insecure = true,
+              show_defaults = true,
+            },
+            env = {
+              url = OLLAMA_URL,
+              api_key = OLLAMA_API_KEY,
+            },
+            headers = {
+              ["Content-Type"] = "application/json",
+              ["Authorization"] = "Bearer ${api_key}",
+            },
+            parameters = { sync = true },
+          })
+        end
       end
 
       if vectorcode_exists then
@@ -108,29 +116,23 @@ local ai_plugins = {
           }
         }
       end
-      opts.strategies = cc_strats
 
+      opts.strategies = cc_strats
       require('codecompanion').setup(opts)
 
+      local statusmsg = 'codecompanion AI adapter(s) configured:\n\n'
+
       if OPENWEBUI_ENABLED then
-        vim.notify(
-          'codecompanion adapter ' ..
-            DEFAULT_AI_ADAPTER .. ' AI via ' ..
-            OPENWEBUI_URL .. ' enabled',
-          vim.log.levels.INFO,
-          setup_notification_cfg
-        )
+        statusmsg = statusmsg .. OPENWEBUI_MODEL .. ' via ' ..
+          OPENWEBUI_URL .. ' (' .. OPENWEBUI_ADAPTER_NAME .. ') \n'
+      end
+      if OLLAMA_ENABLED then
+        statusmsg = statusmsg .. OLLAMA_MODEL .. ' via ' ..
+          OLLAMA_URL .. ' (' .. OLLAMA_ADAPTER_NAME .. ') \n'
       end
 
-      if OLLAMA_ENABLED then
-        vim.notify(
-          'codecompanion adapter ' ..
-            DEFAULT_AI_ADAPTER ..
-            ' AI via ' .. OLLAMA_URL ..
-            ' enabled',
-          vim.log.levels.INFO,
-          setup_notification_cfg
-        )
+      if OLLAMA_ENABLED or OPENWEBUI_ENABLED then
+        vim.notify(statusmsg, vim.log.levels.INFO, setup_notification_cfg)
       end
     end
   },
@@ -193,7 +195,7 @@ if vectorcode_exists then
   )
 end
 
-if USING_OLLAMA then
+if OLLAMA_ENABLED then
   table.insert(
     ai_plugins,
     {
@@ -204,7 +206,7 @@ if USING_OLLAMA then
       config = function()
         if OLLAMA_MODEL_NOT_PRESENT then
           vim.notify(
-            "Ollama CMP Config error for model " .. OLLAMA_DEFAULT_MODEL .. " (model does not exist)",
+            "Ollama CMP Config error for model " .. OLLAMA_MODEL .. " (model does not exist)",
             vim.log.levels.WARN,
             setup_notification_cfg
           )
@@ -213,7 +215,7 @@ if USING_OLLAMA then
 
         local cmp_ai = require('cmp_ai.config')
         local task_name = "Ollama-CMP"
-        local msg = "querying ollama " .. OLLAMA_DEFAULT_MODEL
+        local msg = "querying ollama " .. OLLAMA_MODEL
         local start_notification = function()
           task_notifications.clear(task_name, vim.log.levels.WARN)
           task_notifications.start(task_name, msg)
@@ -223,7 +225,7 @@ if USING_OLLAMA then
           max_lines = 8, -- HOLY MOLY CAN BAD THINGS HAPPEN WHEN THIS IS TOO MUCH
           provider = 'Ollama',
           provider_options = {
-            model = OLLAMA_DEFAULT_MODEL,
+            model = OLLAMA_MODEL,
             prompt = function(lines_before, lines_after)
               -- You may include filetype and/or other project-wise context in this string as well.
               -- Consult model documentation in case there are special tokens for this.
@@ -240,7 +242,7 @@ if USING_OLLAMA then
                   function ()
                     local spinner = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }
                     -- TODO: IWANNA MAKE THIS FAST AF BOI
-                    return  "🦙 " .. spinner[os.date('%S') % #spinner + 1] .. " " .. OLLAMA_DEFAULT_MODEL
+                    return  "🦙 " .. spinner[os.date('%S') % #spinner + 1] .. " " .. OLLAMA_MODEL
                   end
                 }
               }
@@ -251,7 +253,7 @@ if USING_OLLAMA then
             on_end = function ()
               local conf = require('lualine').get_config()
               conf.sections.lualine_c = {
-                { function () return  "🦙 ✓ " .. OLLAMA_DEFAULT_MODEL end }
+                { function () return  "🦙 ✓ " .. OLLAMA_MODEL end }
               }
               require('lualine').setup(conf)
             end,
@@ -268,7 +270,7 @@ if USING_OLLAMA then
         })
 
         vim.notify(
-          'started cmp with Ollama model: ' .. OLLAMA_DEFAULT_MODEL,
+          'started cmp with Ollama model: ' .. OLLAMA_MODEL,
           vim.log.levels.INFO,
           setup_notification_cfg
         )
