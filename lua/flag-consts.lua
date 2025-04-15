@@ -1,4 +1,4 @@
-require('../util/shell')
+require('./util/shell')
 
 -- prevent a bunch of plugins from loading when on a machine like...
 -- an rpi zero
@@ -38,5 +38,5 @@ OLLAMA_ADAPTER_NAME = "ollama"
 
 DEFAULT_AI_ADAPTER = OLLAMA_ADAPTER_NAME
 if OPENWEBUI_ENABLED then
-  DEFAULT_AI_ADAPTER = OPENWEB_UI_ADAPTER_NAME
+  DEFAULT_AI_ADAPTER = OPENWEBUI_ADAPTER_NAME
 end
