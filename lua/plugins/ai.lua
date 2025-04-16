@@ -223,8 +223,6 @@ if OLLAMA_ENABLED and OLLAMA_MODEL_PRESENT then
         --   task_notifications.start(task_name, msg)
         -- end
 
-        print('here')
-
         cmp_ai:setup({
           max_lines = 8, -- HOLY MOLY CAN BAD THINGS HAPPEN WHEN THIS IS TOO MUCH
           provider = 'Ollama',
@@ -240,7 +238,6 @@ if OLLAMA_ENABLED and OLLAMA_MODEL_PRESENT then
           notify_callback = {
             -- on_start = start_notification,
             on_start = function ()
-  print('onstart')
               local conf = require('lualine').get_config()
               conf.sections.lualine_c = {
                 {
@@ -256,7 +253,6 @@ if OLLAMA_ENABLED and OLLAMA_MODEL_PRESENT then
 
             -- on_end = function () task_notifications.clear(task_name) end,
             on_end = function ()
-  print('onend')
               local conf = require('lualine').get_config()
               conf.sections.lualine_c = {
                 { function () return  "🦙 ✓ " .. OLLAMA_MODEL end }
