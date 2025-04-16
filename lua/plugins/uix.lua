@@ -48,7 +48,30 @@ Forever MoonJanglin'
     }
   },
 
+  {
+    'tris203/precognition.nvim',
+    opts = {
+      startVisible = true,
+      showBlankVirtLine = false,
+      highlightColor = { link = "LineNr" },
+      gutterHints = {
+        G = { text = "G", prio = 10 },
+        gg = { text = "gg", prio = 9 },
+        PrevParagraph = { text = "{", prio = 8 },
+        NextParagraph = { text = "}", prio = 8 },
+      },
+    },
+    keys = {
+      {'<leader>P', ':lua require("precognition").peek()<CR>', desc = 'toggle precognition'},
+    }
+  },
 
+  -- Im too weenie hut juniors for this
+  -- {
+  --   "m4xshen/hardtime.nvim",
+  --   dependencies = { "MunifTanjim/nui.nvim" },
+  --   opts = {}
+  -- },
 
   {
     'shaunsingh/nord.nvim',

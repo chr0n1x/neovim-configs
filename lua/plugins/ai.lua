@@ -153,6 +153,7 @@ if vectorcode_exists then
       return
     end
 
+
     local file_glob = vim.fn.expand('%:p:h') .. "/**/*." .. ext
     local task_name = "VectorCoderizing Codebase"
     local msg = "running `vectorcode vectorise` in " .. partial_glob
