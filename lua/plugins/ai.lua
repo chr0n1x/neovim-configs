@@ -153,7 +153,6 @@ if vectorcode_exists then
       return
     end
 
-
     local file_glob = vim.fn.expand('%:p:h') .. "/**/*." .. ext
     local task_name = "VectorCoderizing Codebase"
     local msg = "running `vectorcode vectorise` in " .. partial_glob
@@ -202,6 +201,22 @@ if vectorcode_exists then
         { '<leader>v', ':VectorCode register<CR>', desc = 'VectorCode register' },
         { '<leader>vv', vectorise_codebase, desc = 'vectorise current codebase.' },
       },
+      opts = function()
+        return {
+          async_backend = "lsp",
+          notify = true,
+          on_setup = { lsp = false },
+          n_query = 10,
+          timeout_ms = -1,
+          async_opts = {
+            events = { "BufWritePost" },
+            single_job = true,
+            query_cb = require("vectorcode.utils").make_surrounding_lines_cb(40),
+            debounce = -1,
+            n_query = 30,
+          },
+        }
+      end,
 
       config = function ()
         vim.api.nvim_create_autocmd(
@@ -212,11 +227,18 @@ if vectorcode_exists then
               local bufnr = vim.api.nvim_get_current_buf()
               cacher.async_check("config", function()
                 cacher.register_buffer(bufnr, { n_query = 10, })
+                -- local query_results = cacher.query_from_cache(0, {notify=true})
+                -- vim.notify(query_results)
               end, nil)
             end,
             desc = "Register buffer for VectorCode",
           }
         )
+      end,
+
+      cmd = "VectorCode",
+      cond = function()
+        return vim.fn.executable("vectorcode") == 1
       end
     }
   )
@@ -241,12 +263,6 @@ if OLLAMA_ENABLED and OLLAMA_MODEL_PRESENT then
         end
 
         local cmp_ai = require('cmp_ai.config')
-        -- local task_name = "Ollama-CMP"
-        -- local msg = "querying ollama " .. OLLAMA_MODEL
-        -- local start_notification = function()
-        --   task_notifications.clear(task_name, vim.log.levels.WARN)
-        --   task_notifications.start(task_name, msg)
-        -- end
 
         cmp_ai:setup({
           max_lines = 8, -- HOLY MOLY CAN BAD THINGS HAPPEN WHEN THIS IS TOO MUCH
@@ -256,12 +272,55 @@ if OLLAMA_ENABLED and OLLAMA_MODEL_PRESENT then
             prompt = function(lines_before, lines_after)
               -- You may include filetype and/or other project-wise context in this string as well.
               -- Consult model documentation in case there are special tokens for this.
-              return "<|fim_prefix|>" .. lines_before .. "<|fim_suffix|>" .. lines_after .. "<|fim_middle|>"
+              local default_prompt = "<|fim_prefix|>\n" .. lines_before .. "\n<|fim_suffix|>\n" .. lines_after .. "\n<|fim_middle|>"
+
+              if not vectorcode_exists then
+                return default_prompt
+              end
+
+              local cacher = require("vectorcode.config").get_cacher_backend()
+              local bufnr = vim.api.nvim_get_current_buf()
+              cacher.register_buffer(bufnr, {
+                n_query = 5,
+                single_job = true,
+              })
+              local query_results = cacher.query_from_cache(bufnr)
+
+              if #query_results == 0 then
+                vim.notify(
+                  'vectorcode cache did not return any results for LLM prompt',
+                  vim.log.levels.DEBUG
+                )
+                return default_prompt
+              end
+
+              for _, source in pairs(query_results) do
+                -- This works for qwen2.5-coder.
+                default_prompt = "<|file_sep|>"
+                .. source.path
+                .. "\n"
+                .. source.document
+                .. "\n"
+                .. "<|file_sep|>"
+                .. "\n\n"
+                .. default_prompt
+              end
+
+              vim.notify(
+                default_prompt,
+                vim.log.levels.DEBUG,
+                { title = 'LLM prompt w/ vectorcode RAG' }
+              )
+
+              return default_prompt
             end,
           },
           notify = true,
           notify_callback = {
+            -- old notify style notifications
             -- on_start = start_notification,
+            -- on_end = function () task_notifications.clear(task_name) end,
+
             on_start = function ()
               local conf = require('lualine').get_config()
               conf.sections.lualine_c = {
@@ -276,7 +335,6 @@ if OLLAMA_ENABLED and OLLAMA_MODEL_PRESENT then
               require('lualine').setup(conf)
             end,
 
-            -- on_end = function () task_notifications.clear(task_name) end,
             on_end = function ()
               local conf = require('lualine').get_config()
               conf.sections.lualine_c = {
@@ -285,11 +343,10 @@ if OLLAMA_ENABLED and OLLAMA_MODEL_PRESENT then
               require('lualine').setup(conf)
             end,
           },
-          -- notifications cannot keep up when this is set to true
-          -- HELL - they can barely keep up now
-          run_on_every_keystroke = false,
 
           -- TODO: EXPERIMENTAL
+          run_on_every_keystroke = true,
+          async_prompting = true,
           max_timeout_seconds = '8',
           cancel_existing_completions = true,
           log_errors = false,
