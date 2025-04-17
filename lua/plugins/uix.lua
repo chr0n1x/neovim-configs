@@ -1,4 +1,3 @@
-
 local uix_plugins = {
   {
     'rcarriga/nvim-notify',
@@ -48,10 +47,19 @@ Forever MoonJanglin'
     }
   },
 
+  -- adds borders to cmp popups because OH MY GOD
+  {
+    'mikesmithgh/borderline.nvim',
+    enabled = true,
+    lazy = true,
+    event = 'VeryLazy',
+    config = function() require('borderline').setup({}) end,
+  },
+
   {
     'tris203/precognition.nvim',
     opts = {
-      startVisible = true,
+      startVisible = false,
       showBlankVirtLine = false,
       highlightColor = { link = "LineNr" },
       gutterHints = {
@@ -62,15 +70,15 @@ Forever MoonJanglin'
       },
     },
     keys = {
-      {'<leader>P', ':lua require("precognition").peek()<CR>', desc = 'toggle precognition'},
+      {'<leader>P', ':lua require("precognition").toggle()<CR>', desc = 'toggle precognition'},
     }
   },
 
-  -- Im too weenie hut juniors for this
   {
     "m4xshen/hardtime.nvim",
     dependencies = { "MunifTanjim/nui.nvim" },
     config = function ()
+      -- Im too weenie hut juniors for this
       require("hardtime").setup({ restriction_mode = "hint" })
     end
   },
@@ -78,25 +86,8 @@ Forever MoonJanglin'
   {
     'shaunsingh/nord.nvim',
     lazy = false,
-    init = function()
-      require('nord').set()
-    end
+    init = function() require('nord').set() end
   },
-
-  {
-    "anuvyklack/windows.nvim",
-    lazy = false,
-    dependencies = {
-      "anuvyklack/middleclass",
-      "anuvyklack/animation.nvim"
-    },
-    init = function()
-      vim.o.winwidth = 10
-      vim.o.winminwidth = 10
-      vim.o.equalalways = false
-      require('windows').setup()
-    end
-  }
 }
 
 if not IN_PERF_MODE then
@@ -112,6 +103,24 @@ if not IN_PERF_MODE then
       'MeanderingProgrammer/render-markdown.nvim',
       dependencies = { 'nvim-treesitter/nvim-treesitter' },
       opts = {}
+    }
+  )
+
+  table.insert(
+    uix_plugins,
+    {
+      "anuvyklack/windows.nvim",
+      lazy = false,
+      dependencies = {
+        "anuvyklack/middleclass",
+        "anuvyklack/animation.nvim"
+      },
+      init = function()
+        vim.o.winwidth = 10
+        vim.o.winminwidth = 10
+        vim.o.equalalways = false
+        require('windows').setup()
+      end
     }
   )
 end
