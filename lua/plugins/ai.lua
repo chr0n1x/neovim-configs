@@ -158,9 +158,34 @@ if vectorcode_exists then
     local task_name = "VectorCoderizing Codebase"
     local msg = "running `vectorcode vectorise` in " .. partial_glob
     task_notifications.start(task_name, msg)
+    local stderr = {}
+    local stdout = {}
     vim.fn.jobstart(
       'vectorcode vectorise ' .. file_glob,
-      { on_exit = function() task_notifications.clear(task_name) end }
+      {
+        on_stdout = function(chanid, data, name)
+          table.insert(stdout, { chanid = chanid, data = data, name = name })
+        end,
+        on_stderr = function(chanid, data, name)
+          table.insert(stderr, { chanid = chanid, data = data, name = name })
+        end,
+        on_exit = function()
+          task_notifications.clear(task_name)
+
+          local serialize_stdtxt = function(tbl)
+            local out = ""
+            for _, entry in ipairs(tbl) do
+              for _, txt in ipairs(entry.data) do
+                out = out .. '\n' .. txt
+              end
+            end
+            return out
+          end
+
+          vim.notify("stdout: " .. serialize_stdtxt(stdout), vim.log.levels.DEBUG, { title = "VectorCode 'vectorise' output" })
+          vim.notify("stderr: " .. serialize_stdtxt(stderr), vim.log.levels.WARN, { title = "VectorCode 'vectorise' StdErr" })
+        end
+      }
     )
   end
 
