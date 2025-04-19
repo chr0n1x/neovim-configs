@@ -79,8 +79,13 @@ Forever MoonJanglin'
     dependencies = { "MunifTanjim/nui.nvim" },
     config = function ()
       -- Im too weenie hut juniors for this
-      require("hardtime").setup({ restriction_mode = "hint" })
-    end
+      require("hardtime").setup({
+        restriction_mode = "hint",
+        callback = function(text)
+          vim.notify(text, vim.log.levels.WARN, { render = "compact" })
+        end
+      })
+    end,
   },
 
   {
@@ -97,14 +102,14 @@ if not IN_PERF_MODE then
     { "sphamba/smear-cursor.nvim", opts = {} }
   )
 
-  table.insert(
-    uix_plugins,
-    {
-      'MeanderingProgrammer/render-markdown.nvim',
-      dependencies = { 'nvim-treesitter/nvim-treesitter' },
-      opts = {}
-    }
-  )
+  -- table.insert(
+  --   uix_plugins,
+  --   {
+  --     'MeanderingProgrammer/render-markdown.nvim',
+  --     dependencies = { 'nvim-treesitter/nvim-treesitter' },
+  --     opts = {}
+  --   }
+  -- )
 
   table.insert(
     uix_plugins,
