@@ -28,6 +28,3 @@ nmap('n', 'er',              ':',                        {noremap = true, desc =
 -- utility scripts
 -- pretty-format JSON in the current buffer/file
 nmap('n', '<leader>J', ':%!python3 -m json.tool --sort-keys<CR>', {noremap = true, desc = 'Use python to pretty-format JSON' })
-
--- DEADGE
-nmap('n', '<leader>F', ':CellularAutomaton make_it_rain<CR>', {noremap = true, desc = 'Am sadge' })
