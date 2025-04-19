@@ -80,6 +80,7 @@ local cmp_ai_opts = {
   max_lines = 8, -- HOLY MOLY CAN BAD THINGS HAPPEN WHEN THIS IS TOO MUCH
   provider = 'Ollama',
   provider_options = {
+    base_url = OLLAMA_URL .. 'api/generate',
     model = OLLAMA_MODEL,
     prompt = prompt_constructor,
   },
@@ -116,7 +117,8 @@ return {
     cmp_ai:setup(cmp_ai_opts)
 
     vim.notify(
-      'started cmp with Ollama model: ' .. OLLAMA_MODEL,
+      'started cmp with Ollama model: ' ..
+      OLLAMA_MODEL .. ' (' .. OLLAMA_URL .. ')',
       vim.log.levels.INFO,
       setup_notification_cfg
     )
