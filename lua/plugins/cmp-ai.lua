@@ -98,9 +98,9 @@ local cmp_ai_opts = {
 }
 
 return {
-  -- 'tzachar/cmp-ai',
-  'chr0n1x/cmp-ai',
-  branch = "dev",
+  'tzachar/cmp-ai',
+  -- 'chr0n1x/cmp-ai',
+  -- branch = "dev",
 
   dependencies = 'nvim-lua/plenary.nvim',
   config = function()
