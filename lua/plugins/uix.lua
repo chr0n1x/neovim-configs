@@ -88,11 +88,21 @@ Forever MoonJanglin'
     end,
   },
 
+  -- color schemes; I'm conflicted
+  -- {
+  --   'shaunsingh/nord.nvim',
+  --   lazy = false,
+  --   init = function() require('nord').set() end
+  -- },
   {
-    'shaunsingh/nord.nvim',
+    "metalelf0/black-metal-theme-neovim",
     lazy = false,
-    init = function() require('nord').set() end
-  },
+    priority = 1000,
+    config = function()
+      require("black-metal").setup({ theme = 'bathory', })
+      require("black-metal").load()
+    end,
+  }
 }
 
 if not IN_PERF_MODE then
