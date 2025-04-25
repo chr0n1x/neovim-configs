@@ -2,8 +2,8 @@ if IN_PERF_MODE then return {} end
 if OLLAMA_DISABLED and OPENWEBUI_DISABLED then return {} end
 if VECTORCODE_NOT_INSTALLED then return {} end
 
-local task_notifications = require('../util/task_notifications')
 
+local task_notifications = require('../util/task_notifications')
 local vc_notification_cfg = { title = "VectorCode", render = "compact" }
 
 local vectorise_codebase = function()
@@ -109,5 +109,5 @@ return {
   end,
 
   cmd = "VectorCode",
-  -- cond = VECTORCODE_INSTALLED
+  cond = VECTORCODE_INSTALLED
 }

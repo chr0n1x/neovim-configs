@@ -56,7 +56,10 @@ end
 -- always add these if AI configs are detected; I hopefully know what Im doing
 if OPENWEBUI_ENABLED or OLLAMA_ENABLED then
   table.insert(deps, 'olimorris/codecompanion.nvim')
-  table.insert(deps, 'Davidyz/VectorCode')
+
+  if VECTORCODE_INSTALLED then
+    table.insert(deps, 'Davidyz/VectorCode')
+  end
 
   table.insert(sources_list, { name = 'codecompanion_models' })
   table.insert(sources_list, { name = 'codecompanion_slash_commands' })
