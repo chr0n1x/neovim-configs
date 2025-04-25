@@ -1,5 +1,3 @@
-require('./util/shell')
-
 -- prevent a bunch of plugins from loading when on a machine like...
 -- an rpi zero
 IN_PERF_MODE = os.getenv("NVIM_LAZY_N_LITE") == "true"
@@ -29,8 +27,8 @@ OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY") or ""
 OLLAMA_DISABLED = OLLAMA_URL == "" or OLLAMA_URL == nil
 OLLAMA_ENABLED = not OLLAMA_DISABLED
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or 'qwen2.5-coder:7b-base-q6_K'
-local ok, out = RUN_SHELL_CMD('ollama ls | grep ' .. OLLAMA_MODEL)
-OLLAMA_MODEL_NOT_PRESENT = not ok or out == "" or out == nil
+local exit = os.execute('ollama ls | grep ' .. OLLAMA_MODEL) / 256
+OLLAMA_MODEL_NOT_PRESENT = (exit == 1)
 OLLAMA_MODEL_PRESENT = not OLLAMA_MODEL_NOT_PRESENT
 OLLAMA_ADAPTER_NAME = "ollama"
 
@@ -39,5 +37,6 @@ if OPENWEBUI_ENABLED then
   DEFAULT_AI_ADAPTER = OPENWEBUI_ADAPTER_NAME
 end
 
-_, VECTORCODE_NOT_INSTALLED=RUN_SHELL_CMD("which vectorcode")
+
+VECTORCODE_NOT_INSTALLED=(os.execute('which vectocode') / 256) == 1
 VECTORCODE_INSTALLED= not VECTORCODE_NOT_INSTALLED
