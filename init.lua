@@ -1,6 +1,5 @@
 require('flag-consts')
 
-require('colors')
 require('base-settings')
 require('key-bindings')
 
