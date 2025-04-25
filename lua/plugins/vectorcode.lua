@@ -109,5 +109,5 @@ return {
   end,
 
   cmd = "VectorCode",
-  cond = VECTORCODE_INSTALLED
+  -- cond = VECTORCODE_INSTALLED
 }

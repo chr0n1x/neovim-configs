@@ -20,7 +20,7 @@ local uix_plugins = {
     lazy = false,
     opts = {
       dashboard = {
-        enabled = DISABLED_IF_IN_PERF_MODE,
+        enabled = true,
         preset = {
           header = [[
 ░░░░░░░█▐▓▓░████▄▄▄█▀▄▓▓▓▌█
