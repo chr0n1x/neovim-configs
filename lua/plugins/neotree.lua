@@ -5,7 +5,7 @@ nmap('n', '<leader><tab>',   ':Neotree reveal<CR>', {noremap = true, desc = 'Neo
 
 return {
   "nvim-neo-tree/neo-tree.nvim",
-  branch = "v3.x",
+  -- branch = "v3.x",
   dependencies = {
     "nvim-lua/plenary.nvim",
     "nvim-tree/nvim-web-devicons",
@@ -16,6 +16,7 @@ return {
   lazy = false,
   opts = {
     enable_diagnostics = false,
+    popup_border_style = "",
     window = {
       -- I hate this thing with a passion
       mappings = {
