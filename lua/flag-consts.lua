@@ -24,7 +24,8 @@ OPENWEBUI_ADAPTER_NAME = "openwebui"
 -- ollama
 OLLAMA_URL = os.getenv("OLLAMA_HOST") or "http://0.0.0.0:11434"
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY") or ""
-OLLAMA_DISABLED = OLLAMA_URL == "" or OLLAMA_URL == nil
+OLLAMA_NVIM_DISABLED = os.getenv("OLLAMA_NVIM_DISABLED") or ""
+OLLAMA_DISABLED = OLLAMA_URL == "" or OLLAMA_URL == nil or OLLAMA_NVIM_DISABLED == "true"
 OLLAMA_ENABLED = not OLLAMA_DISABLED
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or 'qwen2.5-coder:7b-base-q6_K'
 local exit = os.execute('ollama ls | grep ' .. OLLAMA_MODEL) / 256

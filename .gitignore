@@ -4,3 +4,4 @@ nvim/plugin/
 plugin/
 .cache/
 chroma.log
+.aider*
