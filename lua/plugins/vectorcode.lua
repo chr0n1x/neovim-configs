@@ -1,7 +1,7 @@
 if IN_PERF_MODE then return {} end
-if OLLAMA_DISABLED and OPENWEBUI_DISABLED then return {} end
 if VECTORCODE_NOT_INSTALLED then return {} end
-
+-- currently only use this when we have ollama enabled
+if OLLAMA_DISABLED then return {} end
 
 local task_notifications = require('../util/task_notifications')
 local vc_notification_cfg = { title = "VectorCode", render = "compact" }
@@ -65,49 +65,27 @@ end
 return {
   "Davidyz/VectorCode",
   lazy = false,
-  build = "uvenv upgrade vectorcode",
-  -- version = "*",
+  build = "uv tool install vectorcode ",
   dependencies = { "nvim-lua/plenary.nvim" },
 
   keys = {
     { '<leader>v', ':VectorCode register<CR>', desc = 'VectorCode register' },
     { '<leader>vv', vectorise_codebase, desc = 'vectorise current codebase.' },
   },
-  opts = function()
-    return {
-      async_backend = "lsp",
-      notify = true,
-      on_setup = { lsp = false },
-      n_query = 10,
-      timeout_ms = -1,
-      async_opts = {
-        events = { "BufWritePost" },
-        single_job = true,
-        query_cb = require("vectorcode.utils").make_surrounding_lines_cb(40),
-        debounce = -1,
-        n_query = 30,
-      },
-    }
-  end,
-
-  config = function ()
+  config = function(_, _)
     vim.api.nvim_create_autocmd(
       'LspAttach',
       {
         callback = function()
-          local cacher = require("vectorcode.config").get_cacher_backend()
+          local cacher = require("vectorcode.cacher")
           local bufnr = vim.api.nvim_get_current_buf()
-          cacher.async_check("config", function()
-            cacher.register_buffer(bufnr, { n_query = 10, })
-            -- local query_results = cacher.query_from_cache(0, {notify=true})
-            -- vim.notify(query_results)
+          cacher.utils.async_check("config", function()
+            cacher.default.register_buffer(bufnr, { n_query = 10 })
           end, nil)
         end,
         desc = "Register buffer for VectorCode",
       }
     )
   end,
-
-  cmd = "VectorCode",
-  cond = VECTORCODE_INSTALLED
+  cond = VECTORCODE_INSTALLED,
 }

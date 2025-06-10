@@ -1,5 +1,5 @@
 if IN_PERF_MODE then return {} end
-if OLLAMA_DISABLED and OPENWEBUI_DISABLED then return {} end
+-- if OLLAMA_DISABLED and OPENWEBUI_DISABLED then return {} end
 
 -- notification things
 local setup_notification_cfg = {
@@ -33,7 +33,7 @@ end
 local prompt_constructor = function(lines_before, lines_after)
   -- You may include filetype and/or other project-wise context in this string as well.
   -- Consult model documentation in case there are special tokens for this.
-  local default_prompt = "<|fim_prefix|>\n" .. lines_before .. "\n<|fim_suffix|>\n" .. lines_after .. "\n<|fim_middle|>"
+  local default_prompt = "<|fim_prefix|>" .. lines_before .. "<|fim_suffix|>" .. lines_after .. "<|fim_middle|>"
 
   if VECTORCODE_NOT_INSTALLED then
     return default_prompt
@@ -62,8 +62,6 @@ local prompt_constructor = function(lines_before, lines_after)
     .. "\n"
     .. source.document
     .. "\n"
-    .. "<|file_sep|>"
-    .. "\n\n"
     .. default_prompt
   end
 
@@ -80,7 +78,7 @@ local cmp_ai_opts = {
   max_lines = 8, -- HOLY MOLY CAN BAD THINGS HAPPEN WHEN THIS IS TOO MUCH
   provider = 'Ollama',
   provider_options = {
-    base_url = OLLAMA_URL .. 'api/generate',
+    base_url = OLLAMA_URL .. '/api/generate',
     model = OLLAMA_MODEL,
     prompt = prompt_constructor,
   },
@@ -94,13 +92,11 @@ local cmp_ai_opts = {
   async_prompting = true,
   max_timeout_seconds = '8',
   cancel_existing_completions = true,
-  log_errors = false,
+  log_errors = true,
 }
 
 return {
   'tzachar/cmp-ai',
-  -- 'chr0n1x/cmp-ai',
-  -- branch = "dev",
 
   dependencies = 'nvim-lua/plenary.nvim',
   config = function()

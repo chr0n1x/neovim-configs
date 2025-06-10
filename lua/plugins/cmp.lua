@@ -70,7 +70,6 @@ if OPENWEBUI_ENABLED or OLLAMA_ENABLED then
 
   if OLLAMA_ENABLED and OLLAMA_MODEL_PRESENT and not IN_PERF_MODE then
     table.insert(deps, 'tzachar/cmp-ai')
-    -- table.insert(deps, { 'chr0n1x/cmp-ai', branch = "dev" })
     table.insert(sources_list, { name = 'cmp_ai' })
   end
 end
