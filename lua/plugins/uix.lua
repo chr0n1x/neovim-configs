@@ -99,7 +99,12 @@ Forever MoonJanglin'
     lazy = false,
     priority = 1000,
     config = function()
-      require("black-metal").setup({ theme = 'thyrfing' })
+      require("black-metal").setup({
+        theme = 'taake',
+        alt_bg = false,
+        variant = 'dark',
+        colored_docstrings = false,
+      })
       require("black-metal").load()
     end,
   }
