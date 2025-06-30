@@ -7,9 +7,8 @@ local uix_plugins = {
       vim.notify = require("notify")
     end,
     keys = {
-      { '<leader>e', ':lua require("notify").dismiss()<CR>', desc = "Clear notifications." },
-      { '<leader>ec', ':lua require("notify").dismiss()<CR>', desc = "Clear notifications." },
-      { '<leader>eh', ':Telescope notify<CR>', desc = "View notifications in Telescope." },
+      { '<leader>eh', ':lua require("notify").dismiss()<CR>', desc = "Clear notifications." },
+      { '<leader>e', ':Telescope notify<CR>', desc = "View notifications in Telescope." },
     }
   },
 
@@ -101,8 +100,8 @@ Forever MoonJanglin'
     config = function()
       require("black-metal").setup({
         theme = 'taake',
-        alt_bg = false,
         variant = 'dark',
+        alt_bg = false,
         colored_docstrings = false,
       })
       require("black-metal").load()

@@ -65,7 +65,7 @@ end
 return {
   "Davidyz/VectorCode",
   lazy = false,
-  build = "uv tool install vectorcode ",
+  build = "uv tool install vectorcode",
   dependencies = { "nvim-lua/plenary.nvim" },
 
   keys = {
