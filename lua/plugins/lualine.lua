@@ -40,6 +40,7 @@ if IN_PERF_MODE then
 elseif OLLAMA_ENABLED and OLLAMA_MODEL_PRESENT then
   LUALINE_SECTIONS.lualine_c = {
     function()
+      -- TODO: this does not work right now
       return require('minuet.lualine').update_status()
     end
   }
