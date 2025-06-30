@@ -1,3 +1,6 @@
 return {
-  'sindrets/diffview.nvim'
+  'sindrets/diffview.nvim',
+  keys = {
+    { '<leader>d', ':DiffviewOpen<CR>', desc = 'Diffview: Open.' },
+  },
 }
