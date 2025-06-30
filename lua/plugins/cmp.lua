@@ -68,14 +68,14 @@ if OPENWEBUI_ENABLED or OLLAMA_ENABLED then
 
   sources_list["per_filetype"] = { codecompanion = { "codecompanion" } }
 
+  -- might be a bit too much; already have virtual text going too
   -- table.insert(sources_list, { name = 'minuet' })
 end
-
 
 return {
   'hrsh7th/nvim-cmp',
 
-  events = { "BuffRead" },
+  event = "InsertEnter",
   lazy = false,
 
   dependencies = deps,
