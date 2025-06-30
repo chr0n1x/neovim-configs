@@ -1,10 +1,11 @@
 local deps = {
+  { 'milanglacier/minuet-ai.nvim', lazy = false },
   'nvim-web-devicons'
 }
 
 local spinner = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }
 
-local sections = {
+LUALINE_SECTIONS = {
   lualine_a = {'mode'},
   lualine_b = {'branch'},
   lualine_c = { function() return "⚠️ AI missing" end },
@@ -33,13 +34,13 @@ local sections = {
 }
 
 if IN_PERF_MODE then
-  sections.lualine_c = {
+  LUALINE_SECTIONS.lualine_c = {
     function () return " AI cmp disabled (perf. mode)" end
   }
 elseif OLLAMA_ENABLED and OLLAMA_MODEL_PRESENT then
-  sections.lualine_c = {
-    function ()
-      return  "🦙 " .. OLLAMA_MODEL .. " detected ✓"
+  LUALINE_SECTIONS.lualine_c = {
+    function()
+      return require('minuet.lualine').update_status()
     end
   }
 end
@@ -55,10 +56,10 @@ return {
         theme = 'iceberg_dark',
         component_separators = {'|', '|'},
       },
-      sections = sections,
+      sections = LUALINE_SECTIONS,
       inactive_sections = {
         lualine_c = {'filename'},
         lualine_x = {'location'},
       }
-    }
+    },
   }

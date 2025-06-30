@@ -12,7 +12,7 @@ local sources_list = {
   {name = 'path'},
   {
     name = 'buffer',
-    keyword_length = 8,
+    keyword_length = 4,
     option = {
       get_bufnrs = function()
         return vim.api.nvim_list_bufs()
@@ -35,7 +35,7 @@ if not IN_PERF_MODE then
     name = "lazydev",
     group_index = 0, -- set group index to 0 to skip loading LuaLS completions
   })
-  table.insert(sources_list, {name = 'luasnip', keyword_length = 8})
+  table.insert(sources_list, {name = 'luasnip', keyword_length = 4})
   table.insert(
     sources_list,
     {
@@ -68,10 +68,7 @@ if OPENWEBUI_ENABLED or OLLAMA_ENABLED then
 
   sources_list["per_filetype"] = { codecompanion = { "codecompanion" } }
 
-  if OLLAMA_ENABLED and OLLAMA_MODEL_PRESENT and not IN_PERF_MODE then
-    table.insert(deps, 'tzachar/cmp-ai')
-    table.insert(sources_list, { name = 'cmp_ai' })
-  end
+  -- table.insert(sources_list, { name = 'minuet' })
 end
 
 
@@ -98,10 +95,6 @@ return {
       compare.order,
     }
 
-    if OLLAMA_ENABLED and OLLAMA_MODEL_PRESENT and not IN_PERF_MODE then
-      table.insert(compare_cfg, 1, require('cmp_ai.compare'))
-    end
-
     cmp.setup({
       sources = sources_list,
       sorting = {
@@ -115,6 +108,7 @@ return {
         ['<C-n>'] = cmp.mapping.select_next_item(cmp_select),
         ['<C-y>'] = cmp.mapping.confirm({ select = true }),
         ['<C-Space>'] = cmp.mapping.complete(),
+        ["<A-y>"] = require('minuet').make_cmp_map(),
       }),
 
       snippet = snippet_configs,

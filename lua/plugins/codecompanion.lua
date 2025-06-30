@@ -99,18 +99,6 @@ return {
       end
     end
 
-    -- will not work if moved outside of config setup fx
-    if VECTORCODE_INSTALLED then
-      local vc_int = require("vectorcode.integrations")
-      cc_strats.chat.slash_commands = { codebase = vc_int.codecompanion.chat.make_slash_command() }
-      cc_strats.chat.tools = {
-        vectorcode = {
-          description = "Run VectorCode to retrieve the project context.",
-          callback = vc_int.codecompanion.chat.make_tool(),
-        }
-      }
-    end
-
     opts.strategies = cc_strats
     require('codecompanion').setup(opts)
 
@@ -121,9 +109,8 @@ return {
     end
     if OLLAMA_ENABLED then
       statusmsg = statusmsg .. '> ' .. OLLAMA_MODEL .. ' via ' ..
-      OLLAMA_URL .. ' (' .. OLLAMA_ADAPTER_NAME .. ') \n'
+      OLLAMA_URL .. ' (' .. OLLAMA_ADAPTER_NAME .. ')'
     end
-    statusmsg = statusmsg .. "\n(cmp-ai is separate)"
 
     if OLLAMA_ENABLED or OPENWEBUI_ENABLED then
       vim.notify(statusmsg, vim.log.levels.INFO, setup_notification_cfg)
