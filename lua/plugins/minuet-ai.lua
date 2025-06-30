@@ -12,8 +12,8 @@ return {
       notify = 'warn',
 
       provider = 'openai_fim_compatible',
-      n_completions = 1,
-      context_window = 512,
+      n_completions = 2,
+      context_window = 256,
       provider_options = {
         openai_fim_compatible = {
           api_key = 'TERM',
