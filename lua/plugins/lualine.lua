@@ -8,7 +8,6 @@ local spinner = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇',
 LUALINE_SECTIONS = {
   lualine_a = {'mode'},
   lualine_b = {'branch'},
-  lualine_c = { function() return "⚠️ AI missing" end },
 
   lualine_x = {'filename'},
   lualine_y = {
