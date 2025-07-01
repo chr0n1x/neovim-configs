@@ -21,10 +21,6 @@ local cc_strats = {
     adapter = DEFAULT_AI_ADAPTER,
     roles = {
       user = "🤓 " .. os.getenv("USER") .. ' (type something, send w/ ctrl+s)',
-
-      -- set below depending on what we have turned on
-      -- llm = ...
-      llm = "🤖 " .. OPENWEBUI_MODEL
     },
   },
   inline = {
@@ -41,18 +37,6 @@ local cc_strats = {
     }
   }
 }
-
-if OLLAMA_ENABLED then
-  cc_strats.inline.adapter = OLLAMA_ADAPTER_NAME
-end
-
-local ollama_chat_cfg_name = OLLAMA_ADAPTER_NAME .. "-chat"
-if OPENWEBUI_ENABLED then
-  cc_strats.chat.adapter = OPENWEBUI_ADAPTER_NAME
-else
-  -- config for this setup below
-  cc_strats.inline.adapter = ollama_chat_cfg_name
-end
 
 return {
   'olimorris/codecompanion.nvim',
@@ -85,11 +69,15 @@ return {
           },
           schema = {
             model = { default = OPENWEBUI_MODEL },
-          },
+          }
         })
       end
+
+      cc_strats.chat.adapter = OPENWEBUI_ADAPTER_NAME
+      cc_strats.chat.roles.llm = "🤖 " .. OPENWEBUI_MODEL
     end
 
+    local ollama_chat_cfg_name = OLLAMA_ADAPTER_NAME .. "-chat"
     if OLLAMA_ENABLED then
       local ollama_cfg = {
         opts = {
@@ -113,7 +101,7 @@ return {
           top_k = { default = 40 },
           -- does not work as of now
           -- think = { default = false },
-        },
+        }
       }
 
       if OLLAMA_API_KEY ~= '' then
@@ -129,9 +117,12 @@ return {
         opts.adapters[ollama_chat_cfg_name] = function()
           return require("codecompanion.adapters").extend("ollama", ollama_chat_cfg)
         end
+
         cc_strats.chat.adapter = ollama_chat_cfg_name
         cc_strats.chat.roles.llm = "🦙 " .. OPENWEBUI_MODEL
       end
+
+      cc_strats.inline.adapter = OLLAMA_ADAPTER_NAME
 
       opts.adapters[OLLAMA_ADAPTER_NAME] = function()
         return require("codecompanion.adapters").extend("ollama", ollama_cfg)
