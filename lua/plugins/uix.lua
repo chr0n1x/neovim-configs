@@ -88,25 +88,25 @@ Forever MoonJanglin'
   },
 
   -- color schemes; I'm conflicted
-  -- {
-  --   'shaunsingh/nord.nvim',
-  --   lazy = false,
-  --   init = function() require('nord').set() end
-  -- },
   {
-    "metalelf0/black-metal-theme-neovim",
+    'shaunsingh/nord.nvim',
     lazy = false,
-    priority = 1000,
-    config = function()
-      require("black-metal").setup({
-        theme = 'taake',
-        variant = 'dark',
-        alt_bg = false,
-        colored_docstrings = false,
-      })
-      require("black-metal").load()
-    end,
-  }
+    init = function() require('nord').set() end
+  },
+  -- {
+  --   "metalelf0/black-metal-theme-neovim",
+  --   lazy = false,
+  --   priority = 1000,
+  --   config = function()
+  --     require("black-metal").setup({
+  --       theme = 'taake',
+  --       variant = 'dark',
+  --       alt_bg = false,
+  --       colored_docstrings = false,
+  --     })
+  --     require("black-metal").load()
+  --   end,
+  -- }
 }
 
 if not IN_PERF_MODE then
