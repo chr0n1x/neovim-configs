@@ -93,10 +93,9 @@ return {
     }
 
     vim.notify(
-      'VectorCode enabled',
+      '📖🤓 VectorCode running in background',
       vim.log.levels.INFO,
-      { title = "VectorCode", render = "compact", timeout = 1000,
-      }
+      { title = "🏹 VectorCode", timeout = 1000 }
     )
   end,
   cond = VECTORCODE_INSTALLED,

@@ -67,5 +67,17 @@ return {
   },
   config = function()
     require('minuet').setup(config)
+
+    local statusmsg = "💃🤝🦙 minuet-ai + ollama running\n"
+    statusmsg = statusmsg .. '✅ ' .. OLLAMA_MODEL .. ' via ' .. OLLAMA_URL
+    if VECTORCODE_INSTALLED then
+      statusmsg = statusmsg .. '\n' .. '✅ vectorcode RAG'
+    end
+
+    vim.notify(statusmsg, vim.log.levels.INFO, {
+      title = "💃 Minuet-AI",
+      style = "minimal",
+      timeout = 1000,
+    })
   end,
 }

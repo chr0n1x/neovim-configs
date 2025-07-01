@@ -3,7 +3,7 @@ if OLLAMA_DISABLED and OPENWEBUI_DISABLED then return {} end
 
 -- notification things
 local setup_notification_cfg = {
-  title = "AI Plugin Setup",
+  title = "🤖 CodeCompanion",
   style = "minimal",
   timeout = 1000,
 }
@@ -102,13 +102,13 @@ return {
     opts.strategies = cc_strats
     require('codecompanion').setup(opts)
 
-    local statusmsg = 'codecompanion AI adapter(s) configured:\n\n'
+    local statusmsg = 'CodeCompanion AI adapter(s) configured:\n\n'
     if OPENWEBUI_ENABLED then
-      statusmsg = statusmsg .. '> ' .. OPENWEBUI_MODEL .. ' via ' ..
+      statusmsg = statusmsg .. '✅ 🤖' .. OPENWEBUI_MODEL .. ' via ' ..
       OPENWEBUI_URL .. ' (' .. OPENWEBUI_ADAPTER_NAME .. ') \n'
     end
     if OLLAMA_ENABLED then
-      statusmsg = statusmsg .. '> ' .. OLLAMA_MODEL .. ' via ' ..
+      statusmsg = statusmsg .. '✅ 🦙' .. OLLAMA_MODEL .. ' via ' ..
       OLLAMA_URL .. ' (' .. OLLAMA_ADAPTER_NAME .. ')'
     end
 
