@@ -4,8 +4,8 @@ if VECTORCODE_NOT_INSTALLED then return {} end
 if OLLAMA_DISABLED then return {} end
 
 local task_notifications = require('../util/task_notifications')
-local vc_notification_cfg = { title = "VectorCode", render = "compact" }
 
+-- vectorise the entire workspace
 local vectorise_codebase = function()
   local ext = vim.fn.expand('%:e')
   local partial_glob = vim.fn.expand('%:h') .. "/**/*." .. ext
@@ -13,7 +13,7 @@ local vectorise_codebase = function()
     vim.notify(
       "Not Vectorising, no files found in " .. partial_glob,
       vim.log.levels.ERROR,
-      vc_notification_cfg
+      { title = "VectorCode", render = "compact" }
     )
     return
   end
@@ -84,6 +84,18 @@ return {
           end, nil)
         end,
         desc = "Register buffer for VectorCode",
+      }
+    )
+
+    require('vectorcode').setup {
+      n_query = 4,
+      notify = false
+    }
+
+    vim.notify(
+      'VectorCode enabled',
+      vim.log.levels.INFO,
+      { title = "VectorCode", render = "compact", timeout = 1000,
       }
     )
   end,

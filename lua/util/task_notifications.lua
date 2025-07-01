@@ -42,6 +42,7 @@ local function update_spinner(task_name, curr_wait_defer)
 
   if M.cache[task_name].notification ~= nil then
     updated_notif_opts.replace = M.cache[task_name].notification
+    M.cache[task_name].notification = nil
   end
 
   M.cache[task_name].notification = vim.notify(
@@ -71,6 +72,7 @@ function M.clear(task_name, log_level)
   if M.cache[task_name].notification ~= nil then
     clear_notification_opts.replace =
       M.cache[task_name].notification
+    M.cache[task_name].notification = nil
   end
 
   vim.notify(

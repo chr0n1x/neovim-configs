@@ -37,9 +37,6 @@ if VECTORCODE_INSTALLED then
   config.provider_options.openai_fim_compatible.template = {
     suffix = false,
     prompt = function(pref, suff, _)
-      require('vectorcode').setup {
-        n_query = 2,
-      }
       local has_vc, vectorcode_config = pcall(require, 'vectorcode.config')
       local vectorcode_cacher = nil
       if has_vc then
@@ -52,16 +49,12 @@ if VECTORCODE_INSTALLED then
         prompt_message = prompt_message .. "<|file_sep|>" .. file.path .. "\n" .. file.document
       end
 
-      prompt_message = prompt_message
+      return prompt_message
         .. "<|fim_prefix|>"
         .. pref
         .. "<|fim_suffix|>"
         .. suff
         .. "<|fim_middle|>"
-
-      vim.notify(prompt_message, vim.log.levels.DEBUG)
-
-      return prompt_message
     end,
   }
 end
