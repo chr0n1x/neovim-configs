@@ -19,6 +19,13 @@ end
 local cc_strats = {
   chat = {
     adapter = DEFAULT_AI_ADAPTER,
+    roles = {
+      user = "🤓 " .. os.getenv("USER") .. ' (type something, send w/ ctrl+s)',
+
+      -- set below depending on what we have turned on
+      -- llm = ...
+      llm = "🤖 " .. OPENWEBUI_MODEL
+    },
   },
   inline = {
     adapter = DEFAULT_AI_ADAPTER,
@@ -38,8 +45,13 @@ local cc_strats = {
 if OLLAMA_ENABLED then
   cc_strats.inline.adapter = OLLAMA_ADAPTER_NAME
 end
+
+local ollama_chat_cfg_name = OLLAMA_ADAPTER_NAME .. "-chat"
 if OPENWEBUI_ENABLED then
   cc_strats.chat.adapter = OPENWEBUI_ADAPTER_NAME
+else
+  -- config for this setup below
+  cc_strats.inline.adapter = ollama_chat_cfg_name
 end
 
 return {
@@ -58,7 +70,7 @@ return {
     opts.adapters = opts.adapters or {}
 
     if OPENWEBUI_ENABLED then
-      opts.adapters["openwebui"] = function()
+      opts.adapters[OPENWEBUI_ADAPTER_NAME] = function()
         return require("codecompanion.adapters").extend("openai_compatible", {
           opts = {
             show_defaults = true,
@@ -79,23 +91,50 @@ return {
     end
 
     if OLLAMA_ENABLED then
-      opts.adapters["ollama"] = function()
-        return require("codecompanion.adapters").extend("ollama", {
-          model = OLLAMA_MODEL,
-          opts = {
-            allow_insecure = true,
-            show_defaults = true,
-          },
-          env = {
-            url = OLLAMA_URL,
-            api_key = OLLAMA_API_KEY,
-          },
-          headers = {
-            ["Content-Type"] = "application/json",
-            ["Authorization"] = "Bearer ${api_key}",
-          },
-          parameters = { sync = true },
-        })
+      local ollama_cfg = {
+        opts = {
+          allow_insecure = true,
+          show_defaults = true,
+        },
+        env = {
+          url = OLLAMA_URL,
+        },
+        headers = {
+          ["Content-Type"] = "application/json",
+        },
+        parameters = {
+          sync = true,
+        },
+        schema = {
+          model = { default = OLLAMA_MODEL },
+          temperature = { default = 0.6 },
+          top_p = { default = 0.95 },
+          min_p = { default = 0.00 },
+          top_k = { default = 40 },
+          -- does not work as of now
+          -- think = { default = false },
+        },
+      }
+
+      if OLLAMA_API_KEY ~= '' then
+        ollama_cfg.env.api_key = OLLAMA_API_KEY
+        ollama_cfg.headers["Authorization"] = "Bearer ${api_key}"
+      end
+
+      if OPENWEBUI_DISABLED then
+        local ollama_chat_cfg = vim.deepcopy(ollama_cfg)
+        -- assume that we're trying to run the same GGUF model here
+        ollama_chat_cfg.schema.model.default = OPENWEBUI_MODEL
+
+        opts.adapters[ollama_chat_cfg_name] = function()
+          return require("codecompanion.adapters").extend("ollama", ollama_chat_cfg)
+        end
+        cc_strats.chat.adapter = ollama_chat_cfg_name
+        cc_strats.chat.roles.llm = "🦙 " .. OPENWEBUI_MODEL
+      end
+
+      opts.adapters[OLLAMA_ADAPTER_NAME] = function()
+        return require("codecompanion.adapters").extend("ollama", ollama_cfg)
       end
     end
 
@@ -104,12 +143,17 @@ return {
 
     local statusmsg = 'CodeCompanion AI adapter(s) configured:\n\n'
     if OPENWEBUI_ENABLED then
-      statusmsg = statusmsg .. '✅ 🤖' .. OPENWEBUI_MODEL .. ' via ' ..
+      statusmsg = statusmsg .. '✅ 🤖 ' .. OPENWEBUI_MODEL .. ' via ' ..
       OPENWEBUI_URL .. ' (' .. OPENWEBUI_ADAPTER_NAME .. ') \n'
     end
     if OLLAMA_ENABLED then
-      statusmsg = statusmsg .. '✅ 🦙' .. OLLAMA_MODEL .. ' via ' ..
-      OLLAMA_URL .. ' (' .. OLLAMA_ADAPTER_NAME .. ')'
+      if OPENWEBUI_DISABLED then
+        statusmsg = statusmsg .. "✅ 🦙 "  .. OPENWEBUI_MODEL .. ' via ' ..
+        OLLAMA_URL .. ' (' .. OLLAMA_ADAPTER_NAME .. ')\n'
+      end
+
+      statusmsg = statusmsg .. '✅💻🦙' .. OLLAMA_MODEL .. ' via ' ..
+      OLLAMA_URL .. ' (' .. OLLAMA_ADAPTER_NAME .. ' inline)'
     end
 
     if OLLAMA_ENABLED or OPENWEBUI_ENABLED then
