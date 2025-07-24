@@ -89,10 +89,17 @@ Forever MoonJanglin'
 
   -- color schemes; I'm conflicted
   {
-    'shaunsingh/nord.nvim',
-    lazy = false,
-    init = function() require('nord').set() end
+    "mcauley-penney/techbase.nvim",
+    config = function()
+      vim.cmd.colorscheme("techbase")
+    end,
+    priority = 1000
   },
+  -- {
+  --   'shaunsingh/nord.nvim',
+  --   lazy = false,
+  --   init = function() require('nord').set() end
+  -- },
   -- {
   --   "metalelf0/black-metal-theme-neovim",
   --   lazy = false,
