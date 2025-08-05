@@ -1,6 +1,7 @@
 return {
   {
     'sindrets/diffview.nvim',
+    cmd = 'DiffviewOpen',
     keys = {
       { '<leader>D', ':DiffviewFileHistory %<CR>', desc = 'Diffview: open.' },
       { '<leader>d', ':DiffviewOpen<CR>', desc = 'Diffview: open.' },
@@ -16,6 +17,9 @@ return {
   {
     "TimUntersberger/neogit",
     cmd = "Neogit",
+    keys = {
+      { '<leader>G', ':DiffviewOpen<CR> | :Neogit<CR>', desc = 'Neogit: open neogit with diffview.' },
+    },
     config = function()
       require("neogit").setup({
         kind = "split",
