@@ -10,10 +10,8 @@ DISABLED_IF_IN_PERF_MODE = not IN_PERF_MODE
 -- open webui
 OPENWEBUI_URL = os.getenv("OPEN_WEBUI_URL")
 OPENWEBUI_JWT = os.getenv("OPEN_WEBUI_JWT")
--- NOTE: startup time might be better with 1B
--- 1080ti over proxmox pci passthrough to talos os is takes a few seconds for 4B
--- and 12B takes FOREVER, t/s is also not too good
-OPENWEBUI_MODEL = os.getenv("OPEN_WEBUI_MODEL") or "gemma3:4B"
+-- non-thinking model better for chatting
+OPENWEBUI_MODEL = os.getenv("OPEN_WEBUI_MODEL") or "hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q4_K_XL"
 OPENWEBUI_DISABLED = (
   OPENWEBUI_JWT == "" or OPENWEBUI_JWT == nil or
   OPENWEBUI_URL == "" or OPENWEBUI_URL == nil
