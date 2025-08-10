@@ -1,12 +1,19 @@
 return {
-  "rmagatti/auto-session",
   lazy = false,
-
-  ---enables autocomplete for opts
-  ---@module "auto-session"
-  ---@type AutoSession.Config
+  'jedrzejboczar/possession.nvim',
+  dependencies = {
+    'nvim-lua/plenary.nvim'
+  },
   opts = {
-    suppressed_dirs = { "~/", "/" },
-    -- log_level = 'debug',
+    autoload = "auto_cwd",
+    autosave = {
+      current = true,
+      on_load = true,
+      on_quit = true,
+    },
+  },
+  keys = {
+    { "<leader>sl", ":PossessionListCwd<CR>", desc = "📌 Show cwd session." },
+    { "<leader>s<CR>", ":PossessionSave<CR>", desc = "📌 Save current session" },
   },
 }
