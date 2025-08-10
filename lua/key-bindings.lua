@@ -19,7 +19,7 @@ nmap('n', '<leader>o', ':tabe<space>',     {noremap = true, desc = 'Tab; open' }
 nmap('n', '<leader>M', ':set mouse!<CR>', {noremap = true, desc = 'Toggle mouse mode.' })
 
 -- misc 
-nmap('n', '<leader>w',       ':w<CR>',                   {noremap = true, desc = 'Save buff. Or manage sessions.'})
+nmap('n', '<leader>w',       ':w<CR>',                   {noremap = true, desc = 'Save buff.'})
 nmap('n', '<leader><space>', ':noh <bar> e<CR>',         {noremap = true, desc = 'Close any highlights.'})
 nmap('n', '<leader>q',       ':q<CR>',                   {noremap = true, desc = 'Close buffer (:q).'})
 nmap('n', '<leader>md',      ':delm! | delm A-Z0-9<CR>', {noremap = true, desc = 'Marks: Delete all.'})
