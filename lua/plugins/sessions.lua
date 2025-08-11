@@ -5,7 +5,7 @@ return {
     'nvim-lua/plenary.nvim'
   },
   opts = {
-    autoload = "last",
+    autoload = "auto_cwd",
     autosave = {
       cwd = true,
       current = true,
