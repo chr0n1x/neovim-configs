@@ -5,8 +5,11 @@ return {
     'nvim-lua/plenary.nvim'
   },
   opts = {
-    autoload = "auto_cwd",
+    autoload = "last",
     autosave = {
+      cwd = true,
+      tmp = true,
+      tmp_name = 'tmp',
       current = true,
       on_load = true,
       on_quit = true,
