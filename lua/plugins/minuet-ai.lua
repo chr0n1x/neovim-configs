@@ -38,7 +38,8 @@ local config = {
 config.provider_options.openai_fim_compatible.template = {
   suffix = false,
   prompt = function(pref, suff, _)
-    local prompt_message = "The following is a FIM prompt. Only respond with the FIM response, nothing else.\n"
+    -- hacky solution
+    local prompt_message = "The following is a FIM prompt, so you are given a code snippet prefix and a suffix. Before all of that you may receive some files from a RAG database with relevant code snippets. Only respond with what you think comes next, nothing else. If you cannot help, simply reply with '🤖 - start/continue typing!'\n"
 
     local has_vc, vectorcode_config = pcall(require, 'vectorcode.config')
     local vectorcode_cacher = nil
@@ -63,7 +64,7 @@ config.provider_options.openai_fim_compatible.template = {
 
 return {
   'milanglacier/minuet-ai.nvim',
-  lazy = false,
+  lazy = true,
   dependencies = {
     { 'nvim-lua/plenary.nvim' },
   },
