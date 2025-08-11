@@ -8,8 +8,6 @@ return {
     autoload = "last",
     autosave = {
       cwd = true,
-      tmp = true,
-      tmp_name = 'tmp',
       current = true,
       on_load = true,
       on_quit = true,
