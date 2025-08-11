@@ -12,7 +12,7 @@ local sources_list = {
   {name = 'path'},
   {
     name = 'buffer',
-    keyword_length = 4,
+    keyword_length = 3,
     option = {
       get_bufnrs = function()
         return vim.api.nvim_list_bufs()
@@ -35,7 +35,6 @@ if not IN_PERF_MODE then
     name = "lazydev",
     group_index = 0, -- set group index to 0 to skip loading LuaLS completions
   })
-  table.insert(sources_list, {name = 'luasnip', keyword_length = 4})
   table.insert(
     sources_list,
     {
@@ -67,17 +66,12 @@ if OPENWEBUI_ENABLED or OLLAMA_ENABLED then
   table.insert(sources_list, { name = 'codecompanion_variables' })
 
   sources_list["per_filetype"] = { codecompanion = { "codecompanion" } }
-
-  -- might be a bit too much; already have virtual text going too
-  -- table.insert(sources_list, { name = 'minuet' })
 end
 
 return {
   'hrsh7th/nvim-cmp',
 
-  event = "InsertEnter",
-  lazy = false,
-
+  lazy = true,
   dependencies = deps,
 
   config = function()
@@ -113,6 +107,9 @@ return {
 
       snippet = snippet_configs,
     })
+
+    -- more or less remove this from cmdline, very annoying
+    cmp.setup.cmdline(':', {})
 
     -- UI DECORATIONS
     -- Change the Diagnostic symbols in the sign column (gutter)
