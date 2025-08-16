@@ -14,7 +14,7 @@ return {
         'vim', 'lua', 'bash', 'yaml',
         'json', 'hcl', 'make', 'go',
         'typescript', 'markdown', 'markdown_inline',
-        'bash', 'ruby', 'python'
+        'bash', 'ruby', 'python', 'helm'
       },
       sync_install = false,
       highlight = { enable = true },

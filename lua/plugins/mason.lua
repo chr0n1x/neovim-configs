@@ -13,6 +13,8 @@ return {
     },
   },
 
+  { "qvalentin/helm-ls.nvim", ft = "helm" },
+
   {
     'mason-org/mason.nvim',
     dependencies = {
@@ -35,7 +37,10 @@ return {
       })
 
       require('mason-lspconfig').setup({
-        ensure_installed = {},
+        ensure_installed = {
+          'helm_ls',
+          'yamlls',
+        },
         handlers = {
           function(server_name)
             require('lspconfig')[server_name].setup({
