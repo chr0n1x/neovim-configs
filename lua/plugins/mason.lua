@@ -39,7 +39,7 @@ return {
       require('mason-lspconfig').setup({
         ensure_installed = {
           'helm_ls',
-          'yamlls',
+          -- 'yamlls',
         },
         handlers = {
           function(server_name)
