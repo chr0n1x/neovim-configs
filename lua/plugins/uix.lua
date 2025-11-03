@@ -5,6 +5,7 @@ local uix_plugins = {
     lazy = false,
     config = function ()
       vim.notify = require("notify")
+      vim.notify.setup({ top_down = false })
     end,
     keys = {
       { '<leader>eh', ':lua require("notify").dismiss()<CR>', desc = "Clear notifications." },

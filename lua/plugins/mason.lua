@@ -13,7 +13,13 @@ return {
     },
   },
 
-  -- { "qvalentin/helm-ls.nvim", ft = "helm" },
+  -- requires the bin
+  -- something like:
+  --   https://github.com/mrjosh/helm-ls/releases/download/v0.5.3/helm_ls_linux_arm64
+  --
+  -- above is a golang bin; praise be.
+  -- YAML LS however requires nodejs sooooo NOPE
+  { "qvalentin/helm-ls.nvim", ft = "helm" },
 
   {
     'mason-org/mason.nvim',
