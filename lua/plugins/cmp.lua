@@ -12,7 +12,7 @@ local sources_list = {
   {name = 'path'},
   {
     name = 'buffer',
-    keyword_length = 3,
+    -- opts = { keyword_length = 3 },
     option = {
       get_bufnrs = function()
         return vim.api.nvim_list_bufs()
@@ -24,22 +24,29 @@ local sources_list = {
 -- TODO: not sure if there are other simpler ones to add by default
 local snippet_configs = {}
 
+-- required for mason
+
 if not IN_PERF_MODE then
   table.insert(deps, 'hrsh7th/cmp-nvim-lsp')
   table.insert(deps, 'hrsh7th/cmp-nvim-lua')
   table.insert(deps, 'L3MON4D3/LuaSnip')
   table.insert(deps, 'andersevenrud/cmp-tmux')
 
-  table.insert(sources_list, {name = 'nvim_lsp' })
+  -- WHY BROKEN?
+  -- table.insert(sources_list, {name = 'nvim_lsp' })
+
   table.insert(sources_list, {
     name = "lazydev",
     group_index = 0, -- set group index to 0 to skip loading LuaLS completions
   })
+
   table.insert(
     sources_list,
     {
       name = 'tmux',
-      keyword_length = 4,
+      keyword_length = 3,
+      -- will trigger ALL the things OH MY GOD
+      trigger_characters = {},
       option = {
         all_panes = true,
         capture_history = true,
