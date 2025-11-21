@@ -124,14 +124,18 @@ if not IN_PERF_MODE then
     { "sphamba/smear-cursor.nvim", opts = {} }
   )
 
-  -- table.insert(
-  --   uix_plugins,
-  --   {
-  --     'MeanderingProgrammer/render-markdown.nvim',
-  --     dependencies = { 'nvim-treesitter/nvim-treesitter' },
-  --     opts = {}
-  --   }
-  -- )
+  table.insert(
+    uix_plugins,
+    {
+      'MeanderingProgrammer/render-markdown.nvim',
+      dependencies = { 'nvim-treesitter/nvim-treesitter' },
+      opts = {
+        heading = {
+          enabled = false
+        }
+      }
+    }
+  )
 
   table.insert(
     uix_plugins,
