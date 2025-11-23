@@ -112,6 +112,13 @@ return {
         ["<A-y>"] = require('minuet').make_cmp_map(),
       }),
 
+      window = {
+        completion = {
+          border = 'rounded',
+          winhighlight = 'Normal:CmpNormal',
+        }
+      },
+
       snippet = snippet_configs,
     })
 
