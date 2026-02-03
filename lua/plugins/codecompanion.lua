@@ -100,8 +100,7 @@ return {
     require('codecompanion').setup(opts)
 
     local statusmsg = 'CodeCompanion AI adapter(s) configured:\n\n'
-    statusmsg = statusmsg .. '✅💻🦙' .. OLLAMA_MODEL .. ' via ' ..
-    OLLAMA_URL .. ' (' .. OLLAMA_ADAPTER_NAME .. ')'
+    statusmsg = statusmsg .. '✅💻🦙 ' .. OLLAMA_MODEL_SHORT .. ' via ' .. OLLAMA_DOMAIN
     vim.notify(statusmsg, vim.log.levels.INFO, setup_notification_cfg)
   end
 }

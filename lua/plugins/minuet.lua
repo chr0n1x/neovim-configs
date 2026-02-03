@@ -57,7 +57,7 @@ return {
     require('minuet').setup(config)
 
     local statusmsg = "💃🤝🦙 minuet-ai + ollama running\n"
-    statusmsg = statusmsg .. '✅ ' .. OLLAMA_MODEL .. ' via ' .. OLLAMA_URL
+    statusmsg = statusmsg .. '✅ ' .. OLLAMA_MODEL_SHORT .. ' via ' .. OLLAMA_DOMAIN
 
     vim.notify(statusmsg, vim.log.levels.INFO, {
       title = "💃 Minuet-AI",
