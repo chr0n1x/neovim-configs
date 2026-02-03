@@ -5,7 +5,7 @@ OLLAMA_URL = os.getenv("OLLAMA_HOST") or "http://0.0.0.0:11434"
 -- TODO: HACK
 local pieces = vim.split(vim.split(OLLAMA_URL, ":")[2], "/")
 local domain = pieces[#pieces]
-if domain == '0.0.0.0' or domain == '127.0.1' then
+if domain == '0.0.0.0' or domain == '127.0.0.1' then
     OLLAMA_DOMAIN = "localhost"
 else
     OLLAMA_DOMAIN = domain
