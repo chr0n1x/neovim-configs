@@ -38,10 +38,7 @@ local config = {
 config.provider_options.openai_fim_compatible.template = {
   suffix = false,
   prompt = function(pref, suff, _)
-    -- hacky solution
-    local prompt_message = "The following is a FIM prompt, so you are given a code snippet prefix and a suffix. Before all of that you may receive some files from a RAG database with relevant code snippets. Only respond with what you think comes next, nothing else. If you cannot help, simply reply with '🤖 - start/continue typing!'\n"
-
-    return prompt_message
+    return "" -- TODO: think about ways to inject prompt? maybe inject codecompanion ctx?
       .. "<|fim_prefix|>"
       .. pref
       .. "<|fim_suffix|>"
