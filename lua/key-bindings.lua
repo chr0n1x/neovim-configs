@@ -17,6 +17,8 @@ nmap('n', '<leader>o', ':tabe<space>',     {noremap = true, desc = 'Tab; open' }
 
 -- editor visuals & "ergonomics"
 nmap('n', '<leader>M', ':set mouse!<CR>', {noremap = true, desc = 'Toggle mouse mode.' })
+nmap('n', '<leader>z', ':set scrolloff=3<CR>', {noremap = true, desc = 'Do not center cursor on screen.' })
+nmap('n', '<leader>Z', ':set scrolloff=999<CR>', {noremap = true, desc = 'Center cursor on screen.' })
 
 -- misc 
 nmap('n', '<leader>w',       ':w<CR>',                   {noremap = true, desc = 'Save buff.'})
