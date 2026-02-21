@@ -52,7 +52,7 @@ return {
   dependencies = deps,
 
   keys = {
-    { '<leader>c', ':CodeCompanionActions<CR>', desc = 'CodeCompanion: Actions.' },
+    { '<leader>A', ':CodeCompanionActions<CR>', desc = 'CodeCompanion: Actions.' },
   },
 
   config = function (_, opts)
