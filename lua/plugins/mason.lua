@@ -46,6 +46,7 @@ return {
         ensure_installed = {
           -- 'helm_ls',
           -- 'yamlls',
+          'lua_ls',
         },
         handlers = {
           function(server_name)
