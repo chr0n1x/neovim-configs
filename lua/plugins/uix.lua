@@ -89,32 +89,53 @@ Forever MoonJanglin'
   },
 
   -- color schemes; I'm conflicted
-  {
-    "mcauley-penney/techbase.nvim",
-    config = function()
-      vim.cmd.colorscheme("techbase")
-    end,
-    priority = 1000
-  },
+  -- {
+  --   "mcauley-penney/techbase.nvim",
+  --   config = function()
+  --     vim.cmd.colorscheme("techbase")
+  --   end,
+  --   priority = 1000
+  -- },
   -- {
   --   'shaunsingh/nord.nvim',
   --   lazy = false,
   --   init = function() require('nord').set() end
   -- },
-  -- {
-  --   "metalelf0/black-metal-theme-neovim",
-  --   lazy = false,
-  --   priority = 1000,
-  --   config = function()
-  --     require("black-metal").setup({
-  --       theme = 'taake',
-  --       variant = 'dark',
-  --       alt_bg = false,
-  --       colored_docstrings = false,
-  --     })
-  --     require("black-metal").load()
-  --   end,
-  -- }
+  {
+    "metalelf0/black-metal-theme-neovim",
+    lazy = false,
+    priority = 1000,
+    config = function()
+      require("black-metal").setup({
+        theme = 'taake',
+        variant = 'dark',
+        alt_bg = false,
+        colored_docstrings = false,
+      })
+      require("black-metal").load()
+    end,
+  },
+
+  {
+    "chrisgrieser/nvim-origami",
+    event = "VeryLazy",
+    opts = {
+      foldtext = {
+        enabled = true,
+        padding = 2,
+      },
+      foldKeymaps = {
+        setup = false,
+      },
+    },
+    init = function()
+      vim.opt.foldlevel = 99
+      vim.opt.foldlevelstart = 99
+      vim.api.nvim_set_keymap('n', '<leader>c', ':lua require("origami").caret()<CR>', {noremap = true, desc = 'Close fold (better if lsp on).'})
+      vim.api.nvim_set_keymap('n', '<leader>o', ':lua require("origami").dollar()<CR>', {noremap = true, desc = 'Open fold.'})
+    end,
+  },
+
 }
 
 if not IN_PERF_MODE then
