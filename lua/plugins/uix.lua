@@ -107,7 +107,7 @@ Forever MoonJanglin'
     priority = 1000,
     config = function()
       require("black-metal").setup({
-        theme = 'taake',
+        theme = 'mayhem',
         variant = 'dark',
         alt_bg = false,
         colored_docstrings = false,
