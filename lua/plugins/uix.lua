@@ -131,8 +131,8 @@ Forever MoonJanglin'
     init = function()
       vim.opt.foldlevel = 99
       vim.opt.foldlevelstart = 99
-      vim.api.nvim_set_keymap('n', '<leader>c', ':lua require("origami").caret()<CR>', {noremap = true, desc = 'Close fold (better if lsp on).'})
-      vim.api.nvim_set_keymap('n', '<leader>o', ':lua require("origami").dollar()<CR>', {noremap = true, desc = 'Open fold.'})
+      vim.api.nvim_set_keymap('n', 'zc', ':lua require("origami").caret()<CR>', {noremap = true, desc = 'Close fold (better if lsp on).'})
+      vim.api.nvim_set_keymap('n', 'zo', ':lua require("origami").dollar()<CR>', {noremap = true, desc = 'Open fold.'})
     end,
   },
 
