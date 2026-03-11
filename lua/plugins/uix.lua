@@ -83,13 +83,6 @@ Forever MoonJanglin'
   },
 
   -- color schemes; I'm conflicted
-  -- {
-  --   "mcauley-penney/techbase.nvim",
-  --   config = function()
-  --     vim.cmd.colorscheme("techbase")
-  --   end,
-  --   priority = 1000
-  -- },
   {
     'shaunsingh/nord.nvim',
     lazy = false,
@@ -103,6 +96,9 @@ Forever MoonJanglin'
       require('nord').set()
     end
   },
+
+  -- NOTE TO SELF: this theme does not have highlights for cmp tab completion
+  -- which is REALLY annoying
   -- {
   --   "metalelf0/black-metal-theme-neovim",
   --   lazy = false,
