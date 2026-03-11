@@ -5,7 +5,10 @@ local uix_plugins = {
     lazy = false,
     config = function ()
       vim.notify = require("notify")
-      vim.notify.setup({ top_down = false })
+      vim.notify.setup({
+        top_down = false,
+        background_colour = '#434C5E',
+      })
     end,
     keys = {
       { '<leader>eh', ':lua require("notify").dismiss()<CR>', desc = "Clear notifications." },
@@ -45,15 +48,6 @@ Forever MoonJanglin'
       layout = { enabled = true },
       win = { enabled = DISABLED_IF_IN_PERF_MODE },
     }
-  },
-
-  -- adds borders to cmp popups because OH MY GOD
-  {
-    'mikesmithgh/borderline.nvim',
-    enabled = true,
-    lazy = true,
-    event = 'VeryLazy',
-    config = function() require('borderline').setup({}) end,
   },
 
   {
@@ -96,25 +90,32 @@ Forever MoonJanglin'
   --   end,
   --   priority = 1000
   -- },
-  -- {
-  --   'shaunsingh/nord.nvim',
-  --   lazy = false,
-  --   init = function() require('nord').set() end
-  -- },
   {
-    "metalelf0/black-metal-theme-neovim",
+    'shaunsingh/nord.nvim',
     lazy = false,
-    priority = 1000,
-    config = function()
-      require("black-metal").setup({
-        theme = 'mayhem',
-        variant = 'dark',
-        alt_bg = false,
-        colored_docstrings = false,
-      })
-      require("black-metal").load()
-    end,
+    init = function()
+      vim.g.nord_contrast = false
+      vim.g.nord_borders = false
+      vim.g.nord_bold = false
+      vim.g.nord_italic = false
+      vim.g.nord_disable_background = true
+      vim.g.nord_uniform_diff_background = false
+      require('nord').set()
+    end
   },
+  -- {
+  --   "metalelf0/black-metal-theme-neovim",
+  --   lazy = false,
+  --   priority = 1000,
+  --   config = function()
+  --     require("black-metal").setup({
+  --       theme = 'mayhem',
+  --       colored_dockstrings = false,
+  --       variant = 'dark',
+  --     })
+  --     require("black-metal").load()
+  --   end,
+  -- },
 
   {
     "chrisgrieser/nvim-origami",
@@ -122,7 +123,9 @@ Forever MoonJanglin'
     opts = {
       foldtext = {
         enabled = true,
-        padding = 2,
+        padding = {
+          width = 2,
+        }
       },
       foldKeymaps = {
         setup = false,
