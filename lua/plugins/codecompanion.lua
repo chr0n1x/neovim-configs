@@ -100,13 +100,14 @@ return {
     opts.display = opts.display or {
       chat = {
         window = {
+          title = "🦙 " .. OLLAMA_MODEL_SHORT,
           buflisted = false,
           sticky = false, -- window follows when switching tabs
 
           layout = "float", -- float|vertical|horizontal|tab|buffer
           floating_window = {
             row =  function() -- vim.o.lines,
-              return vim.o.lines + 64
+              return vim.o.lines - 128
             end,
             col=  function() -- vim.o.lines,
               return vim.o.columns + 512
