@@ -12,7 +12,7 @@ local sources_list = {
   {name = 'path'},
   {
     name = 'buffer',
-    -- opts = { keyword_length = 3 },
+    opts = { keyword_length = 4 },
     option = {
       get_bufnrs = function()
         return vim.api.nvim_list_bufs()
@@ -31,9 +31,7 @@ if not IN_PERF_MODE then
   table.insert(deps, 'hrsh7th/cmp-nvim-lua')
   table.insert(deps, 'L3MON4D3/LuaSnip')
   table.insert(deps, 'andersevenrud/cmp-tmux')
-
-  -- WHY BROKEN?
-  -- table.insert(sources_list, {name = 'nvim_lsp' })
+  table.insert(sources_list, {name = 'nvim_lsp' })
 
   table.insert(sources_list, {
     name = "lazydev",
@@ -59,19 +57,14 @@ if not IN_PERF_MODE then
   end
 end
 
--- always add these if AI configs are detected; I hopefully know what Im doing
-if OPENWEBUI_ENABLED or OLLAMA_ENABLED then
+-- always add these if we can afford the sys resources
+-- makes it a bit easier to add in new plugins
+if not IN_PERF_MODE then
   table.insert(deps, 'olimorris/codecompanion.nvim')
-
-  if VECTORCODE_INSTALLED then
-    table.insert(deps, 'Davidyz/VectorCode')
-  end
-
   table.insert(sources_list, { name = 'codecompanion_models' })
   table.insert(sources_list, { name = 'codecompanion_slash_commands' })
   table.insert(sources_list, { name = 'codecompanion_tools' })
   table.insert(sources_list, { name = 'codecompanion_variables' })
-
   sources_list["per_filetype"] = { codecompanion = { "codecompanion" } }
 end
 
@@ -105,8 +98,8 @@ return {
       mapping = cmp.mapping.preset.insert({
         ['<Tab>'] = cmp.mapping.select_next_item(cmp_select),
         ['<CR>'] = cmp.mapping.confirm({ select = true }),
-        ['<C-p>'] = cmp.mapping.select_prev_item(cmp_select),
-        ['<C-n>'] = cmp.mapping.select_next_item(cmp_select),
+        ['<C-k>'] = cmp.mapping.select_prev_item(cmp_select),
+        ['<C-j>'] = cmp.mapping.select_next_item(cmp_select),
         ['<C-y>'] = cmp.mapping.confirm({ select = true }),
         ['<C-Space>'] = cmp.mapping.complete(),
         ["<A-y>"] = require('minuet').make_cmp_map(),
@@ -122,8 +115,18 @@ return {
       snippet = snippet_configs,
     })
 
-    -- more or less remove this from cmdline, very annoying
-    cmp.setup.cmdline(':', {})
+    cmp.setup.cmdline(':', {
+      -- more or less remove this from cmdline, very annoying
+      -- mapping = cmp.mapping.preset.cmdline(),
+      sources = cmp.config.sources(
+        {
+          { name = 'path' }
+        },
+        {
+          { name = 'cmdline' }
+        }
+      )
+    })
 
     -- UI DECORATIONS
     -- Change the Diagnostic symbols in the sign column (gutter)
