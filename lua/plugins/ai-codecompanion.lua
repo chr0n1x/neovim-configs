@@ -4,6 +4,10 @@ if OLLAMA_NVIM_DISABLED then return {} end
 
 OLLAMA_ADAPTER_NAME = "ollama"
 
+local model = os.getenv("CODECOMPANION_MODEL") or OLLAMA_MODEL
+local model_name_pieces = vim.split(model, "/")
+local model_name_short = model_name_pieces[#model_name_pieces]
+
 -- notification things
 local setup_notification_cfg = {
   title = "🤖 CodeCompanion",
@@ -19,18 +23,18 @@ local deps = {
 local cc_strats = {
   cmd = {
     adapter = OLLAMA_ADAPTER_NAME,
-    model = OLLAMA_MODEL,
+    model = model,
   },
   chat = {
     adapter = OLLAMA_ADAPTER_NAME,
-    model = OLLAMA_MODEL,
+    model = model,
     roles = {
       user = "🤓 " .. os.getenv("USER") .. ' (type something, send w/ ctrl+s)',
     },
   },
   inline = {
     adapter = OLLAMA_ADAPTER_NAME,
-    model = OLLAMA_MODEL,
+    model = model,
     keymaps = {
       accept_change = {
         modes = { n = "ga" },
@@ -75,7 +79,7 @@ return {
         sync = true,
       },
       schema = {
-        model = { default = OLLAMA_MODEL },
+        model = { default = model },
         temperature = { default = 0.6 },
         top_p = { default = 0.95 },
         min_p = { default = 0.00 },
@@ -100,7 +104,7 @@ return {
     opts.display = opts.display or {
       chat = {
         window = {
-          title = "🦙 " .. OLLAMA_MODEL_SHORT,
+          title = "🦙 " .. model_name_short,
           buflisted = false,
           sticky = false, -- window follows when switching tabs
 
@@ -140,7 +144,7 @@ return {
     require('codecompanion').setup(opts)
 
     local statusmsg = 'CodeCompanion AI adapter(s) configured:\n\n'
-    statusmsg = statusmsg .. '✅💻🦙 ' .. OLLAMA_MODEL_SHORT .. ' via ' .. OLLAMA_DOMAIN
+    statusmsg = statusmsg .. '✅💻🦙 ' .. model_name_short .. ' via ' .. OLLAMA_DOMAIN
     vim.notify(statusmsg, vim.log.levels.INFO, setup_notification_cfg)
   end
 }
