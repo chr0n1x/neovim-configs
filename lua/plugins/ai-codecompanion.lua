@@ -4,6 +4,8 @@ if OLLAMA_NVIM_DISABLED then return {} end
 
 OLLAMA_ADAPTER_NAME = "ollama"
 
+local OLLAMA_ADAPTER_NAME = "ollama"
+local adapter = os.getenv("CODECOMPANION_ADAPTER") or OLLAMA_ADAPTER_NAME
 local model = os.getenv("CODECOMPANION_MODEL") or OLLAMA_MODEL
 local model_name_pieces = vim.split(model, "/")
 local model_name_short = model_name_pieces[#model_name_pieces]
@@ -22,11 +24,11 @@ local deps = {
 
 local cc_strats = {
   cmd = {
-    adapter = OLLAMA_ADAPTER_NAME,
+    adapter = adapter,
     model = model,
   },
   chat = {
-    adapter = OLLAMA_ADAPTER_NAME,
+    adapter = adapter,
     model = model,
     send = {
       keymaps = {
@@ -40,7 +42,7 @@ local cc_strats = {
     },
   },
   inline = {
-    adapter = OLLAMA_ADAPTER_NAME,
+    adapter = adapter,
     model = model,
     keymaps = {
       accept_change = {
@@ -113,8 +115,6 @@ return {
       ollama_cfg.headers["Authorization"] = "Bearer ${api_key}"
     end
 
-    cc_strats.inline.adapter = OLLAMA_ADAPTER_NAME
-
     opts.adapters.http[OLLAMA_ADAPTER_NAME] = function()
       return require("codecompanion.adapters").extend("ollama", ollama_cfg)
     end
@@ -164,7 +164,7 @@ return {
     require('codecompanion').setup(opts)
 
     local statusmsg = 'CodeCompanion AI adapter(s) configured:\n\n'
-    statusmsg = statusmsg .. '✅💻🦙 ' .. model_name_short .. ' via ' .. OLLAMA_DOMAIN
+    statusmsg = statusmsg .. '✅💻🦙 ' .. model_name_short .. ' via ' .. adapter
     vim.notify(statusmsg, vim.log.levels.INFO, setup_notification_cfg)
   end
 }
