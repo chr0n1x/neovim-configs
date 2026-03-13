@@ -27,7 +27,10 @@ local settings = {
 
 -- example - override based on env-var
 local command = "claude --model qwen3.5:9b"
-if OLLAMA_MODEL ~= "" then
+local claude_cmd_env = os.getenv("CLAUDE_COMMAND")
+if claude_cmd_env ~= "" then
+  command = claude_cmd_env
+elseif OLLAMA_MODEL ~= "" then
   command = "claude --model " .. OLLAMA_MODEL
 else
   command = "claude"
