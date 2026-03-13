@@ -1,6 +1,5 @@
-if IN_PERF_MODE then return {} end
 -- only run this with ollama, just easier for now
-if OLLAMA_NVIM_DISABLED then return {} end
+if IN_PERF_MODE or (not OLLAMA_ENABLED) then return {} end
 
 local config = {
   notify = 'warn',

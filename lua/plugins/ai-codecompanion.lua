@@ -1,8 +1,4 @@
-if IN_PERF_MODE then return {} end
-
-if OLLAMA_NVIM_DISABLED then return {} end
-
-OLLAMA_ADAPTER_NAME = "ollama"
+if IN_PERF_MODE or (not OLLAMA_ENABLED) then return {} end
 
 local OLLAMA_ADAPTER_NAME = "ollama"
 local adapter = os.getenv("CODECOMPANION_ADAPTER") or OLLAMA_ADAPTER_NAME
