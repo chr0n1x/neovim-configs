@@ -5,7 +5,8 @@ if claude_cmd_env and claude_cmd_env ~= "" then
   command = claude_cmd_env
 elseif OLLAMA_MODEL ~= "" then
   vim.fn.setenv("ANTHROPIC_BASE_URL", OLLAMA_URL)
-  vim.fn.setenv("ANTHROPIC_API_KEY", "ollama")
+  vim.fn.setenv("ANTHROPIC_API_KEY", "")
+  vim.fn.setenv("ANTHROPIC_AUTH_TOKEN", "ollama")
   command = "claude --model " .. OLLAMA_MODEL
 end
 
