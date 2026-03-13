@@ -13,11 +13,11 @@ local settings = {
 
   keymaps = {
     toggle = {
-      normal = "<leader>cn",       -- Normal mode keymap for toggling Claude Code, false to disable
-      terminal = "<leader>ct",     -- Terminal mode keymap for toggling Claude Code, false to disable
+      normal = "<leader>Cn",       -- Normal mode keymap for toggling Claude Code, false to disable
+      terminal = "<leader>Ct",     -- Terminal mode keymap for toggling Claude Code, false to disable
       variants = {
-        continue = "<leader>c", -- Normal mode keymap for Claude Code with continue flag
-        verbose = "<leader>cV",  -- Normal mode keymap for Claude Code with verbose flag
+        continue = "<leader>C", -- Normal mode keymap for Claude Code with continue flag
+        verbose = "<leader>CV",  -- Normal mode keymap for Claude Code with verbose flag
       },
     },
     window_navigation = true, -- Enable window navigation keymaps (<C-h/j/k/l>)

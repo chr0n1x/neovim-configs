@@ -29,7 +29,6 @@ local cc_strats = {
     },
   },
   inline = {
-    adapter = DEFAULT_AI_ADAPTER,
     adapter = OLLAMA_ADAPTER_NAME,
     model = OLLAMA_MODEL,
     keymaps = {
@@ -52,7 +51,7 @@ return {
   dependencies = deps,
 
   keys = {
-    { '<leader>A', ':CodeCompanionActions<CR>', desc = 'CodeCompanion: Actions.' },
+    { '<leader>c', ':CodeCompanionChat<CR>', desc = 'CodeCompanion: Actions.' },
   },
 
   config = function (_, opts)
@@ -97,6 +96,46 @@ return {
     end
 
     opts.strategies = cc_strats
+
+    opts.display = opts.display or {
+      chat = {
+        window = {
+          buflisted = false,
+          sticky = false, -- window follows when switching tabs
+
+          layout = "float", -- float|vertical|horizontal|tab|buffer
+          floating_window = {
+            row =  function() -- vim.o.lines,
+              return vim.o.lines + 64
+            end,
+            col=  function() -- vim.o.lines,
+              return vim.o.columns + 512
+            end,
+            opts = {
+              wrap = false,
+              number = false,
+              relativenumber = false,
+            },
+          },
+
+          width = 0.3,
+          height = 0.8,
+
+          full_height = false,
+          position = "right", -- left|right|top|bottom (nil will default depending on vim.opt.splitright|vim.opt.splitbelow)
+          border = "single",
+          relative = "cursor",
+
+          -- Ensure that long paragraphs of markdown are wrapped
+          opts = {
+            breakindent = true,
+            linebreak = true,
+            wrap = true,
+          },
+        },
+      },
+    }
+
     require('codecompanion').setup(opts)
 
     local statusmsg = 'CodeCompanion AI adapter(s) configured:\n\n'
