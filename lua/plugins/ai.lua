@@ -1,5 +1,6 @@
 local command = "claude"
 local claude_cmd_env = os.getenv("CLAUDE_COMMAND")
+
 if claude_cmd_env and claude_cmd_env ~= "" then
   command = claude_cmd_env
 elseif OLLAMA_MODEL ~= "" then
@@ -7,6 +8,9 @@ elseif OLLAMA_MODEL ~= "" then
   vim.fn.setenv("ANTHROPIC_API_KEY", "ollama")
   command = "claude --model " .. OLLAMA_MODEL
 end
+
+local claude_model_env = os.getenv("CLAUDE_MODEL")
+local model99 = (claude_model_env ~= "" and claude_model_env) or OLLAMA_MODEL
 
 return {
   {
@@ -19,7 +23,7 @@ return {
       _99.setup({
         -- required for claude
         provider = _99.Providers.ClaudeCodeProvider,
-        model = "claude-sonnet-4-6",
+        model = model99,
         tmp_dir = "./tmp",
 
         logger = {
