@@ -68,7 +68,7 @@ return {
       '<leader>c',
       ":'<,'>CodeCompanionChat Add /buffer<CR>",
       mode = "v",
-      desc = 'CodeCompanion: dump buffer into chat.'
+      desc = 'CodeCompanion: add buffer selection into chat.'
     },
     {
       '<leader>c',
