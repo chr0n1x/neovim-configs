@@ -28,8 +28,15 @@ local cc_strats = {
   chat = {
     adapter = OLLAMA_ADAPTER_NAME,
     model = model,
+    send = {
+      keymaps = {
+        -- a bit better than ctrl+s, i.e. shift-enter
+        -- but we're already typing in insert mode so iunno
+        modes = { n = "<leader><CR>", i = "<C-s>" },
+      },
+    },
     roles = {
-      user = "🤓 " .. os.getenv("USER") .. ' (type something, send w/ ctrl+s)',
+      user = "🤓👇 " .. os.getenv("USER") .. ' (type something, send w/ ctrl+s)',
     },
   },
   inline = {
@@ -55,7 +62,20 @@ return {
   dependencies = deps,
 
   keys = {
-    { '<leader>c', ':CodeCompanionChat<CR>', desc = 'CodeCompanion: Actions.' },
+    -- the weird :'<,'> stuff is due to this
+    -- https://github.com/olimorris/codecompanion.nvim/issues/2650
+    {
+      '<leader>c',
+      ":'<,'>CodeCompanionChat Add /buffer<CR>",
+      mode = "v",
+      desc = 'CodeCompanion: dump buffer into chat.'
+    },
+    {
+      '<leader>c',
+      "V:'<,'>CodeCompanionChat Add /buffer<CR>",
+      mode = "n",
+      desc = 'CodeCompanion: dump current line into chat.'
+    }
   },
 
   config = function (_, opts)
@@ -80,7 +100,7 @@ return {
       },
       schema = {
         model = { default = model },
-        temperature = { default = 0.6 },
+        temperature = { default = 0.95 },
         top_p = { default = 0.95 },
         min_p = { default = 0.00 },
         top_k = { default = 40 },
