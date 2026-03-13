@@ -44,7 +44,7 @@ if not IN_PERF_MODE then
     sources_list,
     {
       name = 'tmux',
-      keyword_length = 3,
+      keyword_length = 4,
       -- will trigger ALL the things OH MY GOD
       trigger_characters = {},
       option = {
