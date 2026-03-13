@@ -9,8 +9,8 @@ elseif OLLAMA_MODEL ~= "" then
   command = "claude --model " .. OLLAMA_MODEL
 end
 
-local claude_model_env = os.getenv("CLAUDE_MODEL")
-local model99 = (claude_model_env ~= "" and claude_model_env) or OLLAMA_MODEL
+-- agent99: CLAUDE_MODEL env var if set, else OLLAMA_MODEL
+local model99 = os.getenv("CLAUDE_MODEL") or OLLAMA_MODEL
 
 return {
   {
@@ -50,19 +50,19 @@ return {
 
       vim.keymap.set("n", "<leader>a", function()
         _99.visual()
-      end)
+      end, {noremap = true, desc = '99 Prompt to ' .. OLLAMA_MODEL_SHORT })
       vim.keymap.set("v", "<leader>a", function()
         _99.visual()
-      end)
+      end, {noremap = true, desc = 'Prompt in visual mode.' })
 
       --- if you have a request you dont want to make any changes, just cancel it
       vim.keymap.set("n", "<leader>ax", function()
         _99.stop_all_requests()
-      end)
+      end, {noremap = true, desc = 'Stop all requests.' })
 
       vim.keymap.set("n", "<leader>as", function()
         _99.search()
-      end)
+      end, {noremap = true, desc = 'Perform search.' })
     end,
   },
 
