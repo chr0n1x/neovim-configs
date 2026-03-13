@@ -30,6 +30,7 @@ local cc_strats = {
       keymaps = {
         -- a bit better than ctrl+s, i.e. shift-enter
         -- but we're already typing in insert mode so iunno
+        -- based on this https://github.com/olimorris/codecompanion.nvim/blob/main/doc/configuration/chat-buffer.md#keymaps
         modes = { n = "<leader><CR>", i = "<C-s>" },
       },
     },
