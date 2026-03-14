@@ -12,6 +12,7 @@ local config = {
       api_key = 'TERM',
       name = '🦙',
       end_point = OLLAMA_URL .. '/v1/completions',
+      -- NOTE: ideally use a model that can respond FAST
       model = OLLAMA_MODEL,
       optional = {
         max_tokens = 128,

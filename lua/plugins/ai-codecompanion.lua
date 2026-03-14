@@ -2,6 +2,7 @@ if IN_PERF_MODE or (not OLLAMA_ENABLED) then return {} end
 
 local OLLAMA_ADAPTER_NAME = "ollama"
 local adapter = os.getenv("CODECOMPANION_ADAPTER") or OLLAMA_ADAPTER_NAME
+-- NOTE: can be a heavier model; we don't need to deal w/things like debounce
 local model = os.getenv("CODECOMPANION_MODEL") or OLLAMA_MODEL
 local model_name_pieces = vim.split(model, "/")
 local model_name_short = model_name_pieces[#model_name_pieces]

@@ -11,6 +11,7 @@ elseif OLLAMA_MODEL ~= "" then
 end
 
 -- agent99: CLAUDE_MODEL env var if set, else OLLAMA_MODEL
+-- NOTE: make sure that the model can use tools
 local model99 = os.getenv("CLAUDE_MODEL") or OLLAMA_MODEL
 
 return {
