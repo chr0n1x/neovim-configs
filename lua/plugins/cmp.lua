@@ -59,7 +59,7 @@ end
 
 -- always add these if we can afford the sys resources
 -- makes it a bit easier to add in new plugins
-if not IN_PERF_MODE then
+if not IN_PERF_MODE and os.getenv('CODECOMPANION_ENABLED') ~= 'false' then
   table.insert(deps, 'olimorris/codecompanion.nvim')
   table.insert(sources_list, { name = 'codecompanion_models' })
   table.insert(sources_list, { name = 'codecompanion_slash_commands' })

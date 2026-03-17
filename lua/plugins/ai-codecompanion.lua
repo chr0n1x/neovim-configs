@@ -1,4 +1,5 @@
-if true then return {} end
+-- these are also referenced in cmp.lua
+if os.getenv('CODECOMPANION_ENABLED') == 'false' then return {} end
 if IN_PERF_MODE or (not OLLAMA_ENABLED) then return {} end
 
 local OLLAMA_ADAPTER_NAME = "ollama"
