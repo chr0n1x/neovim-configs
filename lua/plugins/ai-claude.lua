@@ -4,6 +4,7 @@ local claude_cmd_env = os.getenv("CLAUDE_COMMAND")
 -- agent99: CLAUDE_MODEL env var if set, else OLLAMA_MODEL
 -- NOTE: make sure that the model can use tools
 local model99 = os.getenv("CLAUDE_MODEL") or OLLAMA_MODEL
+vim.fn.setenv("CLAUDE_CODE_TRACKING_ENABLED", "true")
 
 if claude_cmd_env and claude_cmd_env ~= "" then
   command = claude_cmd_env
@@ -79,17 +80,40 @@ return {
         provider = "auto",
         auto_close = true,
         snacks_win_opts = {
-          -- relative = "cursor",
-          row = 0.01,
-          col = 0.65,
           position = "float",
-          width = 0.30,
-          height = 0.9,
           border = "rounded",
+          footer_keys = true,
+          fix_buf = true,
+          resize = true,
+          stack = true,
           keys = {
-            claude_hide = { "<Esc>", function(self) self:hide() end, mode = "t", desc = "Hide" },
-            claude_close = { "<Shift><Esc>", "close", mode = "n", desc = "Close" },
+            { "<Esc>", function(self) self:hide() end, mode = "t", desc = "Hide" },
+            -- I HAVE to be stupid, there has to be an easier way to do this
+            -- specifically written to go back to the previous window BECAUSE
+            -- we're using a floating terminal
+            {
+              "<C-j>",
+              function()
+                local win_ids = vim.api.nvim_list_wins()
+                local terminal_win = vim.api.nvim_get_current_win()
+                local prev_win_ix = win_ids[win_ids.length]
+                for i, num in ipairs(win_ids) do
+                  if i ~=0 and num == terminal_win then
+                    prev_win_ix = win_ids[i - 1]
+                  end
+                end
+                vim.api.nvim_set_current_win(prev_win_ix)
+              end,
+              mode = "t",
+              desc = "🔙"
+            },
           },
+
+          -- TODO: make these...more relative
+          row = 0.01,
+          col = 0.58,
+          width = 0.35,
+          height = 0.9,
         },
       }
     },
@@ -113,43 +137,4 @@ return {
       { "<leader>cd", "<cmd>ClaudeCodeDiffDeny<cr>", desc = "Deny diff" },
     },
   },
-
-  -- {
-  --   "greggh/claude-code.nvim",
-  --   dependencies = {
-  --     "nvim-lua/plenary.nvim", -- Required for git operations
-  --   },
-  --   config = function()
-  --     local settings = {
-  --       command = command,
-  --       window = {
-  --         position = "vertical",
-  --         float = {
-  --           width = "25%",
-  --           height = "85%",
-  --           row = "5%",
-  --           col = "70%",
-  --           relative = "editor",  -- Relative to: "editor" or "cursor"
-  --           border = "solid",   -- Border style: "none", "single", "double", "rounded", "solid", "shadow"
-  --         },
-  --       },
-  --
-  --       keymaps = {
-  --         toggle = {
-  --           normal = "<leader>An",    -- Normal mode keymap for toggling Claude Code, false to disable
-  --           terminal = "<leader>At",  -- Terminal mode keymap for toggling Claude Code, false to disable
-  --           variants = {
-  --             continue = "<leader>A", -- Normal mode keymap for Claude Code with continue flag
-  --             verbose = "<leader>AV", -- Normal mode keymap for Claude Code with verbose flag
-  --           },
-  --         },
-  --         window_navigation = true, -- Enable window navigation keymaps (<C-h/j/k/l>)
-  --         scrolling = true,         -- Enable scrolling keymaps (<C-f/b>) for page up/down
-  --       }
-  --     }
-  --
-  --     require("claude-code").setup(settings)
-  --   end
-  -- }
-
 }
