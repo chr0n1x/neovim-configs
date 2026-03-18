@@ -103,10 +103,20 @@ return {
     config = true,
     opts = {
       terminal_cmd = command,
-      auto_start = false,
+
+      -- server - required to send ctx
+      -- port_range = {        -- WebSocket server port range
+      --  min = 10000,
+      --  max = 65535,
+      -- },
+      auto_start = true,       -- Auto-start server on Neovim startup
+      focus_after_send = true,
+      log_level = "info",
+
       terminal = {
         provider = "auto",
         auto_close = true,
+
         snacks_win_opts = {
           position = "float",
           border = "rounded",
@@ -132,22 +142,23 @@ return {
     },
     keys = {
       { "<leader>c", "<cmd>ClaudeCodeFocus<cr>", desc = "Claude Code", mode = { "n", "x" } },
-      { "<leader>cc", "<cmd>ClaudeCode<cr>", desc = "Toggle Claude" },
-      { "<leader>cf", "<cmd>ClaudeCodeFocus<cr>", desc = "Focus Claude" },
+      -- { "<leader>c", "<cmd>ClaudeCode<cr>", desc = "Toggle Claude" },
+      -- { "<leader>cf", "<cmd>ClaudeCodeFocus<cr>", desc = "Focus Claude" },
       { "<leader>cr", "<cmd>ClaudeCode --resume<cr>", desc = "Resume Claude" },
-      { "<leader>cC", "<cmd>ClaudeCode --continue<cr>", desc = "Continue Claude" },
+      { "<leader>cc", "<cmd>ClaudeCode --continue<cr>", desc = "Continue Claude" },
       { "<leader>cm", "<cmd>ClaudeCodeSelectModel<cr>", desc = "Select Claude model" },
-      { "<leader>cb", "<cmd>ClaudeCodeAdd %<cr>", desc = "Add current buffer" },
-      { "<leader>cs", "<cmd>ClaudeCodeSend<cr>", mode = "v", desc = "Send to Claude" },
+      { "<leader>ca", "<cmd>ClaudeCodeAdd %<cr>", desc = "Add current buffer" },
+      -- esc required to exit visual mode after going into terminal
+      { "<leader>ca", "<cmd>ClaudeCodeSend<cr>; <esc>", mode = "v", desc = "Send to Claude" },
       {
-        "<leader>cs",
+        "<C-t>",
         "<cmd>ClaudeCodeTreeAdd<cr>",
         desc = "Add file",
         ft = { "NvimTree", "neo-tree", "oil", "minifiles", "netrw" },
       },
       -- Diff management
-      { "<leader>ca", "<cmd>ClaudeCodeDiffAccept<cr>", desc = "Accept diff" },
-      { "<leader>cd", "<cmd>ClaudeCodeDiffDeny<cr>", desc = "Deny diff" },
+      { "<leader>cda", "<cmd>ClaudeCodeDiffAccept<cr>", desc = "Accept diff" },
+      { "<leader>cdd", "<cmd>ClaudeCodeDiffDeny<cr>", desc = "Deny diff" },
     },
   },
 }
