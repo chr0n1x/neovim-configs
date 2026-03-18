@@ -15,6 +15,34 @@ elseif OLLAMA_MODEL ~= "" then
   command = "claude --model " .. model99
 end
 
+-- I HAVE to be stupid, there has to be an easier way to do this
+-- specifically written to go back to the previous window BECAUSE
+-- we're using a floating terminal
+
+local set_prev_win = function()
+  local win_ids = vim.api.nvim_list_wins()
+  local terminal_win = vim.api.nvim_get_current_win()
+  local prev_win_ix = win_ids[win_ids.length]
+  for i, num in ipairs(win_ids) do
+    if i ~= 1 and num == terminal_win then
+      prev_win_ix = win_ids[i - 1]
+    end
+  end
+  vim.api.nvim_set_current_win(prev_win_ix)
+end
+
+local set_next_win = function()
+  local win_ids = vim.api.nvim_list_wins()
+  local terminal_win = vim.api.nvim_get_current_win()
+  local next_win_ix = win_ids[0]
+  for i, num in ipairs(win_ids) do
+    if i ~= #win_ids and num == terminal_win then
+      next_win_ix = win_ids[i + 1]
+    end
+  end
+  vim.api.nvim_set_current_win(next_win_ix)
+end
+
 return {
   {
     "ThePrimeagen/99",
@@ -88,25 +116,10 @@ return {
           stack = true,
           keys = {
             { "<Esc>", function(self) self:hide() end, mode = "t", desc = "Hide" },
-            -- I HAVE to be stupid, there has to be an easier way to do this
-            -- specifically written to go back to the previous window BECAUSE
-            -- we're using a floating terminal
-            {
-              "<C-j>",
-              function()
-                local win_ids = vim.api.nvim_list_wins()
-                local terminal_win = vim.api.nvim_get_current_win()
-                local prev_win_ix = win_ids[win_ids.length]
-                for i, num in ipairs(win_ids) do
-                  if i ~=0 and num == terminal_win then
-                    prev_win_ix = win_ids[i - 1]
-                  end
-                end
-                vim.api.nvim_set_current_win(prev_win_ix)
-              end,
-              mode = "t",
-              desc = "🔙"
-            },
+            { "<C-h>", function() set_prev_win() end, mode = "t", desc = "⏮️" },
+            { "<C-j>", function() set_prev_win() end, mode = "t", desc = "⏮️" },
+            { "<C-k>", function() set_next_win() end, mode = "t", desc = "⏭️" },
+            { "<C-l>", function() set_next_win() end, mode = "t", desc = "⏭️" },
           },
 
           -- TODO: make these...more relative
