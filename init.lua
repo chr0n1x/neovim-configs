@@ -6,4 +6,4 @@ require('key-bindings')
 
 require('config.lazy')
 
-require('autocmds')
+-- require('autocmds')

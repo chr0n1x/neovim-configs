@@ -23,7 +23,8 @@ nmap('n', '<leader>Z', ':set scrolloff=999<CR>', {noremap = true, desc = 'Center
 -- misc 
 nmap('n', '<leader>w',       ':w<CR>',                   {noremap = true, desc = 'Save buff.'})
 nmap('n', '<leader><space>', ':noh <bar> e<CR>',         {noremap = true, desc = 'Close any highlights.'})
-nmap('n', '<leader>q',       ':q<CR>',                   {noremap = true, desc = 'Close buffer (:q).'})
+nmap('n', '<leader>q',       ':wq<CR>',                  {noremap = true, desc = 'Save & close buffer (:wq).'})
+nmap('n', '<leader>qq',      ':qa!<CR>',                 {noremap = true, desc = 'Force close all. (:qa!)'})
 nmap('n', '<leader>md',      ':delm! | delm A-Z0-9<CR>', {noremap = true, desc = 'Marks: Delete all.'})
 nmap('n', 'er',              ':',                        {noremap = true, desc = 'Quick-enter into command mode.'})
 
