@@ -15,7 +15,7 @@ local config = {
       -- NOTE: ideally use a model that can respond FAST
       model = OLLAMA_MODEL,
       optional = {
-        max_tokens = 128,
+        max_tokens = 32,
         top_p = 0.95,
       },
     },
