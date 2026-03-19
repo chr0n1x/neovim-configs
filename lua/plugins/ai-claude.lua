@@ -34,7 +34,7 @@ end
 local set_next_win = function()
   local win_ids = vim.api.nvim_list_wins()
   local terminal_win = vim.api.nvim_get_current_win()
-  local next_win_ix = win_ids[0]
+  local next_win_ix = win_ids[1]
   for i, num in ipairs(win_ids) do
     if i ~= #win_ids and num == terminal_win then
       next_win_ix = win_ids[i + 1]
@@ -110,8 +110,16 @@ return {
       --  max = 65535,
       -- },
       auto_start = true,       -- Auto-start server on Neovim startup
-      focus_after_send = true,
+      focus_after_send = true, -- after <leader>ca go to terminal
       log_level = "info",
+
+      diff_opts = {
+        layout = "vertical",
+        open_in_new_tab = true,
+        keep_terminal_focus = false,         -- If true, moves focus back to terminal after diff opens
+        hide_terminal_in_new_tab = true,     -- works better personally w/ floating
+        on_new_file_reject = "close_window", -- "keep_empty" or "close_window"
+      },
 
       terminal = {
         provider = "auto",
@@ -157,8 +165,8 @@ return {
         ft = { "NvimTree", "neo-tree", "oil", "minifiles", "netrw" },
       },
       -- Diff management
-      { "<leader>cda", "<cmd>ClaudeCodeDiffAccept<cr>", desc = "Accept diff" },
-      { "<leader>cdd", "<cmd>ClaudeCodeDiffDeny<cr>", desc = "Deny diff" },
+      { "<leader>cda", "<cmd>ClaudeCodeDiffAccept<cr>; redraw<cr>", desc = "Accept diff & redraw" },
+      { "<leader>cdd", "<cmd>ClaudeCodeDiffDeny<cr>; redraw<cr>", desc = "Deny diff & redraw" },
     },
   },
 }
