@@ -85,12 +85,51 @@ return {
           vim.keymap.set('n', '<leader>ld', function() vim.lsp.buf.definition() end,       { buffer = event.buf, desc = 'LSP go to definition' })
           vim.keymap.set('n', '<leader>lh', function() vim.lsp.buf.signature_help() end,   { buffer = event.buf, desc = 'LSP signature help' })
           vim.keymap.set('n', '<leader>lw', function() vim.lsp.buf.workspace_symbol() end, { buffer = event.buf, desc = 'LSP search for symbol in workspace' })
-          vim.keymap.set('n', '<leader>lD', function() vim.diagnostic.open_float() end,    { buffer = event.buf, desc = 'LSP open diagnostics' })
+          vim.keymap.set('n', '<leader>ld', function() vim.diagnostic.open_float() end,    { buffer = event.buf, desc = 'LSP open diagnostics' })
           vim.keymap.set('n', '<leader>lr', function() vim.lsp.buf.references() end,       { buffer = event.buf, desc = 'LSP buffer/edit symbol actions (default: show refs for current symbol)' })
           vim.keymap.set('n', '<leader>lra', function() vim.lsp.buf.code_action() end,     { buffer = event.buf, desc = 'LSP code action' })
           vim.keymap.set('n', '<leader>lrr', function() vim.lsp.buf.rename() end,          { buffer = event.buf, desc = 'LSP rename' })
         end,
       })
     end
+  },
+
+  {
+    "folke/trouble.nvim",
+    lazy = true,
+    opts = {}, -- for default options, refer to the configuration section for custom setup.
+    cmd = "Trouble",
+    keys = {
+      {
+        "<leader>lD",
+        "<cmd>Trouble diagnostics toggle focus=true<cr>",
+        desc = "Diagnostics (Trouble)",
+      },
+      {
+        "<leader>lx",
+        "<cmd>Trouble diagnostics toggle filter.buf=0<cr>",
+        desc = "Buffer Diagnostics (Trouble)",
+      },
+      {
+        "<leader>ls",
+        "<cmd>Trouble symbols toggle focus=false<cr>",
+        desc = "Symbols (Trouble)",
+      },
+      {
+        "<leader>ll",
+        "<cmd>Trouble lsp toggle focus=false win.position=right<cr>",
+        desc = "LSP Definitions / references / ... (Trouble)",
+      },
+      {
+        "<leader>lL",
+        "<cmd>Trouble loclist toggle<cr>",
+        desc = "Location List (Trouble)",
+      },
+      {
+        "<leader>tq",
+        "<cmd>Trouble qflist toggle<cr>",
+        desc = "Quickfix List (Trouble)",
+      },
+    },
   }
 }
