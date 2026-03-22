@@ -34,7 +34,7 @@ return {
     },
     keys = {
       { '<leader>sl', '<cmd>PossessionListCwd<cr>', desc = '📌 Show cwd session.' },
-      { '<leader>s', '<cmd>PossessionSave<cr>', desc = '📌 Save current session' },
+      { '<leader>ss', '<cmd>PossessionSave<cr>', desc = '📌 Save current session' },
     },
   },
 
