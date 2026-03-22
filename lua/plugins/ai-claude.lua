@@ -116,7 +116,7 @@ return {
       diff_opts = {
         layout = "vertical",
         open_in_new_tab = true,
-        keep_terminal_focus = false,         -- If true, moves focus back to terminal after diff opens
+        keep_terminal_focus = true,          -- If true, moves focus back to terminal after diff opens
         hide_terminal_in_new_tab = true,     -- works better personally w/ floating
         on_new_file_reject = "close_window", -- "keep_empty" or "close_window"
       },
@@ -133,7 +133,15 @@ return {
           resize = true,
           stack = true,
           keys = {
-            { "<Esc>", function(self) self:hide() end, mode = "t", desc = "Hide" },
+            {
+              "<Esc>",
+              function(self)
+                vim.cmd(":redraw!")
+                self:hide()
+              end,
+              mode = "t",
+              desc = "Hide"
+            },
             { "<C-h>", function() set_prev_win() end, mode = "t", desc = "⏮️" },
             { "<C-j>", function() set_prev_win() end, mode = "t", desc = "⏮️" },
             { "<C-k>", function() set_next_win() end, mode = "t", desc = "⏭️" },
