@@ -1,11 +1,17 @@
 local command = "claude"
 local claude_cmd_env = os.getenv("CLAUDE_COMMAND")
 
-vim.api.nvim_create_autocmd('VimLeavePre', {
+vim.api.nvim_create_autocmd("ExitPre", {
+  pattern = "*",
   callback = function()
-    vim.cmd(':ClaudeCodeClose<CR>')
-    vim.cmd(':ClaudeCodeStop<CR>')
-  end
+    vim.cmd('silent! ClaudeCodeClose<CR>')
+    vim.cmd('silent! ClaudeCodeStop<CR>')
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_get_option(buf, "buftype") == "terminal" then
+        vim.api.nvim_buf_delete(buf, { force = true })
+      end
+    end
+  end,
 })
 
 -- agent99: CLAUDE_MODEL env var if set, else OLLAMA_MODEL
