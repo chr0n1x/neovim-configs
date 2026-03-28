@@ -32,29 +32,40 @@ end
 -- specifically written to go back to the previous window BECAUSE
 -- we're using a floating terminal
 
-local set_prev_win = function()
-  local win_ids = vim.api.nvim_list_wins()
+local function valid_buf(win_id)
+  local config = vim.api.nvim_win_get_config(win_id)
+  local buf_info = vim.api.nvim_win_get_buf(win_id)
+  local buf_name = vim.api.nvim_buf_get_name(buf_info)
   local terminal_win = vim.api.nvim_get_current_win()
-  local prev_win_ix = win_ids[win_ids.length]
-  for i, num in ipairs(win_ids) do
-    if i ~= 1 and num == terminal_win then
-      prev_win_ix = win_ids[i - 1]
-    end
-  end
-  vim.api.nvim_set_current_win(prev_win_ix)
+
+  return not config.z and buf_name ~= "" and win_id ~= terminal_win
 end
 
-local set_next_win = function()
-  local win_ids = vim.api.nvim_list_wins()
-  local terminal_win = vim.api.nvim_get_current_win()
-  local next_win_ix = win_ids[1]
-  for i, num in ipairs(win_ids) do
-    if i ~= #win_ids and num == terminal_win then
-      next_win_ix = win_ids[i + 1]
+local function find_base_window(reverse)
+  local wins = vim.api.nvim_list_wins()
+
+  if reverse then
+    for _, win_id in ipairs(wins) do
+      if valid_buf(win_id) then
+        vim.api.nvim_set_current_win(win_id)
+        return
+      end
+    end
+    return
+  end
+
+  for ix = #wins, 1, -1 do
+    local win_id = wins[ix]
+    if valid_buf(win_id) then
+      vim.api.nvim_set_current_win(win_id)
+      return
     end
   end
-  vim.api.nvim_set_current_win(next_win_ix)
 end
+
+local set_prev_win = function() find_base_window(false) end
+
+local set_next_win = function() find_base_window(true) end
 
 return {
   {
@@ -156,8 +167,8 @@ return {
               desc = "Hide"
             },
             { "<C-h>", function() set_prev_win() end, mode = "t", desc = "⏮️" },
-            { "<C-j>", function() set_prev_win() end, mode = "t", desc = "⏮️" },
-            { "<C-k>", function() set_next_win() end, mode = "t", desc = "⏭️" },
+            -- { "<C-j>", function() set_prev_win() end, mode = "t", desc = "⏮️" },
+            -- { "<C-k>", function() set_next_win() end, mode = "t", desc = "⏭️" },
             { "<C-l>", function() set_next_win() end, mode = "t", desc = "⏭️" },
           },
 
