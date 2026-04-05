@@ -37,22 +37,4 @@ return {
       { '<leader>ss', '<cmd>PossessionSave<cr>', desc = '📌 Save current session' },
     },
   },
-
-  {
-    "ruicsh/termite.nvim",
-    opts = {
-      width = .30,
-      height = .80,
-      keymaps = {
-        toggle = "<leader>t",           -- Toggle all terminals (terminal mode)
-        create = "<leader>tn",          -- Create new terminal
-        next = "<C-j>",                 -- Focus next terminal in stack
-        prev = "<C-k>",                 -- Focus previous terminal in stack
-        focus_editor = "<leader><esc>", -- Return focus to editor window
-        normal_mode = "<leader>tt",     -- Exit terminal insert mode
-        maximize = "<leader>T",         -- Maximize/restore focused terminal
-        close = "<leader>q",            -- Close current terminal (normal mode)
-      },
-    }
-  }
 }
