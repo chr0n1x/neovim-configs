@@ -156,20 +156,34 @@ return {
           fix_buf = true,
           resize = true,
           stack = true,
+          start_insert = true,
+
           keys = {
             {
               "<Esc>",
               function(self)
-                vim.cmd(":redraw!")
                 self:hide()
+                vim.cmd(":redraw!")
               end,
               mode = "t",
               desc = "Hide"
             },
-            { "<C-h>", function() set_prev_win() end, mode = "t", desc = "⏮️" },
-            -- { "<C-j>", function() set_prev_win() end, mode = "t", desc = "⏮️" },
-            -- { "<C-k>", function() set_next_win() end, mode = "t", desc = "⏭️" },
-            { "<C-l>", function() set_next_win() end, mode = "t", desc = "⏭️" },
+
+            {
+              "<C-h>",
+              function(self)
+                set_prev_win()
+                vim.cmd(":redraw!")
+              end,
+              mode = "t", desc = "⏮️"
+            },
+            {
+              "<C-l>", function(self)
+                set_next_win()
+                vim.cmd(":redraw!")
+              end,
+              mode = "t", desc = "⏭️"
+            },
           },
 
           -- TODO: make these...more relative
