@@ -42,7 +42,7 @@ local function valid_buf(win_id)
 end
 
 local function find_base_window(reverse)
-  local wins = vim.api.nvim_list_wins()
+  local wins = vim.api.nvim_tabpage_list_wins(0)
 
   if reverse then
     for _, win_id in ipairs(wins) do
