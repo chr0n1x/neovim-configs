@@ -10,6 +10,7 @@ return {
 
   {
     'nvim-treesitter/nvim-treesitter',
+    branch = 'main',
     requires = {
       { 'windwp/nvim-ts-autotag' },
       { 'nvim-treesitter/playground' },
