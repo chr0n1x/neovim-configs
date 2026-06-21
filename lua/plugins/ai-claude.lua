@@ -1,6 +1,31 @@
 local command = "claude"
 local claude_cmd_env = os.getenv("CLAUDE_COMMAND")
 
+-- save current window before alt-tab so we can restore focus on return
+local _last_win = vim.api.nvim_get_current_win()
+vim.api.nvim_create_autocmd("FocusLost", {
+  pattern = "*",
+  callback = function()
+    _last_win = vim.api.nvim_get_current_win()
+  end,
+})
+
+vim.api.nvim_create_autocmd("FocusGained", {
+  pattern = "*",
+  callback = function()
+    -- after alt-tab, snacks/tmux loses cursor focus on the floating
+    -- claude terminal; restore to whatever window had it before we left
+    vim.cmd.redraw()
+    if vim.api.nvim_win_is_valid(_last_win) then
+      vim.api.nvim_set_current_win(_last_win)
+      local buf = vim.api.nvim_win_get_buf(_last_win)
+      if vim.api.nvim_buf_get_option(buf, "buftype") == "terminal" then
+        vim.cmd.startinsert()
+      end
+    end
+  end,
+})
+
 vim.api.nvim_create_autocmd("ExitPre", {
   pattern = "*",
   callback = function()
