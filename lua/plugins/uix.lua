@@ -172,14 +172,23 @@ if not IN_PERF_MODE then
   table.insert(
     uix_plugins,
     {
-      'MeanderingProgrammer/render-markdown.nvim',
-      dependencies = { 'nvim-treesitter/nvim-treesitter' },
+      dependencies = {
+        "stevearc/conform.nvim",
+      },
       opts = {
-        heading = {
-          enabled = false
-        }
-      }
+         filetypes = { "markdown", "md" },
+      },
+      "noisesfromspace/touchup.nvim"
     }
+    -- {
+    --   'MeanderingProgrammer/render-markdown.nvim',
+    --   dependencies = { 'nvim-treesitter/nvim-treesitter' },
+    --   opts = {
+    --     heading = {
+    --       enabled = false
+    --     }
+    --   }
+    -- }
   )
 
   table.insert(
