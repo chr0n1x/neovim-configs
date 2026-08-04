@@ -53,14 +53,17 @@ elseif OLLAMA_MODEL ~= "" then
   command = "claude --model " .. model99
 end
 
-local function collapse_wide(self)
-  if self._wide and self._saved_config then
-    self._wide = false
-    local win = self.win
-    if win and vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_set_config(win, self._saved_config)
-    end
-  end
+local function animate_collapse(self)
+  if not (self._wide and self._saved_config) then return end
+  self._wide = false
+  local sc = self._saved_config
+  local anim = require("terminal-animations")
+  anim.animate_resize(self, {
+    row = sc.row or 0,
+    col = sc.col or 0,
+    width = sc.width or vim.o.columns,
+    height = sc.height or vim.o.lines,
+  }, self._saved_config)
 end
 
 -- I HAVE to be stupid, there has to be an easier way to do this
@@ -207,7 +210,7 @@ return {
             {
               "<C-h>",
               function(self)
-                collapse_wide(self)
+                animate_collapse(self)
                 set_prev_win()
                 vim.cmd.redraw()
                 vim.cmd("noh")
@@ -217,7 +220,7 @@ return {
             {
               "<C-l>",
               function(self)
-                collapse_wide(self)
+                animate_collapse(self)
                 set_next_win()
                 vim.cmd.redraw()
                 vim.cmd("noh")
@@ -228,32 +231,31 @@ return {
               "<C-f>",
               function(self)
                 local win = self.win
-                if not win or not vim.api.nvim_win_is_valid(win) then return end
-                local lines = vim.o.lines
-                local cols = vim.o.columns
+                if not win or not vim.api.nvim_win_is_valid(win) then
+                  return
+                end
 
                 -- Save original config only once so we don't drift on each toggle
                 if not self._saved_config then
                   self._saved_config = vim.api.nvim_win_get_config(win)
                 end
 
+                local lines = vim.o.lines
+                local cols = vim.o.columns
                 local wide_row_pad = 0.05
                 local wide_col_pad = 0.1
 
                 if not self._wide then
                   self._wide = true
-                  vim.api.nvim_win_set_config(win, {
-                    relative = "editor",
-                    row = math.floor(wide_row_pad * lines),
-                    col = math.floor(wide_col_pad * cols),
-                    width = math.floor((1 - 2 * wide_col_pad) * cols),
-                    height = math.floor((1 - 2 * wide_row_pad) * lines),
-                    style = "minimal",
-                    border = self.opts.border or "rounded",
+                  local anim = require("terminal-animations")
+                  anim.animate_resize(self, {
+                    row = wide_row_pad * lines,
+                    col = wide_col_pad * cols,
+                    width = (1 - 2 * wide_col_pad) * cols,
+                    height = (1 - 2 * wide_row_pad) * lines,
                   })
                 else
-                  self._wide = false
-                  vim.api.nvim_win_set_config(win, self._saved_config)
+                  animate_collapse(self)
                 end
               end,
               mode = "t",
