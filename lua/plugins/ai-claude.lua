@@ -39,9 +39,9 @@ vim.api.nvim_create_autocmd("ExitPre", {
   end,
 })
 
--- agent99: CLAUDE_MODEL env var if set, else OLLAMA_MODEL
+-- CLAUDE_MODEL env var if set, else OLLAMA_MODEL
 -- NOTE: make sure that the model can use tools
-local model99 = os.getenv("CLAUDE_MODEL") or OLLAMA_MODEL
+local claude_model = os.getenv("CLAUDE_MODEL") or OLLAMA_MODEL
 vim.fn.setenv("CLAUDE_CODE_TRACKING_ENABLED", "true")
 
 if claude_cmd_env and claude_cmd_env ~= "" then
@@ -50,7 +50,7 @@ elseif OLLAMA_MODEL ~= "" then
   vim.fn.setenv("ANTHROPIC_BASE_URL", OLLAMA_URL)
   vim.fn.setenv("ANTHROPIC_API_KEY", "")
   vim.fn.setenv("ANTHROPIC_AUTH_TOKEN", "ollama")
-  command = "claude --model " .. model99
+  command = "claude --model " .. claude_model
 end
 
 local function animate_collapse(self)
@@ -106,59 +106,6 @@ local set_prev_win = function() find_base_window(false) end
 local set_next_win = function() find_base_window(true) end
 
 return {
-  {
-    "ThePrimeagen/99",
-    config = function()
-      local _99 = require("99")
-
-      local cwd = vim.uv.cwd()
-      local basename = vim.fs.basename(cwd)
-      _99.setup({
-        -- required for claude
-        provider = _99.Providers.ClaudeCodeProvider,
-        model = model99,
-        tmp_dir = "./tmp",
-
-        logger = {
-          level = _99.DEBUG,
-          path = "/tmp/" .. basename .. ".99.debug",
-          print_on_error = true,
-        },
-
-        completion = {
-          files = {
-            -- enabled = true,
-            -- max_file_size = 102400,     -- bytes, skip files larger than this
-            -- max_files = 5000,            -- cap on total discovered files
-            -- exclude = { ".env", ".env.*", "node_modules", ".git", ... },
-          },
-          source = "native",
-        },
-
-        -- do NOT change this for now
-        md_files = {
-          "AGENT.md",
-        },
-      })
-
-      vim.keymap.set("n", "<leader>C", function()
-        _99.visual()
-      end, {noremap = true, desc = '99 Prompt to ' .. OLLAMA_MODEL_SHORT })
-      vim.keymap.set("v", "<leader>C", function()
-        _99.visual()
-      end, {noremap = true, desc = 'Prompt in visual mode.' })
-
-      --- if you have a request you dont want to make any changes, just cancel it
-      vim.keymap.set("n", "<leader>Cx", function()
-        _99.stop_all_requests()
-      end, {noremap = true, desc = 'Stop all requests.' })
-
-      vim.keymap.set("n", "<leader>Cs", function()
-        _99.search()
-      end, {noremap = true, desc = 'Perform search.' })
-    end,
-  },
-
   {
     "coder/claudecode.nvim",
     dependencies = { "folke/snacks.nvim" },
