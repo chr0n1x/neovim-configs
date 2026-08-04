@@ -53,6 +53,16 @@ elseif OLLAMA_MODEL ~= "" then
   command = "claude --model " .. model99
 end
 
+local function collapse_wide(self)
+  if self._wide and self._saved_config then
+    self._wide = false
+    local win = self.win
+    if win and vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_win_set_config(win, self._saved_config)
+    end
+  end
+end
+
 -- I HAVE to be stupid, there has to be an easier way to do this
 -- specifically written to go back to the previous window BECAUSE
 -- we're using a floating terminal
@@ -191,23 +201,63 @@ return {
                 vim.cmd(":redraw!")
               end,
               mode = "t",
-              desc = "Hide"
+              desc = "⊘"
             },
 
             {
               "<C-h>",
               function(self)
+                collapse_wide(self)
                 set_prev_win()
-                vim.cmd(":redraw!")
+                vim.cmd.redraw()
+                vim.cmd("noh")
               end,
-              mode = "t", desc = "⏮️"
+              mode = "t", desc = "←"
             },
             {
-              "<C-l>", function(self)
+              "<C-l>",
+              function(self)
+                collapse_wide(self)
                 set_next_win()
-                vim.cmd(":redraw!")
+                vim.cmd.redraw()
+                vim.cmd("noh")
               end,
-              mode = "t", desc = "⏭️"
+              mode = "t", desc = "→"
+            },
+            {
+              "<C-f>",
+              function(self)
+                local win = self.win
+                if not win or not vim.api.nvim_win_is_valid(win) then return end
+                local lines = vim.o.lines
+                local cols = vim.o.columns
+
+                -- Save original config only once so we don't drift on each toggle
+                if not self._saved_config then
+                  self._saved_config = vim.api.nvim_win_get_config(win)
+                end
+
+                local wide_row_pad = 0.05
+                local wide_col_pad = 0.1
+
+                if not self._wide then
+                  self._wide = true
+                  vim.api.nvim_win_set_config(win, {
+                    relative = "editor",
+                    row = math.floor(wide_row_pad * lines),
+                    col = math.floor(wide_col_pad * cols),
+                    width = math.floor((1 - 2 * wide_col_pad) * cols),
+                    height = math.floor((1 - 2 * wide_row_pad) * lines),
+                    style = "minimal",
+                    border = self.opts.border or "rounded",
+                  })
+                else
+                  self._wide = false
+                  vim.api.nvim_win_set_config(win, self._saved_config)
+                end
+              end,
+              mode = "t",
+              desc = "⛶"
             },
           },
 
