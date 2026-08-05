@@ -4,6 +4,6 @@ require('ollama-consts')
 require('base-settings')
 require('key-bindings')
 
-require('config.lazy')
+require('autocmds')
 
--- require('autocmds')
+require('config.lazy')
