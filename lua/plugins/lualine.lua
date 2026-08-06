@@ -5,14 +5,16 @@ local deps = {
 
 local spinner = { '⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏' }
 
+-- Timer-driven spinner frame for smooth animation.
+local spinner_frame = spinner[1]
+
 LUALINE_SECTIONS = {
-  lualine_a = {'mode'},
+  lualine_a = { 'fileformat', 'mode' },
   lualine_b = {'branch'},
 
-  lualine_x = {'filename'},
+  lualine_x = {},
   lualine_y = {
     'encoding',
-    'fileformat',
     'filetype',
     {
       'lsp_status',
@@ -28,8 +30,10 @@ LUALINE_SECTIONS = {
       -- List of LSP names to ignore (e.g., `null-ls`):
       ignore_lsp = {},
     }
-  },
-  lualine_z = {'location'}
+  }
+
+  -- default - present
+  -- lualine_z = {'location'}
 }
 
 return {
@@ -49,6 +53,37 @@ return {
       theme = 'iceberg_dark',
       component_separators = {'|', '|'},
     }
+
+    -- Start spinner timer inside opts() where the event loop is ready.
+    local frame_idx = 1
+    local t = vim.uv.new_timer()
+    if t then
+      t:start(0, 120, vim.schedule_wrap(function()
+        spinner_frame = spinner[frame_idx]
+        frame_idx = (frame_idx % #spinner) + 1
+        pcall(vim.cmd.statusline)
+      end))
+    end
+
+    -- Custom component: show pinned Claude session slug or spinner.
+    table.insert(
+      opts.sections.lualine_x,
+      {
+        function()
+          local ok, wrappers = pcall(require, "claude-wrappers")
+          if not ok then return "" end
+          local path = wrappers.pinned_jsonl_path
+          if not path then
+            -- No pin yet — show spinner.
+            return "🦀 " .. spinner_frame
+          end
+          local name = path:match("([^/]+)%.jsonl$")
+          if not name then return "" end
+          return "🦀 " .. name
+        end,
+        padding = { left = 1, right = 1 },
+      }
+    )
 
     table.insert(
       opts.sections.lualine_x,
