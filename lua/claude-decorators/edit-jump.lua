@@ -4,6 +4,13 @@ local M = {}
 ---Dedicated window next to the floating terminal for Claude Code edits.
 M.jump_win = nil
 
+---Check if the currently focused window is a terminal buffer (the Claude terminal).
+local function is_terminal_focused()
+  local win = vim.api.nvim_get_current_win()
+  local buf = vim.api.nvim_win_get_buf(win)
+  return vim.api.nvim_buf_get_option(buf, "buftype") == "terminal"
+end
+
 ---Find a non-float window with a real buffer (mirrors ai-claude.lua's find_base_window).
 local function find_adjacent_window()
   local wins = vim.api.nvim_tabpage_list_wins(0)
@@ -73,6 +80,8 @@ function M.on_edit(args)
   if type(file_path) ~= "string" or #file_path == 0 then return end
 
   vim.defer_fn(function()
+    -- Skip jumping if focus is not on the Claude terminal.
+    if not is_terminal_focused() then return end
     jump_to_edit(args.data, file_path)
   end, 500)
 end
@@ -81,7 +90,23 @@ end
 function M.on_diff_closed(args)
   if not args.data or not args.data.reason then return end
   if not args.data.reason:find("save") then return end
+  if not is_terminal_focused() then return end
   M.on_edit(args)
+end
+
+---Create the autocmds that trigger jump behavior. Call from init setup.
+function M.create_jump_autocmds(group)
+  vim.api.nvim_create_autocmd("User", {
+    group = group,
+    pattern = "ClaudeCodeDiffClosed",
+    callback = M.on_diff_closed,
+  })
+
+  vim.api.nvim_create_autocmd("User", {
+    group = group,
+    pattern = "ClaudeAutoFollowEdit",
+    callback = M.on_edit,
+  })
 end
 
 return M

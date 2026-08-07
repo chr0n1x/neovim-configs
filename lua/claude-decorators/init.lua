@@ -13,19 +13,7 @@ end
 M.setup_auto_follow = function()
   local group = vim.api.nvim_create_augroup("ClaudeAutoFollow", { clear = true })
 
-  -- Path 1: diff accepted (review mode).
-  vim.api.nvim_create_autocmd("User", {
-    group = group,
-    pattern = "ClaudeCodeDiffClosed",
-    callback = edit_jump.on_diff_closed,
-  })
-
-  -- Path 2: automode direct edits detected via inotifywait watcher.
-  vim.api.nvim_create_autocmd("User", {
-    group = group,
-    pattern = "ClaudeAutoFollowEdit",
-    callback = edit_jump.on_edit,
-  })
+  edit_jump.create_jump_autocmds(group)
 
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = group,

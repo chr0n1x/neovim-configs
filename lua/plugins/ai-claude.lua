@@ -152,7 +152,8 @@ return {
               function(self)
                 set_prev_win()
                 self:hide()
-                vim.cmd(":redraw!")
+                vim.cmd.redraw()
+                vim.cmd("noh")
               end,
               mode = "t",
               desc = "⊘"
