@@ -1,8 +1,10 @@
-local _ = require("claude-decorators.utils")
 local M = {}
 
 ---Dedicated window next to the floating terminal for Claude Code edits.
 M.jump_win = nil
+
+---Edit sources keyed by session ID. Each value is a list of records.
+M.edit_sources = {}
 
 ---Check if the currently focused window is a terminal buffer (the Claude terminal).
 local function is_terminal_focused()
@@ -73,11 +75,79 @@ local function jump_to_edit(data, file_path)
   end
 end
 
+---Extract session ID from JSONL file path.
+---@param jsonl_path string
+---@return string|nil
+local function extract_session_id(jsonl_path)
+  if not jsonl_path then return end
+  local _, _ = jsonl_path:find("/([^/]+)%.jsonl$")
+  if not _ then
+    -- Fallback: try without directory prefix
+    _, _, _ = jsonl_path:find("^([^/]+)%.jsonl$")
+  end
+  return _ or nil
+end
+
+---Format epoch-ms as human-readable date string.
+---@param ts number epoch milliseconds
+---@return string
+local function format_time(ts)
+  local secs = math.floor(ts / 1000)
+  return os.date("%Y-%m-%d %H:%M:%S", secs)
+end
+
+---Store an edit source record. Skips incomplete events, deduplicates in-place.
+---@param data table from autocmd args.data
+local function store_edit_source(data)
+  local file_path = data.file_path
+  local jsonl_path = data.jsonl_path
+  local timestamp = data.timestamp
+  local source_line = data.source_line
+  local operation = data.operation or "Edit"
+
+  -- Skip incomplete events: file_path and timestamp are required.
+  if not file_path or not timestamp then return end
+
+  local session_id = extract_session_id(jsonl_path)
+  if not session_id then return end
+
+  local new_record = {
+    timestamp = timestamp,
+    time_str = format_time(timestamp),
+    file_path = file_path,
+    source_line = source_line,
+    operation = operation,
+  }
+
+  local list = M.edit_sources[session_id]
+  if not list then
+    list = {}
+    M.edit_sources[session_id] = list
+  end
+
+  -- In-place dedup: if the latest record for this session shares the same
+  -- file_path, has no source_line, and its timestamp is within ~100ms,
+  -- replace it in-place instead of appending.
+  local last = list[#list]
+  if last
+    and last.file_path == file_path
+    and not last.source_line
+    and math.abs(last.timestamp - timestamp) < 100
+  then
+    list[#list] = new_record
+    return
+  end
+
+  table.insert(list, new_record)
+end
+
 ---Jump to the edited file without stealing focus from the terminal.
 function M.on_edit(args)
   if not args.data then return end
   local file_path = args.data.file_path
   if type(file_path) ~= "string" or #file_path == 0 then return end
+
+  store_edit_source(args.data)
 
   vim.defer_fn(function()
     -- Skip jumping if focus is not on the Claude terminal.

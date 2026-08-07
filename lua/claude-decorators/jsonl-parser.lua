@@ -49,15 +49,18 @@ local function parse_tool_use_result(entry, line_number)
   local fp = tur.filePath
   if not fp or M.is_noise(fp) then return end
 
-  -- Determine operation from oldString/newString vs structuredPatch.
+  -- Determine operation from tur.type or payload shape.
   local operation = "Edit" -- default
-  if tur.oldString and tur.newString then
+  if tur.type == "create" then
+    operation = "Create"
+  elseif tur.oldString and tur.newString then
     operation = "Edit"
   elseif tur.structuredPatch then
     operation = "Edit"
   end
 
   -- Extract starting line from structuredPatch.
+  -- "create" events don't have line info — they create a new file.
   local starting_line = nil
   if tur.structuredPatch and tur.structuredPatch[1] then
     starting_line = tur.structuredPatch[1].newStart
@@ -66,7 +69,9 @@ local function parse_tool_use_result(entry, line_number)
 
   -- Build a delta string for logging.
   local delta = ""
-  if tur.oldString and tur.newString then
+  if tur.type == "create" then
+    delta = tur.content:gsub("\n", "\\n"):sub(1, 60)
+  elseif tur.oldString and tur.newString then
     delta = tur.newString:gsub("\n", "\\n"):sub(1, 60)
   elseif tur.structuredPatch and tur.structuredPatch[1] then
     local sp = tur.structuredPatch[1]
