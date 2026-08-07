@@ -97,7 +97,7 @@ local function parse_tool_use(entry, line_number)
   if not entry.message or not entry.message.content then return end
 
   for _, item in ipairs(entry.message.content) do
-    if item.type == "tool_use" and (item.name == "Edit" or item.name == "Write") then
+    if item.type == "tool_use" and item.name == "Edit" then
       local fp = item.input and item.input.file_path
       if fp and not M.is_noise(fp) then
         local operation = item.name

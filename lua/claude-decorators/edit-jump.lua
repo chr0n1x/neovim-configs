@@ -80,12 +80,11 @@ end
 ---@return string|nil
 local function extract_session_id(jsonl_path)
   if not jsonl_path then return end
-  local _, _ = jsonl_path:find("/([^/]+)%.jsonl$")
-  if not _ then
-    -- Fallback: try without directory prefix
-    _, _, _ = jsonl_path:find("^([^/]+)%.jsonl$")
+  local session_id = jsonl_path:match("/([^/]+)%.jsonl$")
+  if not session_id then
+    session_id = jsonl_path:match("^([^/]+)%.jsonl$")
   end
-  return _ or nil
+  return session_id or nil
 end
 
 ---Format epoch-ms as human-readable date string.
@@ -101,12 +100,14 @@ end
 local function store_edit_source(data)
   local file_path = data.file_path
   local jsonl_path = data.jsonl_path
-  local timestamp = data.timestamp
   local source_line = data.source_line
   local operation = data.operation or "Edit"
 
-  -- Skip incomplete events: file_path and timestamp are required.
-  if not file_path or not timestamp then return end
+  -- Skip incomplete events: file_path is required.
+  if not file_path then return end
+
+  -- Generate timestamp on arrival (epoch-ms via os.time).
+  local timestamp = os.time() * 1000
 
   local session_id = extract_session_id(jsonl_path)
   if not session_id then return end

@@ -167,7 +167,14 @@ local function on_inotify_event(raw_line)
 
             vim.api.nvim_exec_autocmds("User", {
               pattern = "ClaudeAutoFollowEdit",
-              data = change_info,
+              data = {
+                file_path = change_info.file_path,
+                operation = change_info.operation,
+                starting_line = change_info.starting_line,
+                delta = change_info.delta,
+                source_line = change_info.source_line,
+                jsonl_path = M.pinned_jsonl_path,
+              },
             })
           end
         end
