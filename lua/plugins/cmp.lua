@@ -38,6 +38,7 @@ if not IN_PERF_MODE then
     group_index = 0, -- set group index to 0 to skip loading LuaLS completions
   })
 
+  -- Tmux source: jump to tmux panes by name.
   table.insert(
     sources_list,
     {
@@ -52,6 +53,7 @@ if not IN_PERF_MODE then
     }
   )
 
+  -- Expand snippets via luasnip when LSP offers completionItem/resolve.
   snippet_configs["expand"] = function(args)
     require('luasnip').lsp_expand(args.body)
   end

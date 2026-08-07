@@ -1,3 +1,6 @@
+-- Claude Code terminal integration.
+-- Spawns a floating terminal running the `claude` CLI and handles
+-- focus restoration when alt-tabbing in/out of Neovim.
 local command = "claude"
 local claude_cmd_env = os.getenv("CLAUDE_COMMAND")
 
@@ -147,6 +150,7 @@ return {
             {
               "<Esc>",
               function(self)
+                set_prev_win()
                 self:hide()
                 vim.cmd(":redraw!")
               end,

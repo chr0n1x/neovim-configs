@@ -1,3 +1,6 @@
+lint:
+	find lua/ -name '*.lua' -exec luac -p "{}" \;
+
 clean:
 	rm -rf nvim/plugin ~/.local/share/nvim ~/.config/nvim ~/.cache/nvim
 

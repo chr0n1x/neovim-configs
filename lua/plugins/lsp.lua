@@ -30,6 +30,7 @@ return {
     config = function()
       local lsp_capabilities = require('cmp_nvim_lsp').default_capabilities()
 
+      -- Mason manages LSP server installations.
       require('mason').setup({
         -- https://github.com/williamboman/nvim-lsp-installer/discussions/509
         PATH = "prepend",
@@ -64,6 +65,8 @@ return {
                   },
                   diagnostics = {
                     globals = {'vim'},
+                    -- Treat all diagnostic fields as readonly to avoid false positives.
+                    library = { require("vim.runtime").get_runtime_file() },
                   },
                   workspace = {
                     library = {

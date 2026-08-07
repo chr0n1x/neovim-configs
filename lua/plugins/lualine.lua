@@ -70,9 +70,9 @@ return {
       opts.sections.lualine_x,
       {
         function()
-          local ok, wrappers = pcall(require, "claude-wrappers")
+          local ok, decorators = pcall(require, "claude-decorators")
           if not ok then return "" end
-          local path = wrappers.pinned_jsonl_path
+          local path = decorators.get_pinned_path()
           if not path then
             -- No pin yet — show spinner.
             return "🦀 " .. spinner_frame

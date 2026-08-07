@@ -10,7 +10,7 @@ vim.api.nvim_create_autocmd('VimEnter', {
 vim.api.nvim_create_autocmd('User', {
   pattern = 'LazyDone',
   callback = function()
-    local mod = require('claude-wrappers')
+    local mod = require('claude-decorators')
     if mod then mod.setup() end
   end,
 })

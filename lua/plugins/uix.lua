@@ -1,3 +1,4 @@
+-- UI and UX plugins: notifications, statusline, which-key, etc.
 local uix_plugins = {
   {
     'rcarriga/nvim-notify',
@@ -24,6 +25,7 @@ local uix_plugins = {
     opts = {
       dashboard = {
         enabled = true,
+        -- Use the awesome preset for a minimal, fast dashboard.
         preset = {
           header = [[
 ░░░░░░░█▐▓▓░████▄▄▄█▀▄▓▓▓▌█
