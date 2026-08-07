@@ -7,17 +7,16 @@ local M = {}
 M.cooldown_ms = 3000
 M.log_seen = {}
 
----Shorten a file path by replacing the CWD prefix with ".".
+---Shorten a file path by replacing the home directory with "~".
 ---@param fp string
 ---@return string
 local function shorten_path(fp)
-  local cwd = vim.fn.getcwd()
-  -- Ensure the cwd ends with a separator for clean replacement.
-  if not (cwd:sub(-1) == "/" or cwd:sub(-1) == "\\") then
-    cwd = cwd .. package.config:sub(1, 1)
-  end
-  if fp:sub(1, #cwd) == cwd then
-    return "./" .. fp:sub(#cwd + 2)
+  local home = os.getenv("HOME")
+  if home then
+    local home_prefix = home .. "/"
+    if fp:sub(1, #home_prefix) == home_prefix then
+      return "~/" .. fp:sub(#home_prefix + 1)
+    end
   end
   return fp
 end

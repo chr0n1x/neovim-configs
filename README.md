@@ -15,13 +15,13 @@ The goal of having a separate repo is so that I can manage the two configuration
 
 **Disclaimer:** Most of the Claude/AI wrapper features in this repo were vibe-coded with AI assistance. They work well for my workflow, but aren't necessarily written the "clean" way.
 
-This config automatically jumps to edited files when Claude Code modifies them on disk.
+This config automatically jumps to edited files when Claude Code modifies them on disk — no manual buffer switching, file exploration, or window management needed.
 
 **How it works:**
 
 1. **`lua/claude-decorators/`** — the entire plugin. Initialized at `LazyDone` via `autocmds.lua`.
 2. **`inotify-watcher.lua`** — spawns an `inotifywait -m` process that watches `~/.claude/projects/` for `close_write` events on `.jsonl` files. When a tool result writes a file change to the session log, it fires the `ClaudeAutoFollowEdit` user autocmd with file path and line number.
-3. **`edit-jump.lua`** — handles two paths: diff-accepted edits (`ClaudeCodeDiffClosed`) and automode direct edits (the inotify event above). Only jumps when the Claude floating terminal is the focused window — silently skips if focus has moved to a code buffer or elsewhere. When Neovim loses focus entirely (e.g., alt-tab away), the inotify watcher continues running but jumps are still suppressed since the terminal can't be focused.
+3. **`edit-jump.lua`** — handles two paths: diff-accepted edits (`ClaudeCodeDiffClosed`) and automode direct edits (the inotify event above). Only jumps when the Claude floating terminal is the focused window — silently skips if focus has moved to a code buffer or elsewhere. When Neovim loses focus entirely (e.g., alt-tab away), the inotify watcher continues running but jumps are still suppressed since the terminal can't be focused. If multiple events fire for the same file at the same timestamp, the one with `starting_line` takes precedence and later incomplete events are dropped.
 4. **`jsonl-parser.lua`** — parses the last line of the session JSONL to extract tool result change info (file path, starting line, dedup key).
 5. **Lualine integration** — the statusline shows the pinned session name (from `get_pinned_path()`) or a spinner while no session is active.
 

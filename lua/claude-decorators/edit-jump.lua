@@ -37,7 +37,12 @@ local function maybe_jump_to_line(win, starting_line)
     if line and vim.api.nvim_win_is_valid(win) then
       local buf = vim.api.nvim_win_get_buf(win)
       local max_line = vim.api.nvim_buf_line_count(buf)
-      line = math.min(line, math.max(1, max_line))
+      line = math.max(1, math.min(line, max_line))
+      vim.api.nvim_win_set_cursor(win, { line, 0 })
+      -- Center the window on the cursor line without using :normal! (which fails in terminal mode).
+      local height = vim.api.nvim_win_get_height(win)
+      local target_top = math.max(0, line - math.ceil(height / 2))
+      pcall(vim.api.nvim_win_set_cursor, win, { target_top + 1, 0 })
       vim.api.nvim_win_set_cursor(win, { line, 0 })
     end
   end
@@ -148,17 +153,23 @@ local function store_edit_source(data)
     M.edit_sources[session_id] = list
   end
 
-  -- In-place dedup: if the latest record for this session shares the same
-  -- file_path, has no source_line, and its timestamp is within ~100ms,
-  -- replace it in-place instead of appending.
+  -- Dedup / skip logic for same-file events arriving close together:
+  --   1. Last has starting_line, new doesn't → drop new (incomplete).
+  --   2. Last missing starting_line, new has one → replace last in-place
+  --      with the better record.
+  --   3. Both missing starting_line → replace last in-place (duplicate).
   local last = list[#list]
-  if last
-    and last.file_path == file_path
-    and not last.source_line
-    and math.abs(last.timestamp - timestamp) < 100
-  then
-    list[#list] = new_record
-    return
+  if last and last.file_path == file_path then
+    local time_diff = math.abs(last.timestamp - timestamp)
+    if time_diff < 5000 then -- within 5 seconds = same edit
+      if last.starting_line and not starting_line then
+        return -- prefer the record that already has a line number
+      end
+      if starting_line or (not last.source_line and not source_line) then
+        list[#list] = new_record -- upgrade or dedup
+        return
+      end
+    end
   end
 
   table.insert(list, new_record)
