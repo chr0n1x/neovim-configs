@@ -13,7 +13,13 @@ M.inotify_last_pos = 0
 M.inotify_poll_timer = nil
 
 ---Track read position per JSONL session so we can scan new lines on each event.
+---Each value is { byte_pos, line_count } — byte offset and the number of lines
+---scanned up to that point, so we know the absolute line number of new content.
 local jsonl_positions = {}
+
+---Pending notification handles keyed by file path, so we can update them
+---when the more complete toolUseResult arrives.
+local pending_notifications = {}
 
 ---Legacy fallback stubs (used when inotifywait is unavailable).
 local poll_timer = nil
@@ -81,12 +87,12 @@ local function on_inotify_event(raw_line)
   local file_size = f:seek("end")
   f:close()
 
-  local prev_pos = jsonl_positions[jsonl_path]
+  local prev_pos = jsonl_positions[jsonl_path] and jsonl_positions[jsonl_path].byte_pos
 
   -- First time seeing this file: mark current size as the baseline.
   -- Don't scan old content — only react to new writes after startup.
   if prev_pos == nil then
-    jsonl_positions[jsonl_path] = file_size
+    jsonl_positions[jsonl_path] = { byte_pos = file_size, line_count = 0 }
     return
   end
 
@@ -99,15 +105,28 @@ local function on_inotify_event(raw_line)
     chunk_file:seek("set", prev_pos)
     local chunk = chunk_file:read(file_size - prev_pos)
     chunk_file:close()
-    jsonl_positions[jsonl_path] = file_size
 
-    if chunk then
-      local lines = {}
-      for line in chunk:gmatch("([^\r\n]+)") do
-        lines[#lines + 1] = line
-      end
-      for _, line in ipairs(lines) do
-        local change_info = parser.parse_tool_result(line)
+    if not chunk then return end
+
+    local lines = {}
+    for line in chunk:gmatch("([^\r\n]+)") do
+      lines[#lines + 1] = line
+    end
+
+    -- The line count tracked at the previous byte position tells us where
+    -- the first line in this chunk starts (1-indexed).
+    local prev_line_count = jsonl_positions[jsonl_path].line_count or 0
+    local chunk_start_line = prev_line_count + 1
+
+    -- Update tracked position after reading, before processing.
+    local new_line_count = prev_line_count + #lines
+    jsonl_positions[jsonl_path] = {
+      byte_pos = file_size,
+      line_count = new_line_count,
+    }
+
+    for i, line in ipairs(lines) do
+      local change_info = parser.parse_tool_result(line, chunk_start_line + i - 1)
         if change_info then
           -- Dedup check.
           local dedup_key = change_info.dedup_key
@@ -116,12 +135,35 @@ local function on_inotify_event(raw_line)
           else
             if dedup_key then utils.mark_key_seen(dedup_key) end
 
+            local fp = change_info.file_path
             local line_str = change_info.starting_line and ":" .. change_info.starting_line or ""
-            utils.log("detected edit @ " .. change_info.file_path .. line_str)
-            utils.log(
-              "firing autocmd ClaudeAutoFollowEdit @ " .. change_info.file_path .. line_str,
-              vim.log.levels.DEBUG
-            )
+
+            if change_info.starting_line then
+              -- Complete result: update or show notification with line number.
+              if pending_notifications[fp] then
+                vim.notify(
+                  "[claude.nvim auto-follow] " .. fp .. line_str,
+                  vim.log.levels.INFO,
+                  { replace = pending_notifications[fp] }
+                )
+                pending_notifications[fp] = nil
+              else
+                utils.log(fp .. line_str)
+              end
+              utils.log(
+                "firing autocmd ClaudeAutoFollowEdit @ " .. fp .. line_str,
+                vim.log.levels.DEBUG
+              )
+            else
+              -- Early tool_use (no line info): show notification that can be
+              -- updated when the toolUseResult arrives.
+              local handle = vim.notify("[claude.nvim auto-follow] " .. fp)
+              pending_notifications[fp] = handle
+              utils.log(
+                "early tool_use @ " .. fp,
+                vim.log.levels.DEBUG
+              )
+            end
 
             vim.api.nvim_exec_autocmds("User", {
               pattern = "ClaudeAutoFollowEdit",
@@ -132,7 +174,6 @@ local function on_inotify_event(raw_line)
       end
     end
   end
-end
 
 ---Process new lines appended to the inotify log file since last read.
 local function process_inotify_log()

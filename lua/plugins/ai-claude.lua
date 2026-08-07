@@ -239,7 +239,8 @@ return {
         desc = "Add file",
         ft = { "NvimTree", "neo-tree", "oil", "minifiles", "netrw" },
       },
-      -- Diff management
+      -- Diff management - I barely use these but wanted to give some defaults
+      -- that fall under <leader>c
       { "<leader>cda", "<cmd>ClaudeCodeDiffAccept<cr>; redraw<cr>", desc = "Accept diff & redraw" },
       { "<leader>cdd", "<cmd>ClaudeCodeDiffDeny<cr>; redraw<cr>", desc = "Deny diff & redraw" },
     },

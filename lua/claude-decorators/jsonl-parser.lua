@@ -40,7 +40,9 @@ function M.read_last_line(path)
 end
 
 ---Extract change_info from a toolUseResult (user-type response entry).
-local function parse_tool_use_result(entry)
+---@param entry table The decoded JSON object
+---@param line_number? integer The 1-based line number in the JSONL file
+local function parse_tool_use_result(entry, line_number)
   local tur = entry.toolUseResult
   if not tur then return end
 
@@ -77,13 +79,16 @@ local function parse_tool_use_result(entry)
     starting_line = starting_line,
     delta = delta,
     dedup_key = entry.uuid and (entry.uuid .. entry.timestamp) or nil,
+    source_line = line_number,
   }
 end
 
 ---Extract change_info from a tool_use (assistant-type invocation entry).
 ---These appear in the JSONL before the tool result is returned, so catching
 ---them enables faster jump-to-edit while the session is still active.
-local function parse_tool_use(entry)
+---@param entry table The decoded JSON object
+---@param line_number? integer The 1-based line number in the JSONL file
+local function parse_tool_use(entry, line_number)
   if not entry.message or not entry.message.content then return end
 
   for _, item in ipairs(entry.message.content) do
@@ -106,6 +111,7 @@ local function parse_tool_use(entry)
           starting_line = starting_line,
           delta = delta,
           dedup_key = entry.uuid and (entry.uuid .. entry.timestamp .. item.id) or nil,
+          source_line = line_number,
         }
       end
     end
@@ -114,8 +120,10 @@ end
 
 ---Parse a JSONL line for file changes. Handles both toolUseResult responses
 ---and tool_use invocations (Edit/Write calls).
+---@param line string The JSONL line text
+---@param line_number? integer The 1-based line number in the JSONL file
 ---Returns change_info table or nil.
-function M.parse_tool_result(line)
+function M.parse_tool_result(line, line_number)
   -- Quick pre-filter: only parse lines that look like tool results or tool uses.
   local has_tool_result = line:find('"toolUseResult"')
   local has_tool_use    = line:find('"type":"tool_use"')
@@ -127,12 +135,12 @@ function M.parse_tool_result(line)
 
   -- Prefer toolUseResult (has line numbers from structuredPatch).
   if has_tool_result then
-    return parse_tool_use_result(entry)
+    return parse_tool_use_result(entry, line_number)
   end
 
   -- Fallback to tool_use invocation (no line numbers, but catches edits early).
   if has_tool_use then
-    return parse_tool_use(entry)
+    return parse_tool_use(entry, line_number)
   end
 end
 

@@ -11,7 +11,7 @@ M.log_seen = {}
 function M.log(msg, level)
   if not msg then return end
   local now = math.floor(vim.uv.hrtime() / 1000000)
-  local key = msg:sub(1, 40)
+  local key = msg
   local last = M.log_seen[key]
   if last and now - last < M.cooldown_ms then
     return
