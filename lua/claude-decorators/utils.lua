@@ -7,6 +7,21 @@ local M = {}
 M.cooldown_ms = 3000
 M.log_seen = {}
 
+---Shorten a file path by replacing the CWD prefix with ".".
+---@param fp string
+---@return string
+local function shorten_path(fp)
+  local cwd = vim.fn.getcwd()
+  -- Ensure the cwd ends with a separator for clean replacement.
+  if not (cwd:sub(-1) == "/" or cwd:sub(-1) == "\\") then
+    cwd = cwd .. package.config:sub(1, 1)
+  end
+  if fp:sub(1, #cwd) == cwd then
+    return "./" .. fp:sub(#cwd + 2)
+  end
+  return fp
+end
+
 ---Suppresses duplicate message prefixes within a cooldown window.
 ---@param msg string The message to log.
 ---@param level? number Log level (passed to vim.notify).
@@ -20,7 +35,12 @@ function M.log(msg, level, notify_opts)
     return
   end
   M.log_seen[key] = now
-  local handle = vim.notify("[claude.nvim auto-follow] " .. msg, level or vim.log.levels.INFO, notify_opts)
+  local display_msg = shorten_path(msg)
+  local handle = vim.notify(
+    "[claude.nvim auto-follow] " .. display_msg,
+    level or vim.log.levels.INFO,
+    notify_opts
+  )
   return handle
 end
 

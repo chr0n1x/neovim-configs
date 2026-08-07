@@ -83,6 +83,16 @@ local function jump_to_edit(data, file_path)
   if win then
     maybe_jump_to_line(win, data.starting_line)
   end
+
+  -- Restore insert mode on the terminal window (edit operations can pull it into normal mode).
+  -- Defer in a separate tick to let mode state settle after buffer/window changes.
+  if is_terminal_focused() then
+    vim.defer_fn(function()
+      if is_terminal_focused() then
+        vim.cmd.startinsert()
+      end
+    end, 50)
+  end
 end
 
 ---Extract session ID from JSONL file path.
@@ -111,6 +121,7 @@ local function store_edit_source(data)
   local file_path = data.file_path
   local jsonl_path = data.jsonl_path
   local source_line = data.source_line
+  local starting_line = data.starting_line
   local operation = data.operation or "Edit"
 
   -- Skip incomplete events: file_path is required.
@@ -127,6 +138,7 @@ local function store_edit_source(data)
     time_str = format_time(timestamp),
     file_path = file_path,
     source_line = source_line,
+    starting_line = starting_line,
     operation = operation,
   }
 

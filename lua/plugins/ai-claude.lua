@@ -69,8 +69,8 @@ local function animate_collapse(self)
   }, self._saved_config)
 end
 
--- I HAVE to be stupid, there has to be an easier way to do this
--- specifically written to go back to the previous window BECAUSE
+-- Find the window beside the floating terminal — no cleaner way exists (still).
+-- Specifically written to go back to the previous window BECAUSE
 -- we're using a floating terminal
 
 local function valid_buf(win_id)
@@ -234,6 +234,16 @@ return {
       }
     },
     keys = {
+      {
+        "<leader>cu",
+        function()
+          require("claude-decorators.telescope-history-picker").pick()
+        end,
+        desc = "  view list of changes claude made.",
+        mode = { "n" }
+      },
+
+
       { "<leader>c", "<cmd>ClaudeCodeFocus<cr>", desc = "Claude Code", mode = { "n", "x" } },
       -- { "<leader>c", "<cmd>ClaudeCode<cr>", desc = "Toggle Claude" },
       -- { "<leader>cf", "<cmd>ClaudeCodeFocus<cr>", desc = "Focus Claude" },
