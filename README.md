@@ -13,6 +13,8 @@ The goal of having a separate repo is so that I can manage the two configuration
 
 ## Claude Code Auto-Follow
 
+**Disclaimer:** Most of the Claude/AI wrapper features in this repo were vibe-coded with AI assistance. They work well for my workflow, but aren't necessarily written the "clean" way.
+
 This config automatically jumps to edited files when Claude Code modifies them on disk.
 
 **How it works:**
