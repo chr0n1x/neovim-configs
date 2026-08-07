@@ -141,8 +141,8 @@ local function on_inotify_event(raw_line)
             if change_info.starting_line then
               -- Complete result: update or show notification with line number.
               if pending_notifications[fp] then
-                vim.notify(
-                  "[claude.nvim auto-follow] " .. fp .. line_str,
+                utils.log(
+                  fp .. line_str,
                   vim.log.levels.INFO,
                   { replace = pending_notifications[fp] }
                 )
@@ -157,7 +157,7 @@ local function on_inotify_event(raw_line)
             else
               -- Early tool_use (no line info): show notification that can be
               -- updated when the toolUseResult arrives.
-              local handle = vim.notify("[claude.nvim auto-follow] " .. fp)
+              local handle = utils.log(fp, vim.log.levels.INFO)
               pending_notifications[fp] = handle
               utils.log(
                 "early tool_use @ " .. fp,

@@ -8,7 +8,10 @@ M.cooldown_ms = 3000
 M.log_seen = {}
 
 ---Suppresses duplicate message prefixes within a cooldown window.
-function M.log(msg, level)
+---@param msg string The message to log.
+---@param level? number Log level (passed to vim.notify).
+---@param notify_opts? table Options passed directly to vim.notify.
+function M.log(msg, level, notify_opts)
   if not msg then return end
   local now = math.floor(vim.uv.hrtime() / 1000000)
   local key = msg
@@ -17,7 +20,8 @@ function M.log(msg, level)
     return
   end
   M.log_seen[key] = now
-  vim.notify("[claude.nvim auto-follow] " .. msg, level or vim.log.levels.INFO)
+  local handle = vim.notify("[claude.nvim auto-follow] " .. msg, level or vim.log.levels.INFO, notify_opts)
+  return handle
 end
 
 ---Reset logger state.
