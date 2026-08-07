@@ -160,6 +160,16 @@ return {
             },
 
             {
+              "<C-n>",
+              function()
+                vim.cmd.stopinsert()
+                vim.cmd("noautocmd stopinsert")
+              end,
+              mode = "t",
+              desc = "✥"
+            },
+
+            {
               "<C-h>",
               function(self)
                 animate_collapse(self)

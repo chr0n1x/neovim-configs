@@ -34,7 +34,10 @@ end
 local function maybe_jump_to_line(win, starting_line)
   if starting_line then
     local line = tonumber(starting_line)
-    if line then
+    if line and vim.api.nvim_win_is_valid(win) then
+      local buf = vim.api.nvim_win_get_buf(win)
+      local max_line = vim.api.nvim_buf_line_count(buf)
+      line = math.min(line, math.max(1, max_line))
       vim.api.nvim_win_set_cursor(win, { line, 0 })
     end
   end
@@ -71,6 +74,13 @@ local function jump_to_edit(data, file_path)
     vim.api.nvim_win_call(win, function()
       vim.cmd("edit " .. vim.fn.fnameescape(file_path))
     end)
+  end
+
+  -- Window might be invalid after `edit`, re-resolve.
+  if not vim.api.nvim_win_is_valid(win) then
+    win = get_jump_win()
+  end
+  if win then
     maybe_jump_to_line(win, data.starting_line)
   end
 end
