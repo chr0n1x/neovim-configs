@@ -24,8 +24,15 @@ function M.pick()
   -- Sort by timestamp so most recent is at the top.
   table.sort(entries, function(a, b) return a.timestamp > b.timestamp end)
 
-  -- Use the most recent session ID in the title.
-  local current_session = #entries > 0 and entries[1].session_id or "none"
+  -- Use the pinned session ID from the inotify watcher (source of truth).
+  local inotify = require("claude-decorators.inotify-watcher")
+  local pinned_path = inotify.pinned_jsonl_path
+  local current_session = "(unknown session/not detected yet)"
+  if pinned_path then
+    current_session = pinned_path:match("([^/]+)%.jsonl$") or "unknown"
+  elseif #entries > 0 then
+    current_session = entries[1].session_id
+  end
   -- Truncate long session IDs for display.
   local short_id = current_session:sub(1, 8) .. "..."
 
