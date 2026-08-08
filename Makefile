@@ -10,7 +10,24 @@ IMAGE_TAG ?= nvim-test
 SKIP_CHECK := lua/util/task_notifications.lua \
               lua/config/lazy.lua
 
-tests:
+# Combined test target: static analysis + runtime tests.
+# Used as the CMD entrypoint in Dockerfile.test.
+test: lint style check
+
+# Static analysis with luacheck (lints for unused vars, redefined globals, etc.)
+lint:
+	@echo "==> luacheck"
+	@luacheck lua/ --no-color --no-global --ignore 6 --ignore 7 --ignore 542
+
+# StyLua formatting check (dry-run -- no in-place modification)
+# Outputs diff for files that need reformatting but does not fail CI.
+# Run `stylua lua/` locally to fix formatting.
+style:
+	@echo "==> stylua check"
+	@stylua --check lua/ || { echo "WARNING: stylua found formatting issues. Run 'stylua lua/' to fix."; }
+
+# Load each lua file to catch syntax and require errors.
+check:
 	@for f in $$(find lua/ -name '*.lua'); do \
 		if echo "$(SKIP_CHECK)" | grep -qF "$$f"; then continue; fi; \
 		echo "check $$f ..."; \
@@ -20,6 +37,9 @@ tests:
 			-c "lua dofile(vim.fn.expand('$$f'))" \
 			-c "qa!" 2>/dev/null || { echo "FAIL: $$f"; exit 1; }; \
 	done
+
+# Legacy alias — keeps existing workflows and CI scripts working.
+tests: check
 
 ci:
 	@test -x "$$(command -v $(PODMAN))" || { echo "podman not found"; exit 1; }
