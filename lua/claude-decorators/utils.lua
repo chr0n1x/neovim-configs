@@ -26,7 +26,9 @@ end
 ---@param level? number Log level (passed to vim.notify).
 ---@param notify_opts? table Options passed directly to vim.notify.
 function M.log(msg, level, notify_opts)
-  if not msg then return end
+  if not msg then
+    return
+  end
   local now = math.floor(vim.uv.hrtime() / 1000000)
   local key = msg
   local last = M.log_seen[key]
@@ -35,11 +37,7 @@ function M.log(msg, level, notify_opts)
   end
   M.log_seen[key] = now
   local display_msg = shorten_path(msg)
-  local handle = vim.notify(
-    "[claude.nvim auto-follow] " .. display_msg,
-    level or vim.log.levels.INFO,
-    notify_opts
-  )
+  local handle = vim.notify("[claude.nvim auto-follow] " .. display_msg, level or vim.log.levels.INFO, notify_opts)
   return handle
 end
 
@@ -55,12 +53,16 @@ end
 M.seen_keys = {}
 
 function M.key_seen(key)
-  if not key then return false end
+  if not key then
+    return false
+  end
   return M.seen_keys[key] ~= nil
 end
 
 function M.mark_key_seen(key)
-  if not key then return end
+  if not key then
+    return
+  end
   M.seen_keys[key] = true
 end
 

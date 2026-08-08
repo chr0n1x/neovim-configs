@@ -32,8 +32,8 @@ vim.api.nvim_create_autocmd("FocusGained", {
 vim.api.nvim_create_autocmd("ExitPre", {
   pattern = "*",
   callback = function()
-    vim.cmd('silent! ClaudeCodeClose<CR>')
-    vim.cmd('silent! ClaudeCodeStop<CR>')
+    vim.cmd("silent! ClaudeCodeClose<CR>")
+    vim.cmd("silent! ClaudeCodeStop<CR>")
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
       if vim.api.nvim_buf_get_option(buf, "buftype") == "terminal" then
         vim.api.nvim_buf_delete(buf, { force = true })
@@ -57,7 +57,9 @@ elseif OLLAMA_MODEL ~= "" then
 end
 
 local function animate_collapse(self)
-  if not (self._wide and self._saved_config) then return end
+  if not (self._wide and self._saved_config) then
+    return
+  end
   self._wide = false
   local sc = self._saved_config
   local anim = require("terminal-animations")
@@ -104,9 +106,13 @@ local function find_base_window(reverse)
   end
 end
 
-local set_prev_win = function() find_base_window(false) end
+local set_prev_win = function()
+  find_base_window(false)
+end
 
-local set_next_win = function() find_base_window(true) end
+local set_next_win = function()
+  find_base_window(true)
+end
 
 return {
   {
@@ -121,15 +127,15 @@ return {
       --  min = 10000,
       --  max = 65535,
       -- },
-      auto_start = true,       -- Auto-start server on Neovim startup
+      auto_start = true, -- Auto-start server on Neovim startup
       focus_after_send = true, -- after <leader>ca go to terminal
       log_level = "info",
 
       diff_opts = {
         layout = "vertical",
         open_in_new_tab = true,
-        keep_terminal_focus = false,         -- If true, moves focus back to terminal after diff opens
-        hide_terminal_in_new_tab = true,     -- works better personally w/ floating
+        keep_terminal_focus = false, -- If true, moves focus back to terminal after diff opens
+        hide_terminal_in_new_tab = true, -- works better personally w/ floating
         on_new_file_reject = "close_window", -- "keep_empty" or "close_window"
       },
 
@@ -156,7 +162,7 @@ return {
                 vim.cmd("noh")
               end,
               mode = "t",
-              desc = "⊘"
+              desc = "⊘",
             },
 
             {
@@ -166,7 +172,7 @@ return {
                 vim.cmd("noautocmd stopinsert")
               end,
               mode = "t",
-              desc = "✥"
+              desc = "✥",
             },
 
             {
@@ -177,7 +183,8 @@ return {
                 vim.cmd.redraw()
                 vim.cmd("noh")
               end,
-              mode = "t", desc = "←"
+              mode = "t",
+              desc = "←",
             },
             {
               "<C-l>",
@@ -187,7 +194,8 @@ return {
                 vim.cmd.redraw()
                 vim.cmd("noh")
               end,
-              mode = "t", desc = "→"
+              mode = "t",
+              desc = "→",
             },
             {
               "<C-f>",
@@ -221,7 +229,7 @@ return {
                 end
               end,
               mode = "t",
-              desc = "⛶"
+              desc = "⛶",
             },
           },
 
@@ -231,7 +239,7 @@ return {
           width = 0.35,
           height = 0.9,
         },
-      }
+      },
     },
     keys = {
       {
@@ -240,9 +248,8 @@ return {
           require("claude-decorators.telescope-history-picker").pick()
         end,
         desc = "  view list of changes claude made.",
-        mode = { "n" }
+        mode = { "n" },
       },
-
 
       { "<leader>c", "<cmd>ClaudeCodeFocus<cr>", desc = "Claude Code", mode = { "n", "x" } },
       -- { "<leader>c", "<cmd>ClaudeCode<cr>", desc = "Toggle Claude" },

@@ -1,4 +1,6 @@
-if IN_PERF_MODE then return {} end
+if IN_PERF_MODE then
+  return {}
+end
 
 return {
   {
@@ -9,14 +11,14 @@ return {
   },
 
   {
-    'nvim-treesitter/nvim-treesitter',
-    branch = 'main',
+    "nvim-treesitter/nvim-treesitter",
+    branch = "main",
     requires = {
-      { 'windwp/nvim-ts-autotag' },
-      { 'nvim-treesitter/playground' },
-      { "nvim-telescope/telescope-fzf-native.nvim" }
+      { "windwp/nvim-ts-autotag" },
+      { "nvim-treesitter/playground" },
+      { "nvim-telescope/telescope-fzf-native.nvim" },
     },
-    build = ':TSUpdate',
+    build = ":TSUpdate",
 
     -- TODO: not sure what to do yet
     --
@@ -40,10 +42,10 @@ return {
       highlight = {
         enable = true,
         additional_vim_regex_highlighting = true,
-        use_languagetree = true
+        use_languagetree = true,
       },
       indent = {
-        enable = true
+        enable = true,
       },
       autotag = { enable = true },
       endwise = { enable = true },
@@ -55,7 +57,7 @@ return {
           scope_incremental = false,
           node_decremental = "<bs>",
         },
-      }
-    }
-  }
+      },
+    },
+  },
 }

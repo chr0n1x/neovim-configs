@@ -1,12 +1,12 @@
 return {
   {
     lazy = false,
-    'jedrzejboczar/possession.nvim',
+    "jedrzejboczar/possession.nvim",
     dependencies = {
-      'nvim-lua/plenary.nvim'
+      "nvim-lua/plenary.nvim",
     },
     opts = {
-      autoload = 'auto_cwd',
+      autoload = "auto_cwd",
       autosave = {
         cwd = true,
         current = true,
@@ -15,7 +15,7 @@ return {
       },
       plugins = {
         close_windows = {
-          hooks = { 'before_save', 'before_load' },
+          hooks = { "before_save", "before_load" },
           preserve_layout = true,
           match = {
             floating = false,
@@ -25,16 +25,16 @@ return {
         },
         delete_hidden_buffers = {
           hooks = {
-            'before_load',
-            vim.o.sessionoptions:match('buffer') and 'before_save',
+            "before_load",
+            vim.o.sessionoptions:match("buffer") and "before_save",
           },
           force = true,
         },
       },
     },
     keys = {
-      { '<leader>sl', '<cmd>PossessionListCwd<cr>', desc = '📌 Show cwd session.' },
-      { '<leader>ss', '<cmd>PossessionSave<cr>', desc = '📌 Save current session' },
+      { "<leader>sl", "<cmd>PossessionListCwd<cr>", desc = "📌 Show cwd session." },
+      { "<leader>ss", "<cmd>PossessionSave<cr>", desc = "📌 Save current session" },
     },
   },
 }

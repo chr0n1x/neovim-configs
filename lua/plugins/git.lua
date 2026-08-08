@@ -1,16 +1,16 @@
 return {
   {
-    'sindrets/diffview.nvim',
-    cmd = 'DiffviewOpen',
+    "sindrets/diffview.nvim",
+    cmd = "DiffviewOpen",
     keys = {
-      { '<leader>D', ':DiffviewFileHistory %<CR>', desc = 'Diffview: open.' },
-      { '<leader>d', ':DiffviewOpen<CR>', desc = 'Diffview: open.' },
-      { '<leader>dr', ':DiffviewRefresh<CR>', desc = 'Diffview: refresh.' },
-      { '<leader>d<enter>', ':DiffviewClose<CR>', desc = 'Diffview: close.' },
+      { "<leader>D", ":DiffviewFileHistory %<CR>", desc = "Diffview: open." },
+      { "<leader>d", ":DiffviewOpen<CR>", desc = "Diffview: open." },
+      { "<leader>dr", ":DiffviewRefresh<CR>", desc = "Diffview: refresh." },
+      { "<leader>d<enter>", ":DiffviewClose<CR>", desc = "Diffview: close." },
     },
     config = function()
-      vim.api.nvim_set_hl(0, 'DiffAdd', { 'DiffDelete' })
-      vim.api.nvim_set_hl(0, 'DiffDelete', { 'DiffAdd' })
+      vim.api.nvim_set_hl(0, "DiffAdd", { "DiffDelete" })
+      vim.api.nvim_set_hl(0, "DiffDelete", { "DiffAdd" })
     end,
   },
 
@@ -18,7 +18,7 @@ return {
     "TimUntersberger/neogit",
     cmd = "Neogit",
     keys = {
-      { '<leader>G', ':DiffviewOpen<CR> | :Neogit<CR>', desc = 'Neogit: open neogit with diffview.' },
+      { "<leader>G", ":DiffviewOpen<CR> | :Neogit<CR>", desc = "Neogit: open neogit with diffview." },
     },
     config = function()
       require("neogit").setup({
@@ -67,9 +67,9 @@ return {
   },
 
   {
-    'mrloop/telescope-git-branch.nvim',
-    config = function ()
-      vim.keymap.set('n', '<leader>df', require('git_branch').files , { desc = 'Telescope: Show git diff.' })
-    end
-  }
+    "mrloop/telescope-git-branch.nvim",
+    config = function()
+      vim.keymap.set("n", "<leader>df", require("git_branch").files, { desc = "Telescope: Show git diff." })
+    end,
+  },
 }

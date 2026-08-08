@@ -1,17 +1,19 @@
 -- only run this with ollama, just easier for now
-if IN_PERF_MODE or (not OLLAMA_ENABLED) then return {} end
+if IN_PERF_MODE or not OLLAMA_ENABLED then
+  return {}
+end
 
 local config = {
-  notify = 'warn',
+  notify = "warn",
 
-  provider = 'openai_fim_compatible',
+  provider = "openai_fim_compatible",
   n_completions = 1,
   context_window = 32768,
   provider_options = {
     openai_fim_compatible = {
-      api_key = 'TERM',
-      name = '🦙',
-      end_point = OLLAMA_URL .. '/v1/completions',
+      api_key = "TERM",
+      name = "🦙",
+      end_point = OLLAMA_URL .. "/v1/completions",
       -- NOTE: ideally use a model that can respond FAST
       model = OLLAMA_MODEL,
       optional = {
@@ -23,17 +25,16 @@ local config = {
 
   -- settings for inline code preview
   virtualtext = {
-    auto_trigger_ft = { '*' },
+    auto_trigger_ft = { "*" },
     keymap = {
-      accept = '<leader><tab><tab>',
-      accept_line = '<leader><tab>',
-      prev = '<leader><tab>k',
-      next = '<leader><tab>j',
-      dismiss = '<leader><tab>l',
+      accept = "<leader><tab><tab>",
+      accept_line = "<leader><tab>",
+      prev = "<leader><tab>k",
+      next = "<leader><tab>j",
+      dismiss = "<leader><tab>l",
     },
-  }
+  },
 }
-
 
 config.provider_options.openai_fim_compatible.template = {
   suffix = false,
@@ -48,16 +49,16 @@ config.provider_options.openai_fim_compatible.template = {
 }
 
 return {
-  'milanglacier/minuet-ai.nvim',
+  "milanglacier/minuet-ai.nvim",
   lazy = true,
   dependencies = {
-    { 'nvim-lua/plenary.nvim' },
+    { "nvim-lua/plenary.nvim" },
   },
   config = function()
-    require('minuet').setup(config)
+    require("minuet").setup(config)
 
     local statusmsg = "💃🤝🦙 minuet-ai + ollama running\n"
-    statusmsg = statusmsg .. '✅ ' .. OLLAMA_MODEL_SHORT .. ' via ' .. OLLAMA_DOMAIN
+    statusmsg = statusmsg .. "✅ " .. OLLAMA_MODEL_SHORT .. " via " .. OLLAMA_DOMAIN
 
     vim.notify(statusmsg, vim.log.levels.INFO, {
       title = "💃 Minuet-AI",

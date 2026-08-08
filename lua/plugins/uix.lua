@@ -1,20 +1,20 @@
 -- UI and UX plugins: notifications, statusline, which-key, etc.
 local uix_plugins = {
   {
-    'rcarriga/nvim-notify',
+    "rcarriga/nvim-notify",
     priority = 1001,
     lazy = false,
-    config = function ()
+    config = function()
       vim.notify = require("notify")
       vim.notify.setup({
         top_down = false,
-        background_colour = '#434C5E',
+        background_colour = "#434C5E",
       })
     end,
     keys = {
-      { '<leader>eh', ':lua require("notify").dismiss()<CR>', desc = "Clear notifications." },
-      { '<leader>e', ':Telescope notify<CR>', desc = "View notifications in Telescope." },
-    }
+      { "<leader>eh", ':lua require("notify").dismiss()<CR>', desc = "Clear notifications." },
+      { "<leader>e", ":Telescope notify<CR>", desc = "View notifications in Telescope." },
+    },
   },
 
   -- I hate the notification plugins in this thing w/ a passion
@@ -41,19 +41,18 @@ local uix_plugins = {
 █▐▓▓▓▓▓▓▄▄▄▓▓▓▓▓▓█▓█▓█▓█▓▓▓▐█
 Forever MoonJanglin'
 ]],
-
-        }
+        },
       },
       indent = { enabled = DISABLED_IF_IN_PERF_MODE },
       scope = { enabled = true },
       statuscolumn = { enabled = DISABLED_IF_IN_PERF_MODE },
       layout = { enabled = true },
       win = { enabled = DISABLED_IF_IN_PERF_MODE },
-    }
+    },
   },
 
   {
-    'tris203/precognition.nvim',
+    "tris203/precognition.nvim",
     opts = {
       startVisible = false,
       showBlankVirtLine = false,
@@ -66,27 +65,27 @@ Forever MoonJanglin'
       },
     },
     keys = {
-      {'<leader>P', ':lua require("precognition").toggle()<CR>', desc = 'toggle precognition'},
-    }
+      { "<leader>P", ':lua require("precognition").toggle()<CR>', desc = "toggle precognition" },
+    },
   },
 
   {
     "m4xshen/hardtime.nvim",
     dependencies = { "MunifTanjim/nui.nvim" },
-    config = function ()
+    config = function()
       -- Im too weenie hut juniors for this
       require("hardtime").setup({
         restriction_mode = "hint",
         callback = function(text)
           vim.notify(text, vim.log.levels.WARN, { render = "compact" })
-        end
+        end,
       })
     end,
   },
 
   -- color schemes; I'm conflicted
   {
-    'shaunsingh/nord.nvim',
+    "shaunsingh/nord.nvim",
     lazy = false,
     init = function()
       vim.g.nord_contrast = false
@@ -95,8 +94,8 @@ Forever MoonJanglin'
       vim.g.nord_italic = false
       vim.g.nord_disable_background = true
       vim.g.nord_uniform_diff_background = false
-      require('nord').set()
-    end
+      require("nord").set()
+    end,
   },
 
   -- NOTE TO SELF: this theme does not have highlights for cmp tab completion
@@ -123,7 +122,7 @@ Forever MoonJanglin'
         enabled = true,
         padding = {
           width = 2,
-        }
+        },
       },
       foldKeymaps = {
         setup = false,
@@ -132,11 +131,20 @@ Forever MoonJanglin'
     init = function()
       vim.opt.foldlevel = 99
       vim.opt.foldlevelstart = 99
-      vim.api.nvim_set_keymap('n', 'zc', ':lua require("origami").caret()<CR>', {noremap = true, desc = 'Close fold (better if lsp on).'})
-      vim.api.nvim_set_keymap('n', 'zo', ':lua require("origami").dollar()<CR>', {noremap = true, desc = 'Open fold.'})
+      vim.api.nvim_set_keymap(
+        "n",
+        "zc",
+        ':lua require("origami").caret()<CR>',
+        { noremap = true, desc = "Close fold (better if lsp on)." }
+      )
+      vim.api.nvim_set_keymap(
+        "n",
+        "zo",
+        ':lua require("origami").dollar()<CR>',
+        { noremap = true, desc = "Open fold." }
+      )
     end,
   },
-
 }
 
 if not IN_PERF_MODE then
@@ -167,7 +175,7 @@ if not IN_PERF_MODE then
         -- particle_damping = 0.15,
         -- particle_gravity = -50,
         -- min_distance_emit_particles = 0,
-      }
+      },
     }
   )
 
@@ -178,9 +186,9 @@ if not IN_PERF_MODE then
         "stevearc/conform.nvim",
       },
       opts = {
-         filetypes = { "markdown", "md" },
+        filetypes = { "markdown", "md" },
       },
-      "noisesfromspace/touchup.nvim"
+      "noisesfromspace/touchup.nvim",
     }
     -- {
     --   'MeanderingProgrammer/render-markdown.nvim',
@@ -193,23 +201,20 @@ if not IN_PERF_MODE then
     -- }
   )
 
-  table.insert(
-    uix_plugins,
-    {
-      "anuvyklack/windows.nvim",
-      lazy = false,
-      dependencies = {
-        "anuvyklack/middleclass",
-        "anuvyklack/animation.nvim"
-      },
-      init = function()
-        vim.o.winwidth = 10
-        vim.o.winminwidth = 10
-        vim.o.equalalways = false
-        require('windows').setup()
-      end
-    }
-  )
+  table.insert(uix_plugins, {
+    "anuvyklack/windows.nvim",
+    lazy = false,
+    dependencies = {
+      "anuvyklack/middleclass",
+      "anuvyklack/animation.nvim",
+    },
+    init = function()
+      vim.o.winwidth = 10
+      vim.o.winminwidth = 10
+      vim.o.equalalways = false
+      require("windows").setup()
+    end,
+  })
 end
 
 return uix_plugins

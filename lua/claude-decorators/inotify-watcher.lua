@@ -32,14 +32,20 @@ local pending_notifications = {}
 local poll_timer = nil
 
 local function start_watch()
-  if poll_timer then return end
+  if poll_timer then
+    return
+  end
   utils.log("polling fallback activated (inotifywait unavailable)", vim.log.levels.WARN)
 end
 
 function M.stop_legacy_poll()
   if poll_timer then
-    pcall(function() poll_timer:stop() end)
-    pcall(function() poll_timer:close() end)
+    pcall(function()
+      poll_timer:stop()
+    end)
+    pcall(function()
+      poll_timer:close()
+    end)
     poll_timer = nil
   end
 end
@@ -57,32 +63,42 @@ end
 
 ---Handle an inotify event line: "<dir> <events> <filename>".
 local function on_inotify_event(raw_line)
-  if not raw_line or #raw_line == 0 then return end
+  if not raw_line or #raw_line == 0 then
+    return
+  end
 
   -- inotifywait format: "/path/to/dir/ CLOSE_WRITE filename"
   local dir, _, filename = raw_line:match("^(.-)%s+(.-)%s+(.+)$")
-  if not dir or not filename then return end
+  if not dir or not filename then
+    return
+  end
 
   -- Only process .jsonl files.
-  if not filename:match("%.jsonl$") then return end
+  if not filename:match("%.jsonl$") then
+    return
+  end
 
   -- Skip subagent directories — we only care about root session JSONLs.
-  if dir:find("/subagents/") then return end
+  if dir:find("/subagents/") then
+    return
+  end
 
   -- Strip trailing slash from dir.
   dir = dir:gsub("/+$", "")
   local jsonl_path = dir .. "/" .. filename
 
   --- Session pin logic ---------------------------------------------------
-  if jsonl_path == M.pinned_jsonl_path then
-    -- Process (fall through below).
-  elseif not M.pinned_jsonl_path then
+  if not M.pinned_jsonl_path then
     utils.log("no active pin, trying to pin " .. filename, vim.log.levels.DEBUG)
-    if not try_pin_session(jsonl_path) then return end
-  else
+    if not try_pin_session(jsonl_path) then
+      return
+    end
+  elseif jsonl_path ~= M.pinned_jsonl_path then
     utils.log("session switch detected, re-pin to " .. filename, vim.log.levels.DEBUG)
     M.pinned_jsonl_path = nil
-    if not try_pin_session(jsonl_path) then return end
+    if not try_pin_session(jsonl_path) then
+      return
+    end
   end
 
   --- Tool result processing -----------------------------------------------
@@ -92,7 +108,9 @@ local function on_inotify_event(raw_line)
   -- We read a byte-range chunk rather than tailing by line count because
   -- the inotify event fires per-close_write, and each write is one JSONL line.
   local f = io.open(jsonl_path, "r")
-  if not f then return end
+  if not f then
+    return
+  end
   local file_size = f:seek("end")
   f:close()
 
@@ -115,7 +133,9 @@ local function on_inotify_event(raw_line)
     local chunk = chunk_file:read(file_size - prev_pos)
     chunk_file:close()
 
-    if not chunk then return end
+    if not chunk then
+      return
+    end
 
     local lines = {}
     for line in chunk:gmatch("([^\r\n]+)") do
@@ -136,74 +156,70 @@ local function on_inotify_event(raw_line)
 
     for i, line in ipairs(lines) do
       local change_info = parser.parse_tool_result(line, chunk_start_line + i - 1)
-        if change_info then
-          -- Write raw line to sidecar before dedup — we want all events recorded.
-          append_sidecar(line)
+      if change_info then
+        -- Write raw line to sidecar before dedup — we want all events recorded.
+        append_sidecar(line)
 
-          -- Dedup check: prevent firing duplicate autocmds when both the early
-          -- tool_use and the later toolUseResult arrive for the same edit.
-          local dedup_key = change_info.dedup_key
-          if dedup_key and utils.key_seen(dedup_key) then
-            utils.log("NOT firing autocmd; SEEN " .. dedup_key:sub(1, 8), vim.log.levels.DEBUG)
-          else
-            if dedup_key then utils.mark_key_seen(dedup_key) end
-
-            local fp = change_info.file_path
-            local line_str = change_info.starting_line and ":" .. change_info.starting_line or ""
-
-            if change_info.starting_line then
-              -- Complete result: update or show notification with line number.
-              if pending_notifications[fp] then
-                utils.log(
-                  fp .. line_str,
-                  vim.log.levels.INFO,
-                  { replace = pending_notifications[fp] }
-                )
-                pending_notifications[fp] = nil
-              else
-                utils.log(fp .. line_str)
-              end
-              utils.log(
-                "firing autocmd ClaudeAutoFollowEdit @ " .. fp .. line_str,
-                vim.log.levels.DEBUG
-              )
-            else
-              -- Early tool_use (no line info): show notification that can be
-              -- updated when the toolUseResult arrives.
-              local handle = utils.log(fp, vim.log.levels.INFO)
-              pending_notifications[fp] = handle
-              utils.log(
-                "early tool_use @ " .. fp,
-                vim.log.levels.DEBUG
-              )
-            end
-
-            vim.api.nvim_exec_autocmds("User", {
-              pattern = "ClaudeAutoFollowEdit",
-              data = {
-                file_path = change_info.file_path,
-                operation = change_info.operation,
-                starting_line = change_info.starting_line,
-                delta = change_info.delta,
-                source_line = change_info.source_line,
-                jsonl_path = M.pinned_jsonl_path,
-                event_uuid = change_info.event_uuid,
-                event_timestamp = change_info.event_timestamp,
-                event_id = change_info.event_id,
-              },
-            })
+        -- Dedup check: prevent firing duplicate autocmds when both the early
+        -- tool_use and the later toolUseResult arrive for the same edit.
+        local dedup_key = change_info.dedup_key
+        if dedup_key and utils.key_seen(dedup_key) then
+          utils.log("NOT firing autocmd; SEEN " .. dedup_key:sub(1, 8), vim.log.levels.DEBUG)
+        else
+          if dedup_key then
+            utils.mark_key_seen(dedup_key)
           end
+
+          local fp = change_info.file_path
+          local line_str = change_info.starting_line and ":" .. change_info.starting_line or ""
+
+          if change_info.starting_line then
+            -- Complete result: update or show notification with line number.
+            if pending_notifications[fp] then
+              utils.log(fp .. line_str, vim.log.levels.INFO, { replace = pending_notifications[fp] })
+              pending_notifications[fp] = nil
+            else
+              utils.log(fp .. line_str)
+            end
+            utils.log("firing autocmd ClaudeAutoFollowEdit @ " .. fp .. line_str, vim.log.levels.DEBUG)
+          else
+            -- Early tool_use (no line info): show notification that can be
+            -- updated when the toolUseResult arrives.
+            local handle = utils.log(fp, vim.log.levels.INFO)
+            pending_notifications[fp] = handle
+            utils.log("early tool_use @ " .. fp, vim.log.levels.DEBUG)
+          end
+
+          vim.api.nvim_exec_autocmds("User", {
+            pattern = "ClaudeAutoFollowEdit",
+            data = {
+              file_path = change_info.file_path,
+              operation = change_info.operation,
+              starting_line = change_info.starting_line,
+              delta = change_info.delta,
+              source_line = change_info.source_line,
+              jsonl_path = M.pinned_jsonl_path,
+              event_uuid = change_info.event_uuid,
+              event_timestamp = change_info.event_timestamp,
+              event_id = change_info.event_id,
+            },
+          })
         end
       end
     end
   end
+end
 
 ---Process new lines appended to the inotify log file since last read.
 local function process_inotify_log()
-  if not M.inotify_log then return end
+  if not M.inotify_log then
+    return
+  end
 
   local f = io.open(M.inotify_log, "r")
-  if not f then return end
+  if not f then
+    return
+  end
 
   local stat = f:seek("end")
   if stat <= M.inotify_last_pos then
@@ -223,7 +239,9 @@ local function process_inotify_log()
   M.inotify_last_pos = stat
   f:close()
 
-  if not chunk then return end
+  if not chunk then
+    return
+  end
 
   for line in chunk:gmatch("([^\r\n]+)") do
     pcall(on_inotify_event, line)
@@ -233,10 +251,7 @@ end
 ---Callback when inotifywait process exits.
 local function on_inotify_exit(code)
   if M.inotify_handle then
-    utils.log(
-      "inotifywait exited with code " .. tostring(code),
-      vim.log.levels.WARN
-    )
+    utils.log("inotifywait exited with code " .. tostring(code), vim.log.levels.WARN)
     M.inotify_handle = nil
   end
 end
@@ -249,7 +264,9 @@ end
 ---Ensure a single global inotifywait watcher is running.
 ---Uses a lockfile with the inotifywait PID to prevent duplicates.
 function M.start()
-  if M.inotify_handle then return end
+  if M.inotify_handle then
+    return
+  end
 
   -- Check if inotifywait is available.
   local check = io.popen("which inotifywait 2>/dev/null")
@@ -286,14 +303,14 @@ function M.start()
 
   -- Kill any orphaned watchers from previous Neovim sessions.
   -- Always pgrep to catch orphans even when the pidfile is stale/corrupt.
-  local kp = io.popen(
-    "pgrep -f 'inotifywait.*nvim." .. user .. ".inotify' 2>/dev/null || true"
-  )
+  local kp = io.popen("pgrep -f 'inotifywait.*nvim." .. user .. ".inotify' 2>/dev/null || true")
   if kp then
     for pid_line in kp:lines() do
       local p = tonumber(pid_line:match("^%s*(.-)%s*$"))
       if p then
-        pcall(function() vim.uv.kill(p, 15) end)
+        pcall(function()
+          vim.uv.kill(p, 15)
+        end)
       end
     end
     kp:close()
@@ -301,15 +318,22 @@ function M.start()
 
   -- Truncate any leftover log.
   local truncate = io.open(M.inotify_log, "w")
-  if truncate then truncate:close() end
+  if truncate then
+    truncate:close()
+  end
 
   -- Spawn inotifywait directly (no bash wrapper) and capture its PID.
   local cmd = "inotifywait"
   local args = {
-    "-m", "-r", "-e", "close_write",
-    "--format", "%w %e %f",
+    "-m",
+    "-r",
+    "-e",
+    "close_write",
+    "--format",
+    "%w %e %f",
     projects_dir,
-    "--outfile", M.inotify_log,
+    "--outfile",
+    M.inotify_log,
   }
 
   utils.log("starting inotifywait on " .. projects_dir, vim.log.levels.INFO)
@@ -327,9 +351,7 @@ function M.start()
   -- vim.uv.spawn returns a handle, not the PID — discover it via pgrep
   -- matching our unique log file path (safer than relying on handle internals).
   vim.defer_fn(function()
-    local my_pid = io.popen(
-      "pgrep -f 'inotifywait.*" .. vim.fn.fnameescape(M.inotify_log) .. "' 2>/dev/null || true"
-    )
+    local my_pid = io.popen("pgrep -f 'inotifywait.*" .. vim.fn.fnameescape(M.inotify_log) .. "' 2>/dev/null || true")
     if my_pid then
       local pid_line = my_pid:read("*l")
       my_pid:close()
@@ -359,15 +381,15 @@ function M.stop()
     return
   end
   pcall(function()
-    local kp = io.popen(
-      "pgrep -f 'inotifywait.*nvim." .. user .. ".inotify' 2>/dev/null || true"
-    )
+    local kp = io.popen("pgrep -f 'inotifywait.*nvim." .. user .. ".inotify' 2>/dev/null || true")
     if kp then
       for pid_line in kp:lines() do
         local p = tonumber(pid_line:match("^%s*(.-)%s*$"))
         if p then
           -- Try vim.uv first, fall back to os.kill.
-          local ok, _ = pcall(function() vim.uv.kill(p, 15) end)
+          local ok, _ = pcall(function()
+            vim.uv.kill(p, 15)
+          end)
           if not ok then
             os.execute("kill -15 " .. tostring(p) .. " 2>/dev/null || true")
           end
@@ -378,12 +400,18 @@ function M.stop()
   end)
 
   if M.inotify_handle then
-    pcall(function() M.inotify_handle:close() end)
+    pcall(function()
+      M.inotify_handle:close()
+    end)
     M.inotify_handle = nil
   end
   if M.inotify_poll_timer then
-    pcall(function() M.inotify_poll_timer:stop() end)
-    pcall(function() M.inotify_poll_timer:close() end)
+    pcall(function()
+      M.inotify_poll_timer:stop()
+    end)
+    pcall(function()
+      M.inotify_poll_timer:close()
+    end)
     M.inotify_poll_timer = nil
   end
   -- Only clean up shared files if we owned the watcher process.

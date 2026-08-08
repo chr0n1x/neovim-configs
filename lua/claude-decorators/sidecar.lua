@@ -26,9 +26,13 @@ end
 ---@param jsonl_path string|nil
 ---@return string|nil
 function M.path_from_jsonl(jsonl_path)
-  if not jsonl_path then return nil end
+  if not jsonl_path then
+    return nil
+  end
   local session_id = jsonl_path:match("([^/]+)%.jsonl$")
-  if not session_id then return nil end
+  if not session_id then
+    return nil
+  end
   return M.path(session_id)
 end
 
@@ -36,14 +40,18 @@ end
 ---@param sidecar_path string
 ---@param raw_line string
 function M.append(sidecar_path, raw_line)
-  if not sidecar_path then return end
+  if not sidecar_path then
+    return
+  end
   -- Ensure /tmp/nvim.$USER exists.
   local dir = sidecar_path:match("(.*/)[^/]+$")
   if dir then
     vim.uv.fs_mkdir(dir, 493) -- 0755
   end
   local f = io.open(sidecar_path, "a")
-  if not f then return end
+  if not f then
+    return
+  end
   f:write(raw_line, "\n")
   f:close()
 end
@@ -58,23 +66,37 @@ end
 ---@param id string|nil
 ---@return table|nil
 function M.lookup(sidecar_path, uuid, timestamp, id)
-  if not sidecar_path or not uuid then return nil end
+  if not sidecar_path or not uuid then
+    return nil
+  end
   local f = io.open(sidecar_path, "r")
-  if not f then return nil end
+  if not f then
+    return nil
+  end
 
   ---Score an event by how much diff data it contains. Higher = richer.
   local function score(ev)
     if ev.toolUseResult then
       local tur = ev.toolUseResult
-      if tur.structuredPatch then return 3 end
-      if tur.newString then return 2 end
-      if tur.content then return 1 end
+      if tur.structuredPatch then
+        return 3
+      end
+      if tur.newString then
+        return 2
+      end
+      if tur.content then
+        return 1
+      end
     end
     if ev.message and ev.message.content then
       for _, item in ipairs(ev.message.content) do
         if item.type == "tool_use" and item.input then
-          if item.input.new_string then return 2 end
-          if item.input.content then return 1 end
+          if item.input.new_string then
+            return 2
+          end
+          if item.input.content then
+            return 1
+          end
         end
       end
     end
@@ -86,9 +108,15 @@ function M.lookup(sidecar_path, uuid, timestamp, id)
   local ts_str = tostring(timestamp)
 
   for line in f:lines() do
-    if not line:find(uuid, 1, true) then goto continue end
-    if not line:find(ts_str, 1, true) then goto continue end
-    if id and not line:find(id, 1, true) then goto continue end
+    if not line:find(uuid, 1, true) then
+      goto continue
+    end
+    if not line:find(ts_str, 1, true) then
+      goto continue
+    end
+    if id and not line:find(id, 1, true) then
+      goto continue
+    end
 
     local ok, ev = pcall(vim.json.decode, line)
     if ok then
@@ -108,7 +136,9 @@ end
 ---@param ev table|nil
 ---@return string
 function M.extract_diff(ev)
-  if not ev then return "(no diff data available)" end
+  if not ev then
+    return "(no diff data available)"
+  end
 
   local tur = ev.toolUseResult
   if tur and tur.structuredPatch and tur.structuredPatch[1] then
@@ -156,8 +186,12 @@ function M.extract_diff(ev)
   if ev.message and ev.message.content then
     for _, item in ipairs(ev.message.content) do
       if item.type == "tool_use" and item.input then
-        if item.input.new_string then return item.input.new_string end
-        if item.input.content then return item.input.content end
+        if item.input.new_string then
+          return item.input.new_string
+        end
+        if item.input.content then
+          return item.input.content
+        end
       end
     end
   end

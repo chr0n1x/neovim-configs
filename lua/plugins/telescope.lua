@@ -1,11 +1,11 @@
 return {
-  'nvim-telescope/telescope.nvim',
+  "nvim-telescope/telescope.nvim",
 
   lazy = false,
 
   dependencies = {
-    'nvim-telescope/telescope-fzf-native.nvim',
-    build = 'make'
+    "nvim-telescope/telescope-fzf-native.nvim",
+    build = "make",
   },
 
   init = function()
@@ -15,10 +15,10 @@ return {
     telescope.setup({
       defaults = {
         path_display = {
-          "smart"
+          "smart",
         },
         prompt_prefix = "> ",
-        extensions_list = {"fzf", "terms", "themes"},
+        extensions_list = { "fzf", "terms", "themes" },
         mappings = {
           i = {
             ["<C-k>"] = actions.move_selection_previous, -- move to prev result
@@ -29,15 +29,20 @@ return {
       },
     })
 
-    local builtin = require('telescope.builtin')
+    local builtin = require("telescope.builtin")
     -- TODO: no idea how to make this work yet
     -- local default_opts = { hidden = true, file_ignore_patterns = {".git/"} }
-    vim.keymap.set('n', '<leader>f', builtin.treesitter, { desc = 'Telescope: token.' })
-    vim.keymap.set('n', '<leader>g', builtin.live_grep, { desc = 'Telescope: [rip]grep cwd.' })
-    vim.keymap.set('n', '<leader>p', builtin.find_files, { desc ='Telescope: search cwd for file.' })
-    vim.keymap.set('n', '<leader>r', builtin.lsp_references, { desc = 'Telescope: show references for token under cursor.' })
-    vim.keymap.set('n', '<leader>m', builtin.marks, { desc = 'Telescope: show marks.' })
+    vim.keymap.set("n", "<leader>f", builtin.treesitter, { desc = "Telescope: token." })
+    vim.keymap.set("n", "<leader>g", builtin.live_grep, { desc = "Telescope: [rip]grep cwd." })
+    vim.keymap.set("n", "<leader>p", builtin.find_files, { desc = "Telescope: search cwd for file." })
+    vim.keymap.set(
+      "n",
+      "<leader>r",
+      builtin.lsp_references,
+      { desc = "Telescope: show references for token under cursor." }
+    )
+    vim.keymap.set("n", "<leader>m", builtin.marks, { desc = "Telescope: show marks." })
 
     telescope.load_extension("fzf")
-  end
+  end,
 }

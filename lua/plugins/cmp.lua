@@ -1,23 +1,23 @@
 -- deps that don't destroy a machine with less resources
 -- or are absolutely required
 local deps = {
-    'folke/snacks.nvim', -- lowkey UGH; for downstream notifications
+  "folke/snacks.nvim", -- lowkey UGH; for downstream notifications
 
-    'hrsh7th/cmp-buffer',
-    'hrsh7th/cmp-path',
+  "hrsh7th/cmp-buffer",
+  "hrsh7th/cmp-path",
 }
 
 -- default sources that don't kill the machine when trying to load
 local sources_list = {
-  {name = 'path'},
+  { name = "path" },
   {
-    name = 'buffer',
+    name = "buffer",
     opts = { keyword_length = 4 },
     option = {
       get_bufnrs = function()
         return vim.api.nvim_list_bufs()
-      end
-    }
+      end,
+    },
   },
 }
 
@@ -27,11 +27,11 @@ local snippet_configs = {}
 -- required for mason
 
 if not IN_PERF_MODE then
-  table.insert(deps, 'hrsh7th/cmp-nvim-lsp')
-  table.insert(deps, 'hrsh7th/cmp-nvim-lua')
-  table.insert(deps, 'L3MON4D3/LuaSnip')
-  table.insert(deps, 'andersevenrud/cmp-tmux')
-  table.insert(sources_list, {name = 'nvim_lsp' })
+  table.insert(deps, "hrsh7th/cmp-nvim-lsp")
+  table.insert(deps, "hrsh7th/cmp-nvim-lua")
+  table.insert(deps, "L3MON4D3/LuaSnip")
+  table.insert(deps, "andersevenrud/cmp-tmux")
+  table.insert(sources_list, { name = "nvim_lsp" })
 
   table.insert(sources_list, {
     name = "lazydev",
@@ -39,36 +39,33 @@ if not IN_PERF_MODE then
   })
 
   -- Tmux source: jump to tmux panes by name.
-  table.insert(
-    sources_list,
-    {
-      name = 'tmux',
-      keyword_length = 4,
-      -- will trigger ALL the things OH MY GOD
-      trigger_characters = {},
-      option = {
-        all_panes = true,
-        capture_history = true,
-      }
-    }
-  )
+  table.insert(sources_list, {
+    name = "tmux",
+    keyword_length = 4,
+    -- will trigger ALL the things OH MY GOD
+    trigger_characters = {},
+    option = {
+      all_panes = true,
+      capture_history = true,
+    },
+  })
 
   -- Expand snippets via luasnip when LSP offers completionItem/resolve.
   snippet_configs["expand"] = function(args)
-    require('luasnip').lsp_expand(args.body)
+    require("luasnip").lsp_expand(args.body)
   end
 end
 
 return {
-  'hrsh7th/nvim-cmp',
+  "hrsh7th/nvim-cmp",
 
   lazy = true,
   dependencies = deps,
 
   config = function()
-    local cmp = require('cmp')
-    local cmp_select = {behavior = cmp.SelectBehavior.Select}
-    local compare = require('cmp.config.compare')
+    local cmp = require("cmp")
+    local cmp_select = { behavior = cmp.SelectBehavior.Select }
+    local compare = require("cmp.config.compare")
     local compare_cfg = {
       compare.offset,
       compare.exact,
@@ -87,36 +84,33 @@ return {
         comparators = compare_cfg,
       },
       mapping = cmp.mapping.preset.insert({
-        ['<Tab>'] = cmp.mapping.select_next_item(cmp_select),
-        ['<CR>'] = cmp.mapping.confirm({ select = true }),
-        ['<C-k>'] = cmp.mapping.select_prev_item(cmp_select),
-        ['<C-j>'] = cmp.mapping.select_next_item(cmp_select),
-        ['<C-y>'] = cmp.mapping.confirm({ select = true }),
-        ['<C-Space>'] = cmp.mapping.complete(),
-        ["<A-y>"] = require('minuet').make_cmp_map(),
+        ["<Tab>"] = cmp.mapping.select_next_item(cmp_select),
+        ["<CR>"] = cmp.mapping.confirm({ select = true }),
+        ["<C-k>"] = cmp.mapping.select_prev_item(cmp_select),
+        ["<C-j>"] = cmp.mapping.select_next_item(cmp_select),
+        ["<C-y>"] = cmp.mapping.confirm({ select = true }),
+        ["<C-Space>"] = cmp.mapping.complete(),
+        ["<A-y>"] = require("minuet").make_cmp_map(),
       }),
 
       window = {
         completion = {
-          border = 'rounded',
-          winhighlight = 'Normal:CmpNormal',
-        }
+          border = "rounded",
+          winhighlight = "Normal:CmpNormal",
+        },
       },
 
       snippet = snippet_configs,
     })
 
-    cmp.setup.cmdline(':', {
+    cmp.setup.cmdline(":", {
       -- more or less remove this from cmdline, very annoying
       -- mapping = cmp.mapping.preset.cmdline(),
-      sources = cmp.config.sources(
-        {
-          { name = 'path' }
-        },
-        {
-          { name = 'cmdline' }
-        }
-      )
+      sources = cmp.config.sources({
+        { name = "path" },
+      }, {
+        { name = "cmdline" },
+      }),
     })
 
     -- UI DECORATIONS
@@ -127,5 +121,5 @@ return {
       local hl = "DiagnosticSign" .. type
       vim.fn.sign_define(hl, { text = icon, texthl = hl, numhl = "" })
     end
-  end
+  end,
 }

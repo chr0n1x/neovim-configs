@@ -69,7 +69,9 @@ local function jump_to_edit(data, file_path)
   vim.cmd("checktime")
 
   local win = get_jump_win()
-  if not win then return end
+  if not win then
+    return
+  end
 
   -- Reload buffer if it exists and was modified externally.
   local bufnr = vim.fn.bufnr(file_path)
@@ -106,7 +108,9 @@ end
 ---@param jsonl_path string
 ---@return string|nil
 local function extract_session_id(jsonl_path)
-  if not jsonl_path then return end
+  if not jsonl_path then
+    return
+  end
   local session_id = jsonl_path:match("/([^/]+)%.jsonl$")
   if not session_id then
     session_id = jsonl_path:match("^([^/]+)%.jsonl$")
@@ -138,13 +142,17 @@ local function store_edit_source(data)
   local event_id = data.event_id
 
   -- Skip incomplete events: file_path is required.
-  if not file_path then return end
+  if not file_path then
+    return
+  end
 
   -- Generate timestamp on arrival (epoch-ms via os.time).
   local timestamp = os.time() * 1000
 
   local session_id = extract_session_id(jsonl_path)
-  if not session_id then return end
+  if not session_id then
+    return
+  end
 
   local sidecar_path = sidecar.path(session_id)
 
@@ -191,24 +199,36 @@ end
 
 ---Jump to the edited file without stealing focus from the terminal.
 function M.on_edit(args)
-  if not args.data then return end
+  if not args.data then
+    return
+  end
   local file_path = args.data.file_path
-  if type(file_path) ~= "string" or #file_path == 0 then return end
+  if type(file_path) ~= "string" or #file_path == 0 then
+    return
+  end
 
   store_edit_source(args.data)
 
   vim.defer_fn(function()
     -- Skip jumping if focus is not on the Claude terminal.
-    if not is_terminal_focused() then return end
+    if not is_terminal_focused() then
+      return
+    end
     jump_to_edit(args.data, file_path)
   end, 500)
 end
 
 ---Callback for ClaudeCodeDiffClosed autocmd.
 function M.on_diff_closed(args)
-  if not args.data or not args.data.reason then return end
-  if not args.data.reason:find("save") then return end
-  if not is_terminal_focused() then return end
+  if not args.data or not args.data.reason then
+    return
+  end
+  if not args.data.reason:find("save") then
+    return
+  end
+  if not is_terminal_focused() then
+    return
+  end
   M.on_edit(args)
 end
 

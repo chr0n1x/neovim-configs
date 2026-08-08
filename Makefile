@@ -17,14 +17,17 @@ test: lint style check
 # Static analysis with luacheck (lints for unused vars, redefined globals, etc.)
 lint:
 	@echo "==> luacheck"
-	@luacheck lua/ --no-color --no-global --ignore 6 --ignore 7 --ignore 542
+	@luacheck lua/ --no-global
 
 # StyLua formatting check (dry-run -- no in-place modification)
 # Outputs diff for files that need reformatting but does not fail CI.
 # Run `stylua lua/` locally to fix formatting.
 style:
 	@echo "==> stylua check"
-	@stylua --check lua/ || { echo "WARNING: stylua found formatting issues. Run 'stylua lua/' to fix."; }
+	@stylua --check lua/
+
+fix:
+	@stylua lua/
 
 # Load each lua file to catch syntax and require errors.
 check:
@@ -38,9 +41,6 @@ check:
 			-c "qa!" 2>/dev/null || { echo "FAIL: $$f"; exit 1; }; \
 	done
 
-# Legacy alias — keeps existing workflows and CI scripts working.
-tests: check
-
 ci:
 	@test -x "$$(command -v $(PODMAN))" || { echo "podman not found"; exit 1; }
 	@$(PODMAN) images --format '{{.Repository}}:{{.Tag}}' | grep -qF "$(IMAGE_TAG)" || \
@@ -51,6 +51,15 @@ ci:
 		-e CLAUDE_MODEL \
 		-e ANTHROPIC_BASE_URL \
 		-v $$(pwd):/nvim-config/nvim "$(IMAGE_TAG)"
+
+dev:
+	@$(PODMAN) run --rm \
+		-e CLAUDE_MODEL \
+		-e ANTHROPIC_BASE_URL \
+		--entrypoint sh \
+		-ti \
+		-v $$(pwd):/nvim-config/nvim "$(IMAGE_TAG)"
+
 
 # actual system clean here
 clean:

@@ -3,20 +3,20 @@ local sidecar = require("claude-decorators.sidecar")
 local M = {}
 
 ---Highlight group names for preview regions.
-local SIDECAR_DATE_HL      = "ClaudeSidecarDate"
-local SIDECAR_PATH_HL      = "ClaudeSidecarPath"
-local SIDECAR_DIFF_NUM     = "ClaudeSidecarDiffNum"
-local SIDECAR_DIFF_ADD     = "ClaudeSidecarDiffAdd"
-local SIDECAR_DIFF_DEL     = "ClaudeSidecarDiffDel"
+local SIDECAR_DATE_HL = "ClaudeSidecarDate"
+local SIDECAR_PATH_HL = "ClaudeSidecarPath"
+local SIDECAR_DIFF_NUM = "ClaudeSidecarDiffNum"
+local SIDECAR_DIFF_ADD = "ClaudeSidecarDiffAdd"
+local SIDECAR_DIFF_DEL = "ClaudeSidecarDiffDel"
 
 ---Register all highlight groups if they don't exist yet.
 local function ensure_hl()
   local groups = {
-    [SIDECAR_DATE_HL]   = { fg = "#888888", bold = true, default = true },
-    [SIDECAR_PATH_HL]   = { fg = "#ffffff", bold = true, default = true },
-    [SIDECAR_DIFF_NUM]  = { fg = "#555555", default = true },
-    [SIDECAR_DIFF_ADD]  = { fg = "#98C379", bg = "#1e3a1f", default = true },
-    [SIDECAR_DIFF_DEL]  = { fg = "#E06C75", bg = "#3a1e1f", default = true },
+    [SIDECAR_DATE_HL] = { fg = "#888888", bold = true, default = true },
+    [SIDECAR_PATH_HL] = { fg = "#ffffff", bold = true, default = true },
+    [SIDECAR_DIFF_NUM] = { fg = "#555555", default = true },
+    [SIDECAR_DIFF_ADD] = { fg = "#98C379", bg = "#1e3a1f", default = true },
+    [SIDECAR_DIFF_DEL] = { fg = "#E06C75", bg = "#3a1e1f", default = true },
   }
   for name, hl in pairs(groups) do
     local has, existing = pcall(vim.api.nvim_get_hl, 0, { name = name })
@@ -47,7 +47,9 @@ local function make_previewer()
     end,
     define_preview = function(self, entry)
       local bufnr = self.state.bufnr
-      if not vim.api.nvim_buf_is_valid(bufnr) then return end
+      if not vim.api.nvim_buf_is_valid(bufnr) then
+        return
+      end
 
       vim.api.nvim_buf_set_option(bufnr, "modifiable", true)
       vim.api.nvim_buf_set_option(bufnr, "filetype", "diff")
@@ -63,12 +65,7 @@ local function make_previewer()
         return
       end
 
-      local event = sidecar.lookup(
-        e.sidecar_path,
-        e.event_uuid,
-        e.event_timestamp,
-        e.event_id
-      )
+      local event = sidecar.lookup(e.sidecar_path, e.event_uuid, e.event_timestamp, e.event_id)
       local diff_text = sidecar.extract_diff(event)
 
       -- Build header: date (dim) + path (bright), shortened if under CWD.
@@ -85,7 +82,7 @@ local function make_previewer()
         table.remove(lines, 1)
       end
 
-      table.insert(lines, 1, "")       -- blank after header
+      table.insert(lines, 1, "") -- blank after header
       table.insert(lines, 1, header_line)
 
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
@@ -94,12 +91,8 @@ local function make_previewer()
       -- Split at " - " for selective highlighting.
       local sep = e.time_str
       local date_len = #sep
-      vim.api.nvim_buf_add_highlight(
-        bufnr, 0, SIDECAR_DATE_HL, 0, 0, date_len
-      )
-      vim.api.nvim_buf_add_highlight(
-        bufnr, 0, SIDECAR_PATH_HL, 0, date_len, -1
-      )
+      vim.api.nvim_buf_add_highlight(bufnr, 0, SIDECAR_DATE_HL, 0, 0, date_len)
+      vim.api.nvim_buf_add_highlight(bufnr, 0, SIDECAR_PATH_HL, 0, date_len, -1)
 
       -- Line 1: blank separator — skip.
       -- Lines 2+: diff content from extract_diff.
@@ -108,25 +101,17 @@ local function make_previewer()
       for tbl_idx = 3, #lines do
         local line = lines[tbl_idx]
         local buf_line = tbl_idx - 1
-        if line == "" then
-          -- Empty line, skip.
-        else
+        if line ~= nil and line ~= "" then
           local prefix = line:sub(8, 8)
           if prefix == "+" then
-            vim.api.nvim_buf_add_highlight(
-              bufnr, 0, SIDECAR_DIFF_ADD, buf_line, 0, -1
-            )
+            vim.api.nvim_buf_add_highlight(bufnr, 0, SIDECAR_DIFF_ADD, buf_line, 0, -1)
           elseif prefix == "-" then
-            vim.api.nvim_buf_add_highlight(
-              bufnr, 0, SIDECAR_DIFF_DEL, buf_line, 0, -1
-            )
+            vim.api.nvim_buf_add_highlight(bufnr, 0, SIDECAR_DIFF_DEL, buf_line, 0, -1)
           else
             -- Context or no number: dim the leading number.
             local _, ne = line:find("^%s*[0-9]+")
             if ne then
-              vim.api.nvim_buf_add_highlight(
-                bufnr, 0, SIDECAR_DIFF_NUM, buf_line, 0, ne + 1
-              )
+              vim.api.nvim_buf_add_highlight(bufnr, 0, SIDECAR_DIFF_NUM, buf_line, 0, ne + 1)
             end
           end
         end
@@ -163,7 +148,9 @@ function M.pick()
   end
 
   -- Sort by timestamp so most recent is at the top.
-  table.sort(entries, function(a, b) return a.timestamp > b.timestamp end)
+  table.sort(entries, function(a, b)
+    return a.timestamp > b.timestamp
+  end)
 
   -- Use the pinned session ID from the inotify watcher (source of truth).
   local inotify = require("claude-decorators.inotify-watcher")
@@ -191,16 +178,8 @@ function M.pick()
     finder = finders.new_table({
       results = display_entries,
       entry_maker = function(entry)
-        local line_part = entry.starting_line
-            and ":" .. entry.starting_line
-            or ""
-        local display = string.format(
-          "%-8s  %-19s  %s%s",
-          entry.operation,
-          entry.time_str,
-          entry.file_path,
-          line_part
-        )
+        local line_part = entry.starting_line and ":" .. entry.starting_line or ""
+        local display = string.format("%-8s  %-19s  %s%s", entry.operation, entry.time_str, entry.file_path, line_part)
         return {
           value = entry,
           display = display,
@@ -214,12 +193,14 @@ function M.pick()
         }
       end,
     }),
-    sorter = conf.generic_sorter{},
+    sorter = conf.generic_sorter({}),
     previewer = make_previewer(),
     attach_mappings = function(prompt_bufnr)
       actions.select_default:replace(function()
         local selection = action_state.get_selected_entry()
-        if not selection or not selection.value then return end
+        if not selection or not selection.value then
+          return
+        end
 
         actions.close(prompt_bufnr)
 
