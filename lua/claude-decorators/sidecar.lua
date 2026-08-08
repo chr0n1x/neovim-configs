@@ -117,9 +117,30 @@ function M.extract_diff(ev)
     if sp.oldLines or sp.newLines then
       table.insert(parts, string.format("%d -> %d lines", sp.oldLines or 0, sp.newLines or 0))
     end
-    -- The diff content lives in the `lines` array (+/- prefixed).
+    table.insert(parts, "") -- blank separator before diff
+    -- The diff content lives in the `lines` array (+/-/space prefixed).
+    -- Walk it tracking line numbers: additions advance the new counter,
+    -- deletions advance the old counter, context advances both.
     if sp.lines and #sp.lines > 0 then
-      table.insert(parts, table.concat(sp.lines, "\n"))
+      local old_ln = sp.oldStart or 0
+      local new_ln = sp.newStart or 0
+      local numbered = {}
+      for _, l in ipairs(sp.lines) do
+        local first = l:sub(1, 1)
+        if first == "+" then
+          table.insert(numbered, string.format("%5d  %s", new_ln, l))
+          new_ln = new_ln + 1
+        elseif first == "-" then
+          table.insert(numbered, string.format("%5d  %s", old_ln, l))
+          old_ln = old_ln + 1
+        else
+          -- Context line: show new_ln so numbers are contiguous after additions.
+          table.insert(numbered, string.format("%5d  %s", new_ln, l))
+          old_ln = old_ln + 1
+          new_ln = new_ln + 1
+        end
+      end
+      table.insert(parts, table.concat(numbered, "\n"))
     end
     return table.concat(parts, "\n")
   end

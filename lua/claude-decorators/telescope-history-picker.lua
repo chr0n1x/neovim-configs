@@ -2,6 +2,39 @@ local sidecar = require("claude-decorators.sidecar")
 
 local M = {}
 
+---Highlight group names for preview regions.
+local SIDECAR_DATE_HL      = "ClaudeSidecarDate"
+local SIDECAR_PATH_HL      = "ClaudeSidecarPath"
+local SIDECAR_DIFF_NUM     = "ClaudeSidecarDiffNum"
+local SIDECAR_DIFF_ADD     = "ClaudeSidecarDiffAdd"
+local SIDECAR_DIFF_DEL     = "ClaudeSidecarDiffDel"
+
+---Register all highlight groups if they don't exist yet.
+local function ensure_hl()
+  local groups = {
+    [SIDECAR_DATE_HL]   = { fg = "#888888", bold = true, default = true },
+    [SIDECAR_PATH_HL]   = { fg = "#ffffff", bold = true, default = true },
+    [SIDECAR_DIFF_NUM]  = { fg = "#555555", default = true },
+    [SIDECAR_DIFF_ADD]  = { fg = "#98C379", bg = "#1e3a1f", default = true },
+    [SIDECAR_DIFF_DEL]  = { fg = "#E06C75", bg = "#3a1e1f", default = true },
+  }
+  for name, hl in pairs(groups) do
+    local has, existing = pcall(vim.api.nvim_get_hl, 0, { name = name })
+    if not has or not existing.foreground then
+      vim.api.nvim_set_hl(0, name, hl)
+    end
+  end
+end
+
+---Strip the CWD prefix from a path if it's under CWD.
+local function shorten_path(fp)
+  local cwd = vim.fn.getcwd()
+  if fp:sub(1, #cwd + 1) == cwd .. "/" then
+    return "./" .. fp:sub(#cwd + 2)
+  end
+  return fp
+end
+
 ---Build a Telescope previewer that renders diffs from the sidecar file.
 local function make_previewer()
   local previewers = require("telescope.previewers")
@@ -18,6 +51,8 @@ local function make_previewer()
 
       vim.api.nvim_buf_set_option(bufnr, "modifiable", true)
       vim.api.nvim_buf_set_option(bufnr, "filetype", "diff")
+
+      ensure_hl()
 
       local e = entry.value
       if not e.sidecar_path or not e.event_uuid then
@@ -36,7 +71,67 @@ local function make_previewer()
       )
       local diff_text = sidecar.extract_diff(event)
 
-      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, vim.split(diff_text, "\n"))
+      -- Build header: date (dim) + path (bright), shortened if under CWD.
+      local short_path = shorten_path(e.file_path)
+      local header_line = string.format("%s %s", e.time_str, short_path)
+
+      -- Strip the delta line from diff_text if extract_diff already added it.
+      local lines = vim.split(diff_text, "\n")
+      if #lines > 0 and lines[1]:find("%d+ -> %d+ lines") then
+        table.remove(lines, 1) -- remove old delta header
+      end
+      -- Strip leading blank line from diff_text if present.
+      if #lines > 0 and #lines[1] == 0 then
+        table.remove(lines, 1)
+      end
+
+      table.insert(lines, 1, "")       -- blank after header
+      table.insert(lines, 1, header_line)
+
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+
+      -- Line 0: header. Date part gets dim highlight, path part gets bright.
+      -- Split at " - " for selective highlighting.
+      local sep = e.time_str
+      local date_len = #sep
+      vim.api.nvim_buf_add_highlight(
+        bufnr, 0, SIDECAR_DATE_HL, 0, 0, date_len
+      )
+      vim.api.nvim_buf_add_highlight(
+        bufnr, 0, SIDECAR_PATH_HL, 0, date_len, -1
+      )
+
+      -- Line 1: blank separator — skip.
+      -- Lines 2+: diff content from extract_diff.
+      -- Format is "%5d  <prefix><content>" where <prefix> is +|-|space.
+      -- The prefix char is always at string position 8 (1-indexed).
+      for tbl_idx = 3, #lines do
+        local line = lines[tbl_idx]
+        local buf_line = tbl_idx - 1
+        if line == "" then
+          -- Empty line, skip.
+        else
+          local prefix = line:sub(8, 8)
+          if prefix == "+" then
+            vim.api.nvim_buf_add_highlight(
+              bufnr, 0, SIDECAR_DIFF_ADD, buf_line, 0, -1
+            )
+          elseif prefix == "-" then
+            vim.api.nvim_buf_add_highlight(
+              bufnr, 0, SIDECAR_DIFF_DEL, buf_line, 0, -1
+            )
+          else
+            -- Context or no number: dim the leading number.
+            local _, ne = line:find("^%s*[0-9]+")
+            if ne then
+              vim.api.nvim_buf_add_highlight(
+                bufnr, 0, SIDECAR_DIFF_NUM, buf_line, 0, ne + 1
+              )
+            end
+          end
+        end
+      end
+
       vim.api.nvim_buf_set_option(bufnr, "modifiable", false)
     end,
   })
