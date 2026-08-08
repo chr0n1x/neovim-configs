@@ -1,0 +1,26 @@
+FROM debian:bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    NVIM_VERSION=0.12.4 \
+    NVIM_ARCH=arm64
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git curl ca-certificates make \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fSL "https://github.com/neovim/neovim/releases/download/v${NVIM_VERSION}/nvim-linux-${NVIM_ARCH}.tar.gz" \
+        -o /tmp/nvim.tar.gz \
+    && mkdir -p /opt/nvim \
+    && tar xzf /tmp/nvim.tar.gz -C /opt/nvim --strip-components=1 \
+    && ln -s /opt/nvim/bin/nvim /usr/local/bin/nvim \
+    && rm /tmp/nvim.tar.gz
+
+# Install lazy.nvim (the manager itself — plugins fetched at runtime)
+RUN git clone --depth 1 https://github.com/folke/lazy.nvim.git \
+        /root/.local/share/nvim/lazy/lazy.nvim
+
+# Config is volume-mounted at $XDG_CONFIG_HOME/nvim/ = /nvim-config/nvim/
+ENV XDG_CONFIG_HOME=/nvim-config
+
+WORKDIR /nvim-config/nvim
+
+CMD ["make", "tests"]
