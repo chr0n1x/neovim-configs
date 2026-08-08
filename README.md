@@ -15,6 +15,8 @@ The goal of having a separate repo is so that I can manage the two configuration
 
 **Disclaimer:** Most of the Claude/AI wrapper features in this repo were vibe-coded with AI assistance. They work well for my workflow, but aren't necessarily written the "clean" way.
 
+![session changes! no git history!](/docs/assets/work-history.gif?raw=true)
+
 This config automatically jumps to edited files when Claude Code modifies them on disk — no manual buffer switching, file exploration, or window management needed.
 
 **How it works:**
