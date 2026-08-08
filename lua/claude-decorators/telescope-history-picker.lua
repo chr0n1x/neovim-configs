@@ -27,14 +27,14 @@ function M.pick()
   -- Use the pinned session ID from the inotify watcher (source of truth).
   local inotify = require("claude-decorators.inotify-watcher")
   local pinned_path = inotify.pinned_jsonl_path
-  local current_session = "(unknown session/not detected yet)"
+  local current_session = "(??)"
   if pinned_path then
     current_session = pinned_path:match("([^/]+)%.jsonl$") or "unknown"
   elseif #entries > 0 then
     current_session = entries[1].session_id
   end
   -- Truncate long session IDs for display.
-  local short_id = current_session:sub(1, 8) .. "..."
+  local short_id = current_session:sub(1, 8) .. ".."
 
   local pickers = require("telescope.pickers")
   local finders = require("telescope.finders")
@@ -45,8 +45,8 @@ function M.pick()
   local display_entries = #entries > 0 and entries or {}
 
   local picker_opts = {
-    prompt_title = "🦀 " .. short_id .. " — Change History",
-    results_title = false,
+    prompt_title = "🦀 " .. short_id .. " - Change History",
+    results_title = "🦀 " .. short_id .. " - Change History",
     finder = finders.new_table({
       results = display_entries,
       entry_maker = function(entry)
