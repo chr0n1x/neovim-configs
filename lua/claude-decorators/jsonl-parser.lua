@@ -83,6 +83,9 @@ local function parse_tool_use_result(entry, line_number)
     operation = operation,
     starting_line = starting_line,
     delta = delta,
+    event_uuid = entry.uuid,
+    event_timestamp = entry.timestamp,
+    event_id = nil,
     dedup_key = entry.uuid and (entry.uuid .. entry.timestamp) or nil,
     source_line = line_number,
   }
@@ -91,6 +94,8 @@ end
 ---Extract change_info from a tool_use (assistant-type invocation entry).
 ---These appear in the JSONL before the tool result is returned, so catching
 ---them enables faster jump-to-edit while the session is still active.
+---Note: tool_use entries don't have line numbers — the structuredPatch with
+---actual line ranges only arrives in the matching toolUseResult later.
 ---@param entry table The decoded JSON object
 ---@param line_number? integer The 1-based line number in the JSONL file
 local function parse_tool_use(entry, line_number)
@@ -115,6 +120,9 @@ local function parse_tool_use(entry, line_number)
           operation = operation,
           starting_line = starting_line,
           delta = delta,
+          event_uuid = entry.uuid,
+          event_timestamp = entry.timestamp,
+          event_id = item.id,
           dedup_key = entry.uuid and (entry.uuid .. entry.timestamp .. item.id) or nil,
           source_line = line_number,
         }

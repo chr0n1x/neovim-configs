@@ -1,10 +1,17 @@
 local utils = require("claude-decorators.utils")
 local parser = require("claude-decorators.jsonl-parser")
+local sidecar = require("claude-decorators.sidecar")
 
 local M = {}
 
 ---Session pin state: which JSONL session matches the visible terminal.
 M.pinned_jsonl_path = nil
+
+---Append a raw JSONL line to the sidecar file for the current pinned session.
+local function append_sidecar(raw_line)
+  local sp = sidecar.path_from_jsonl(M.pinned_jsonl_path)
+  sidecar.append(sp, raw_line)
+end
 
 ---Inotify watcher state.
 M.inotify_handle = nil
@@ -82,6 +89,8 @@ local function on_inotify_event(raw_line)
   -- Scan all new content appended to the JSONL since we last checked this file.
   -- This catches tool results even when non-tool entries (system summaries, etc.)
   -- are appended after the tool result line.
+  -- We read a byte-range chunk rather than tailing by line count because
+  -- the inotify event fires per-close_write, and each write is one JSONL line.
   local f = io.open(jsonl_path, "r")
   if not f then return end
   local file_size = f:seek("end")
@@ -128,7 +137,11 @@ local function on_inotify_event(raw_line)
     for i, line in ipairs(lines) do
       local change_info = parser.parse_tool_result(line, chunk_start_line + i - 1)
         if change_info then
-          -- Dedup check.
+          -- Write raw line to sidecar before dedup — we want all events recorded.
+          append_sidecar(line)
+
+          -- Dedup check: prevent firing duplicate autocmds when both the early
+          -- tool_use and the later toolUseResult arrive for the same edit.
           local dedup_key = change_info.dedup_key
           if dedup_key and utils.key_seen(dedup_key) then
             utils.log("NOT firing autocmd; SEEN " .. dedup_key:sub(1, 8), vim.log.levels.DEBUG)
@@ -174,6 +187,9 @@ local function on_inotify_event(raw_line)
                 delta = change_info.delta,
                 source_line = change_info.source_line,
                 jsonl_path = M.pinned_jsonl_path,
+                event_uuid = change_info.event_uuid,
+                event_timestamp = change_info.event_timestamp,
+                event_id = change_info.event_id,
               },
             })
           end

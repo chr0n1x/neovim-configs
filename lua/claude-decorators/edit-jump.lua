@@ -1,3 +1,5 @@
+local sidecar = require("claude-decorators.sidecar")
+
 local M = {}
 
 ---Dedicated window next to the floating terminal for Claude Code edits.
@@ -121,6 +123,9 @@ local function format_time(ts)
 end
 
 ---Store an edit source record. Skips incomplete events, deduplicates in-place.
+---Records are grouped by session ID, so switching sessions doesn't pollute
+---the history of the previous one. Sidecar path is derived from the session
+---ID at storage time and cached on the record for later Telescope lookup.
 ---@param data table from autocmd args.data
 local function store_edit_source(data)
   local file_path = data.file_path
@@ -128,6 +133,9 @@ local function store_edit_source(data)
   local source_line = data.source_line
   local starting_line = data.starting_line
   local operation = data.operation or "Edit"
+  local event_uuid = data.event_uuid
+  local event_timestamp = data.event_timestamp
+  local event_id = data.event_id
 
   -- Skip incomplete events: file_path is required.
   if not file_path then return end
@@ -138,6 +146,8 @@ local function store_edit_source(data)
   local session_id = extract_session_id(jsonl_path)
   if not session_id then return end
 
+  local sidecar_path = sidecar.path(session_id)
+
   local new_record = {
     timestamp = timestamp,
     time_str = format_time(timestamp),
@@ -145,6 +155,10 @@ local function store_edit_source(data)
     source_line = source_line,
     starting_line = starting_line,
     operation = operation,
+    event_uuid = event_uuid,
+    event_timestamp = event_timestamp,
+    event_id = event_id,
+    sidecar_path = sidecar_path,
   }
 
   local list = M.edit_sources[session_id]

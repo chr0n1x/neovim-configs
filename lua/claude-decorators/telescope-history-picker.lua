@@ -1,4 +1,46 @@
+local sidecar = require("claude-decorators.sidecar")
+
 local M = {}
+
+---Build a Telescope previewer that renders diffs from the sidecar file.
+local function make_previewer()
+  local previewers = require("telescope.previewers")
+
+  return previewers.new_buffer_previewer({
+    title_fn = function(entry)
+      local e = entry.value
+      local line_part = e.starting_line and ":" .. e.starting_line or ""
+      return e.file_path .. line_part
+    end,
+    define_preview = function(self, entry)
+      local bufnr = self.state.bufnr
+      if not vim.api.nvim_buf_is_valid(bufnr) then return end
+
+      vim.api.nvim_buf_set_option(bufnr, "modifiable", true)
+      vim.api.nvim_buf_set_option(bufnr, "filetype", "diff")
+
+      local e = entry.value
+      if not e.sidecar_path or not e.event_uuid then
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
+          "(no sidecar data available for this entry)",
+        })
+        vim.api.nvim_buf_set_option(bufnr, "modifiable", false)
+        return
+      end
+
+      local event = sidecar.lookup(
+        e.sidecar_path,
+        e.event_uuid,
+        e.event_timestamp,
+        e.event_id
+      )
+      local diff_text = sidecar.extract_diff(event)
+
+      vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, vim.split(diff_text, "\n"))
+      vim.api.nvim_buf_set_option(bufnr, "modifiable", false)
+    end,
+  })
+end
 
 ---Open a Telescope picker showing all recorded edit sources.
 function M.pick()
@@ -17,6 +59,10 @@ function M.pick()
         source_line = r.source_line,
         starting_line = r.starting_line,
         operation = r.operation or "Edit",
+        event_uuid = r.event_uuid,
+        event_timestamp = r.event_timestamp,
+        event_id = r.event_id,
+        sidecar_path = r.sidecar_path,
       })
     end
   end
@@ -74,6 +120,7 @@ function M.pick()
       end,
     }),
     sorter = conf.generic_sorter{},
+    previewer = make_previewer(),
     attach_mappings = function(prompt_bufnr)
       actions.select_default:replace(function()
         local selection = action_state.get_selected_entry()
