@@ -125,26 +125,42 @@ end
 ---Open a Telescope picker showing all recorded edit sources.
 function M.pick()
   local edit_jump = require("claude-decorators.edit-jump")
-  local edit_sources = edit_jump.edit_sources
+  local inotify = require("claude-decorators.inotify-watcher")
+  local utils = require("claude-decorators.utils")
 
-  -- Flatten sessions into a single list of entries.
-  local entries = {}
-  for session_id, records in pairs(edit_sources) do
-    for _, r in ipairs(records) do
-      table.insert(entries, {
-        session_id = session_id,
-        timestamp = r.timestamp,
-        time_str = r.time_str,
-        file_path = r.file_path,
-        source_line = r.source_line,
-        starting_line = r.starting_line,
-        operation = r.operation or "Edit",
-        event_uuid = r.event_uuid,
-        event_timestamp = r.event_timestamp,
-        event_id = r.event_id,
-        sidecar_path = r.sidecar_path,
-      })
+  -- Determine current session from the pinned JSONL path (source of truth).
+  local pinned_path = inotify.pinned_jsonl_path
+  local current_session = utils.extract_session_id(pinned_path) or nil
+
+  -- If we can't determine the current session, fall back to the most recent
+  -- session that has records, for backwards compatibility.
+  if not current_session then
+    for sid, records in pairs(edit_jump.edit_sources) do
+      if #records > 0 then
+        current_session = sid
+        break
+      end
     end
+  end
+
+  -- Only show records for the current session.
+  local records = edit_jump.edit_sources[current_session] or {}
+
+  local entries = {}
+  for _, r in ipairs(records) do
+    table.insert(entries, {
+      session_id = current_session,
+      timestamp = r.timestamp,
+      time_str = r.time_str,
+      file_path = r.file_path,
+      source_line = r.source_line,
+      starting_line = r.starting_line,
+      operation = r.operation or "Edit",
+      event_uuid = r.event_uuid,
+      event_timestamp = r.event_timestamp,
+      event_id = r.event_id,
+      sidecar_path = r.sidecar_path,
+    })
   end
 
   -- Sort by timestamp so most recent is at the top.
@@ -152,17 +168,9 @@ function M.pick()
     return a.timestamp > b.timestamp
   end)
 
-  -- Use the pinned session ID from the inotify watcher (source of truth).
-  local inotify = require("claude-decorators.inotify-watcher")
-  local pinned_path = inotify.pinned_jsonl_path
-  local current_session = "(??)"
-  if pinned_path then
-    current_session = pinned_path:match("([^/]+)%.jsonl$") or "unknown"
-  elseif #entries > 0 then
-    current_session = entries[1].session_id
-  end
+  local session_display = current_session or "(??)"
   -- Truncate long session IDs for display.
-  local short_id = current_session:sub(1, 8) .. ".."
+  local short_id = session_display:sub(1, 8) .. ".."
 
   local pickers = require("telescope.pickers")
   local finders = require("telescope.finders")

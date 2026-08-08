@@ -1,4 +1,5 @@
 local sidecar = require("claude-decorators.sidecar")
+local utils = require("claude-decorators.utils")
 
 local M = {}
 
@@ -104,28 +105,6 @@ local function jump_to_edit(data, file_path)
   end
 end
 
----Extract session ID from JSONL file path.
----@param jsonl_path string
----@return string|nil
-local function extract_session_id(jsonl_path)
-  if not jsonl_path then
-    return
-  end
-  local session_id = jsonl_path:match("/([^/]+)%.jsonl$")
-  if not session_id then
-    session_id = jsonl_path:match("^([^/]+)%.jsonl$")
-  end
-  return session_id or nil
-end
-
----Format epoch-ms as human-readable date string.
----@param ts number epoch milliseconds
----@return string
-local function format_time(ts)
-  local secs = math.floor(ts / 1000)
-  return os.date("%Y-%m-%d %H:%M:%S", secs)
-end
-
 ---Store an edit source record. Skips incomplete events, deduplicates in-place.
 ---Records are grouped by session ID, so switching sessions doesn't pollute
 ---the history of the previous one. Sidecar path is derived from the session
@@ -149,7 +128,7 @@ local function store_edit_source(data)
   -- Generate timestamp on arrival (epoch-ms via os.time).
   local timestamp = os.time() * 1000
 
-  local session_id = extract_session_id(jsonl_path)
+  local session_id = utils.extract_session_id(jsonl_path)
   if not session_id then
     return
   end
@@ -158,7 +137,7 @@ local function store_edit_source(data)
 
   local new_record = {
     timestamp = timestamp,
-    time_str = format_time(timestamp),
+    time_str = utils.format_time(timestamp),
     file_path = file_path,
     source_line = source_line,
     starting_line = starting_line,

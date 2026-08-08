@@ -82,4 +82,26 @@ function M.reset_dedup()
   M.seen_keys = {}
 end
 
+-- ==========================================================================
+-- SESSION ID EXTRACTION
+-- ==========================================================================
+
+---Extract the session ID from a JSONL file path.
+---@param jsonl_path string|nil
+---@return string|nil
+function M.extract_session_id(jsonl_path)
+  if not jsonl_path then
+    return nil
+  end
+  return jsonl_path:match("([^/]+)%.jsonl$")
+end
+
+---Format epoch-ms timestamp as a human-readable date string.
+---@param ts number epoch milliseconds
+---@return string
+function M.format_time(ts)
+  local secs = math.floor(ts / 1000)
+  return os.date("%b %d %Y %H:%M:%S", secs)
+end
+
 return M

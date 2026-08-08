@@ -252,8 +252,6 @@ return {
       },
 
       { "<leader>c", "<cmd>ClaudeCodeFocus<cr>", desc = "Claude Code", mode = { "n", "x" } },
-      -- { "<leader>c", "<cmd>ClaudeCode<cr>", desc = "Toggle Claude" },
-      -- { "<leader>cf", "<cmd>ClaudeCodeFocus<cr>", desc = "Focus Claude" },
       { "<leader>cr", "<cmd>ClaudeCode --resume<cr>", desc = "Resume Claude" },
       { "<leader>cc", "<cmd>ClaudeCode --continue<cr>", desc = "Continue Claude" },
       { "<leader>cm", "<cmd>ClaudeCodeSelectModel<cr>", desc = "Select Claude model" },
