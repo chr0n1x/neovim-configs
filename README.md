@@ -17,9 +17,9 @@ The goal of having a separate repo is so that I can manage the two configuration
 
 Custom plugin (`lua/claude-decorators/`) that adds:
 
-- **Auto-follow** — automatically jumps to edited files when Claude Code modifies them on disk. Uses `inotifywait` to watch for file changes, no manual buffer switching needed.
+- **Auto-follow** — automatically jumps to edited files when Claude Code modifies them on disk. Watches for file changes via `inotifywait` (Linux) or `fswatch` (macOS), no manual buffer switching needed.
 - **Change history picker** — browse all edits Claude made in the current session (`<leader>cu`). Select an entry to jump to it, with a diff preview _without `git`_.
 - **Lualine status** — shows the pinned Claude session name or a spinner while idle in the statusline.
 - **Floating terminal** — `claudecode.nvim` wrapper with animated resize, focus restoration on alt-tab, and `<leader>c` keymap prefix.
 
-**Requirements:** `inotifywait` (from `inotify-tools`).
+**Requirements:** `inotifywait` (Linux, from `inotify-tools`) or `fswatch` (macOS, `brew install fswatch`). If neither is installed, live follow is disabled.
