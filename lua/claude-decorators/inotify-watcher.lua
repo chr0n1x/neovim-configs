@@ -13,8 +13,10 @@ local function append_sidecar(raw_line)
   sidecar.append(sp, raw_line)
 end
 
----Inotify watcher state.
+---Watcher state. Backend is "inotifywait" or "fswatch", whichever was found.
 M.inotify_handle = nil
+M.inotify_pid = nil
+M.watcher_backend = nil
 M.inotify_log = nil
 M.inotify_last_pos = 0
 M.inotify_poll_timer = nil
@@ -28,28 +30,6 @@ local jsonl_positions = {}
 ---when the more complete toolUseResult arrives.
 local pending_notifications = {}
 
----Legacy fallback stubs (used when inotifywait is unavailable).
-local poll_timer = nil
-
-local function start_watch()
-  if poll_timer then
-    return
-  end
-  utils.log("polling fallback activated (inotifywait unavailable)", vim.log.levels.WARN)
-end
-
-function M.stop_legacy_poll()
-  if poll_timer then
-    pcall(function()
-      poll_timer:stop()
-    end)
-    pcall(function()
-      poll_timer:close()
-    end)
-    poll_timer = nil
-  end
-end
-
 ---Pin to a JSONL session. Whichever JSONL is receiving writes is the active session.
 local function try_pin_session(jsonl_path)
   if M.pinned_jsonl_path == jsonl_path then
@@ -61,31 +41,56 @@ local function try_pin_session(jsonl_path)
   return true
 end
 
----Handle an inotify event line: "<dir> <events> <filename>".
-local function on_inotify_event(raw_line)
+---Parse an inotifywait log line: "<dir> <events> <filename>".
+---Returns the full jsonl path, or nil if the line should be ignored.
+local function parse_inotify_line(raw_line)
   if not raw_line or #raw_line == 0 then
-    return
+    return nil
   end
 
   -- inotifywait format: "/path/to/dir/ CLOSE_WRITE filename"
   local dir, _, filename = raw_line:match("^(.-)%s+(.-)%s+(.+)$")
   if not dir or not filename then
-    return
+    return nil
   end
 
   -- Only process .jsonl files.
   if not filename:match("%.jsonl$") then
-    return
+    return nil
   end
 
   -- Skip subagent directories — we only care about root session JSONLs.
   if dir:find("/subagents/") then
-    return
+    return nil
   end
 
   -- Strip trailing slash from dir.
   dir = dir:gsub("/+$", "")
-  local jsonl_path = dir .. "/" .. filename
+  return dir .. "/" .. filename
+end
+
+---Parse an fswatch log line: a bare absolute path, one per line (fswatch's
+---default output format when no --format/-x flags are given).
+---Returns the full jsonl path, or nil if the line should be ignored.
+local function parse_fswatch_line(raw_line)
+  if not raw_line or #raw_line == 0 then
+    return nil
+  end
+
+  local jsonl_path = raw_line:match("^%s*(.-)%s*$")
+  if not jsonl_path:match("%.jsonl$") then
+    return nil
+  end
+  if jsonl_path:find("/subagents/") then
+    return nil
+  end
+
+  return jsonl_path
+end
+
+---Handle a confirmed JSONL write: pin the session and scan new lines.
+local function process_jsonl_write(jsonl_path)
+  local filename = jsonl_path:match("[^/]+$")
 
   --- Session pin logic ---------------------------------------------------
   if not M.pinned_jsonl_path then
@@ -106,7 +111,7 @@ local function on_inotify_event(raw_line)
   -- This catches tool results even when non-tool entries (system summaries, etc.)
   -- are appended after the tool result line.
   -- We read a byte-range chunk rather than tailing by line count because
-  -- the inotify event fires per-close_write, and each write is one JSONL line.
+  -- each watcher event fires per-write, and each write is one JSONL line.
   local f = io.open(jsonl_path, "r")
   if not f then
     return
@@ -210,7 +215,7 @@ local function on_inotify_event(raw_line)
   end
 end
 
----Process new lines appended to the inotify log file since last read.
+---Process new lines appended to the watcher log file since last read.
 local function process_inotify_log()
   if not M.inotify_log then
     return
@@ -243,44 +248,86 @@ local function process_inotify_log()
     return
   end
 
+  local parse_line = M.watcher_backend == "fswatch" and parse_fswatch_line or parse_inotify_line
+
   for line in chunk:gmatch("([^\r\n]+)") do
-    pcall(on_inotify_event, line)
+    local ok, jsonl_path = pcall(parse_line, line)
+    if ok and jsonl_path then
+      pcall(process_jsonl_write, jsonl_path)
+    end
   end
 end
 
----Callback when inotifywait process exits.
+---Callback when the watcher process exits.
 local function on_inotify_exit(code)
   if M.inotify_handle then
-    utils.log("inotifywait exited with code " .. tostring(code), vim.log.levels.WARN)
+    utils.log((M.watcher_backend or "watcher") .. " exited with code " .. tostring(code), vim.log.levels.WARN)
     M.inotify_handle = nil
   end
 end
 
----Timer callback: process new inotify log entries.
+---Timer callback: process new watcher log entries.
 local function on_inotify_poll()
   pcall(process_inotify_log)
 end
 
----Ensure a single global inotifywait watcher is running.
----Uses a lockfile with the inotifywait PID to prevent duplicates.
+---Return the resolved path of `bin` if it's on $PATH, else nil.
+local function which(bin)
+  local check = io.popen("command -v " .. bin .. " 2>/dev/null")
+  if not check then
+    return nil
+  end
+  local path = check:read("*a"):gsub("%s+", "")
+  check:close()
+  if #path == 0 then
+    return nil
+  end
+  return path
+end
+
+---Spawn inotifywait, writing its own output to `log_path` via --outfile.
+local function spawn_inotifywait(projects_dir, log_path)
+  return vim.uv.spawn("inotifywait", {
+    args = {
+      "-m",
+      "-r",
+      "-e",
+      "close_write",
+      "--format",
+      "%w %e %f",
+      projects_dir,
+      "--outfile",
+      log_path,
+    },
+  }, on_inotify_exit)
+end
+
+---Spawn fswatch, redirecting its stdout (bare path per line) to `log_path`.
+local function spawn_fswatch(projects_dir, log_path)
+  local fd = vim.uv.fs_open(log_path, "w", tonumber("644", 8))
+  if not fd then
+    return nil
+  end
+
+  local handle, pid = vim.uv.spawn("fswatch", {
+    args = { "-r", "-l", "0.3", "--event", "Updated", projects_dir },
+    stdio = { nil, fd, nil },
+  }, on_inotify_exit)
+
+  vim.uv.fs_close(fd)
+  return handle, pid
+end
+
+---Best-effort: try inotifywait, then fswatch, then give up without ever
+---starting a polling fallback.
 function M.start()
   if M.inotify_handle then
     return
   end
 
-  -- Check if inotifywait is available.
-  local check = io.popen("which inotifywait 2>/dev/null")
-  if check then
-    local path = check:read("*a"):gsub("%s+", "")
-    check:close()
-    if #path == 0 then
-      utils.log("inotifywait not found, falling back to polling", vim.log.levels.WARN)
-      start_watch()
-      return
-    end
-  else
-    utils.log("inotifywait not found, falling back to polling", vim.log.levels.WARN)
-    start_watch()
+  local backend = which("inotifywait") and "inotifywait" or (which("fswatch") and "fswatch")
+  if not backend then
+    utils.log("neither inotifywait nor fswatch found; live JSONL following disabled", vim.log.levels.WARN)
     return
   end
 
@@ -290,27 +337,28 @@ function M.start()
   local f = io.open(projects_dir, "r")
   if not f then
     utils.log("projects dir does not exist: " .. projects_dir, vim.log.levels.WARN)
-    start_watch()
     return
   end
   f:close()
 
-  -- Create a temp file for inotifywait to append to.
-  local user = os.getenv("USER") or "kran"
+  local user = os.getenv("USER")
+  if not user then
+    utils.log("$USER not set; live JSONL following disabled", vim.log.levels.WARN)
+    return
+  end
   M.inotify_log = string.format("/tmp/nvim.%s.inotify.log", user)
   M.inotify_pidfile = string.format("/tmp/nvim.%s.inotify.pid", user)
   M.inotify_last_pos = 0
 
-  -- Kill any orphaned watchers from previous Neovim sessions.
-  -- Always pgrep to catch orphans even when the pidfile is stale/corrupt.
-  local kp = io.popen("pgrep -f 'inotifywait.*nvim." .. user .. ".inotify' 2>/dev/null || true")
+  -- Kill any orphaned watchers (either backend) from previous Neovim
+  -- sessions, identified by them watching our projects dir.
+  local kp =
+    io.popen("pgrep -f '(inotifywait|fswatch).*" .. vim.fn.fnameescape(projects_dir) .. "' 2>/dev/null || true")
   if kp then
     for pid_line in kp:lines() do
       local p = tonumber(pid_line:match("^%s*(.-)%s*$"))
       if p then
-        pcall(function()
-          vim.uv.kill(p, 15)
-        end)
+        os.execute("kill -15 " .. tostring(p) .. " 2>/dev/null || true")
       end
     end
     kp:close()
@@ -322,82 +370,47 @@ function M.start()
     truncate:close()
   end
 
-  -- Spawn inotifywait directly (no bash wrapper) and capture its PID.
-  local cmd = "inotifywait"
-  local args = {
-    "-m",
-    "-r",
-    "-e",
-    "close_write",
-    "--format",
-    "%w %e %f",
-    projects_dir,
-    "--outfile",
-    M.inotify_log,
-  }
+  utils.log("starting " .. backend .. " on " .. projects_dir, vim.log.levels.INFO)
 
-  utils.log("starting inotifywait on " .. projects_dir, vim.log.levels.INFO)
+  local handle, pid
+  if backend == "inotifywait" then
+    handle, pid = spawn_inotifywait(projects_dir, M.inotify_log)
+  else
+    handle, pid = spawn_fswatch(projects_dir, M.inotify_log)
+  end
 
-  M.inotify_handle = vim.uv.spawn(cmd, { args = args }, on_inotify_exit)
-
-  if not M.inotify_handle then
-    utils.log("failed to spawn inotifywait, falling back to polling", vim.log.levels.WARN)
+  if not handle then
+    utils.log("failed to spawn " .. backend .. "; live JSONL following disabled", vim.log.levels.WARN)
     M.inotify_log = nil
-    start_watch()
     return
   end
 
-  -- Write the actual PID of the spawned inotifywait process.
-  -- vim.uv.spawn returns a handle, not the PID — discover it via pgrep
-  -- matching our unique log file path (safer than relying on handle internals).
-  vim.defer_fn(function()
-    local my_pid = io.popen("pgrep -f 'inotifywait.*" .. vim.fn.fnameescape(M.inotify_log) .. "' 2>/dev/null || true")
-    if my_pid then
-      local pid_line = my_pid:read("*l")
-      my_pid:close()
-      if pid_line then
-        local pf = io.open(M.inotify_pidfile, "w")
-        if pf then
-          pf:write(pid_line:match("^%s*(.-)%s*$"))
-          pf:close()
-        end
-      end
-    end
-  end, 200)
+  M.watcher_backend = backend
+  M.inotify_handle = handle
+  M.inotify_pid = pid
 
-  -- Poll the inotify log file for new content.
+  if pid then
+    local pf = io.open(M.inotify_pidfile, "w")
+    if pf then
+      pf:write(tostring(pid))
+      pf:close()
+    end
+  end
+
+  -- Poll the watcher's log file for new content.
   M.inotify_poll_timer = vim.uv.new_timer()
   M.inotify_poll_timer:start(0, 500, vim.schedule_wrap(on_inotify_poll))
 end
 
----Stop the inotifywait watcher process.
+---Stop the watcher process.
 function M.stop()
   local owned = M.inotify_handle ~= nil
 
-  -- Kill via pgrep as a reliable fallback when vim.uv may be torn down (VimLeavePre).
-  local user = os.getenv("USER")
-  if not user then
-    utils.log("NO $USER UNABLE TO INITIATE inotifywait STOP", vim.log.levels.ERROR)
-    return
+  -- Kill by PID directly via os.execute (not vim.uv, which may already be
+  -- torn down at VimLeavePre).
+  if M.inotify_pid then
+    os.execute("kill -15 " .. tostring(M.inotify_pid) .. " 2>/dev/null || true")
   end
-  pcall(function()
-    local kp = io.popen("pgrep -f 'inotifywait.*nvim." .. user .. ".inotify' 2>/dev/null || true")
-    if kp then
-      for pid_line in kp:lines() do
-        local p = tonumber(pid_line:match("^%s*(.-)%s*$"))
-        if p then
-          -- Try vim.uv first, fall back to os.kill.
-          local ok, _ = pcall(function()
-            vim.uv.kill(p, 15)
-          end)
-          if not ok then
-            os.execute("kill -15 " .. tostring(p) .. " 2>/dev/null || true")
-          end
-        end
-      end
-      kp:close()
-    end
-  end)
 
   if M.inotify_handle then
     pcall(function()
@@ -414,6 +427,8 @@ function M.stop()
     end)
     M.inotify_poll_timer = nil
   end
+  M.inotify_pid = nil
+  M.watcher_backend = nil
   -- Only clean up shared files if we owned the watcher process.
   if owned then
     if M.inotify_log then
