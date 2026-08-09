@@ -7,7 +7,6 @@ local edit_jump = require("claude-decorators.edit-jump")
 ---Callback for VimLeavePre autocmd.
 local function on_vim_leave()
   watcher.stop()
-  watcher.stop_legacy_poll()
 end
 
 M.setup_auto_follow = function()
