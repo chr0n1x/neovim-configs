@@ -187,7 +187,8 @@ function M.pick()
       results = display_entries,
       entry_maker = function(entry)
         local line_part = entry.starting_line and ":" .. entry.starting_line or ""
-        local display = string.format("%-8s  %-19s  %s%s", entry.operation, entry.time_str, entry.file_path, line_part)
+        local short_path = shorten_path(entry.file_path)
+        local display = string.format("%-8s  %-19s  %s%s", entry.operation, entry.time_str, short_path, line_part)
         return {
           value = entry,
           display = display,
