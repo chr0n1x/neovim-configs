@@ -2,6 +2,9 @@
 if IN_PERF_MODE or not OLLAMA_ENABLED then
   return {}
 end
+if os.getenv("NVIM_MINUET_ENABLED") ~= "true" then
+  return {}
+end
 
 local config = {
   notify = "warn",
