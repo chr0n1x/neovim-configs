@@ -4,6 +4,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install Neovim, static analysis tools, and build essentials
 RUN apk add --no-cache \
+    bash \
     neovim \
     git \
     make \

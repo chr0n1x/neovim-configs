@@ -56,7 +56,7 @@ dev:
 	@$(PODMAN) run --rm \
 		-e CLAUDE_MODEL \
 		-e ANTHROPIC_BASE_URL \
-		--entrypoint sh \
+		--entrypoint bash \
 		-ti \
 		-v $$(pwd):/nvim-config/nvim "$(IMAGE_TAG)"
 
