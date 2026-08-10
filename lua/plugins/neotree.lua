@@ -15,12 +15,14 @@ return {
   },
   lazy = false,
   opts = {
+    filesystem = { bind_to_cwd = true },
     enable_diagnostics = false,
     popup_border_style = "",
     window = {
       -- I hate this thing with a passion
       mappings = {
         ["/"] = "noop",
+        ["O"] = "expand_all_nodes",
       },
     },
   },
