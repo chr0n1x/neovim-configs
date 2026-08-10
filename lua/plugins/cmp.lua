@@ -77,21 +77,26 @@ return {
       compare.order,
     }
 
-    cmp.setup({
+    local mapping_cfg = {
+      ["<Tab>"] = cmp.mapping.select_next_item(cmp_select),
+      ["<CR>"] = cmp.mapping.confirm({ select = true }),
+      ["<C-k>"] = cmp.mapping.select_prev_item(cmp_select),
+      ["<C-j>"] = cmp.mapping.select_next_item(cmp_select),
+      ["<C-y>"] = cmp.mapping.confirm({ select = true }),
+      ["<C-Space>"] = cmp.mapping.complete(),
+    }
+
+    if os.getenv("NVIM_MINUET_ENABLED") == "true" then
+      mapping_cfg["<A-y>"] = require("minuet").make_cmp_map()
+    end
+
+    local setup_cfg = {
       sources = sources_list,
       sorting = {
         priority_weight = 2,
         comparators = compare_cfg,
       },
-      mapping = cmp.mapping.preset.insert({
-        ["<Tab>"] = cmp.mapping.select_next_item(cmp_select),
-        ["<CR>"] = cmp.mapping.confirm({ select = true }),
-        ["<C-k>"] = cmp.mapping.select_prev_item(cmp_select),
-        ["<C-j>"] = cmp.mapping.select_next_item(cmp_select),
-        ["<C-y>"] = cmp.mapping.confirm({ select = true }),
-        ["<C-Space>"] = cmp.mapping.complete(),
-        ["<A-y>"] = require("minuet").make_cmp_map(),
-      }),
+      mapping = cmp.mapping.preset.insert(mapping_cfg),
 
       window = {
         completion = {
@@ -101,7 +106,9 @@ return {
       },
 
       snippet = snippet_configs,
-    })
+    }
+
+    cmp.setup(setup_cfg)
 
     cmp.setup.cmdline(":", {
       -- more or less remove this from cmdline, very annoying
