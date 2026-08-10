@@ -44,5 +44,9 @@ return {
     vim.keymap.set("n", "<leader>m", builtin.marks, { desc = "Telescope: show marks." })
 
     telescope.load_extension("fzf")
+
+    vim.keymap.set("n", "<leader>P", function()
+      require("util.procs").pick()
+    end, { desc = "Telescope: long-running processes." })
   end,
 }
