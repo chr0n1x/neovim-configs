@@ -116,15 +116,15 @@ local function extract_typed_messages(lines)
       if ok and entry and entry.type == "user" and entry.message then
         local content = entry.message.content
         -- Old format: top-level promptSource:"typed" with string content.
-        if entry.promptSource == "typed" and type(content) == "string" and #content >= 10 then
+        if entry.promptSource == "typed" and type(content) == "string" and #content >= 6 then
           msgs[#msgs + 1] = content
         -- Current format: role:"user" with string content (actual typed message).
-        elseif entry.message.role == "user" and type(content) == "string" and #content >= 10 then
+        elseif entry.message.role == "user" and type(content) == "string" and #content >= 6 then
           msgs[#msgs + 1] = content
         -- Current format with list content: pull first text block.
         elseif entry.message.role == "user" and type(content) == "table" then
           for _, item in ipairs(content) do
-            if type(item) == "table" and item.type == "text" and type(item.text) == "string" and #item.text >= 10 then
+            if type(item) == "table" and item.type == "text" and type(item.text) == "string" and #item.text >= 6 then
               msgs[#msgs + 1] = item.text
               break
             end
@@ -137,7 +137,7 @@ local function extract_typed_messages(lines)
 end
 
 ---Return true if a typed message content is a session-resetting slash command.
--- /resume and /new switch to a new JSONL; /clear keeps the same one but wipes history.
+-- /resume and /new switch to a new JSONL; /clear keeps the same JSONL but wipes history.
 local function is_reset_command(content)
   local trimmed = content:match("^%s*(.-)%s*$")
   return trimmed == "/resume" or trimmed == "/clear" or trimmed == "/new"
