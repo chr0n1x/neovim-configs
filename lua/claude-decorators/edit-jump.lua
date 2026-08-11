@@ -16,19 +16,20 @@ local function is_terminal_focused()
   return vim.api.nvim_buf_get_option(buf, "buftype") == "terminal"
 end
 
----Find a non-float window with a real buffer (mirrors ai-claude.lua find_base_window).
+---Find a non-float window with a real file buffer.
 local function find_adjacent_window()
   local wins = vim.api.nvim_tabpage_list_wins(0)
-  -- Iterate reverse to get the window "next to" the floating terminal.
   for ix = #wins, 1, -1 do
     local win_id = wins[ix]
-    local config = vim.api.nvim_win_get_config(win_id)
-    local buf_info = vim.api.nvim_win_get_buf(win_id)
-    local buf_name = vim.api.nvim_buf_get_name(buf_info)
-    -- Skip floats and empty buffers.
-    if not config.z and buf_name ~= "" then
-      return win_id
-    end
+    local cfg = vim.api.nvim_win_get_config(win_id)
+    -- config.relative is "" for normal windows, non-empty for floats.
+    if cfg.relative ~= "" then goto continue end
+    local buf = vim.api.nvim_win_get_buf(win_id)
+    local ok, bt = pcall(vim.api.nvim_get_option_value, "buftype", { buf = buf })
+    -- Skip terminal, nofile, help, etc. — only normal file buffers.
+    if ok and bt ~= "" then goto continue end
+    if vim.api.nvim_buf_get_name(buf) ~= "" then return win_id end
+    ::continue::
   end
   return nil
 end
@@ -64,13 +65,14 @@ local function jump_to_edit(data, file_path)
     vim.fn.bufload(bufnr)
   end
 
-  -- Switch the target window to show this buffer. Does not change current window or mode,
-  -- but BufLeave/BufWinEnter autocmds fired by the switch can still exit terminal insert
-  -- mode via plugin side effects. Restore immediately after.
+  -- Switch the target window to show this buffer. Suppress autocmds during the switch:
+  -- bufload() already fired BufRead/BufReadPost for filetype/LSP, so we don't need them
+  -- here, and BufLeave/BufWinEnter from plugins have been observed to exit terminal insert
+  -- mode as a side effect, creating a gap where keystrokes trigger normal-mode keybinds.
+  local saved_ei = vim.o.eventignore
+  vim.o.eventignore = "all"
   vim.api.nvim_win_set_buf(win, bufnr)
-  if is_terminal_focused() then
-    vim.cmd.startinsert()
-  end
+  vim.o.eventignore = saved_ei
 
   -- Defer cursor set so we run after any plugin BufWinEnter callbacks that restore
   -- the last-known cursor position and would otherwise override us.
