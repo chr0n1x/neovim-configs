@@ -466,16 +466,8 @@ end
 
 ---Return the resolved path of `bin` if it's on $PATH, else nil.
 local function which(bin)
-  local check = io.popen("command -v " .. bin .. " 2>/dev/null")
-  if not check then
-    return nil
-  end
-  local path = check:read("*a"):gsub("%s+", "")
-  check:close()
-  if #path == 0 then
-    return nil
-  end
-  return path
+  local path = vim.fn.exepath(bin)
+  return #path > 0 and path or nil
 end
 
 ---Spawn inotifywait, writing its own output to `log_path` via --outfile.
@@ -549,34 +541,25 @@ function M.start()
   M.inotify_pidfile = string.format("/tmp/nvim.%s.%d.inotify.pid", user, nvim_pid)
   M.inotify_last_pos = 0
 
-  -- Kill watchers from dead Neovim instances using pidfiles — fast because
-  -- it only reads /tmp and checks process liveness with ps, no pgrep -f scan.
+  -- Kill watchers from dead Neovim instances using pidfiles.
+  -- vim.fn.glob + vim.uv.kill avoid spawning any subprocesses.
   local pidfile_pattern = string.format("/tmp/nvim.%s.*.inotify.pid", user)
-  local ls = io.popen("ls " .. pidfile_pattern .. " 2>/dev/null")
-  if ls then
-    for pidfile in ls:lines() do
-      local owner_pid = pidfile:match("nvim%.[^.]+%.(%d+)%.inotify%.pid$")
-      if owner_pid and owner_pid ~= tostring(nvim_pid) then
-        -- Check if the owner Neovim is still alive via ps (fast, no shell expansion).
-        local ps_check = io.popen("ps -p " .. owner_pid .. " -o pid= 2>/dev/null")
-        local alive = ps_check and ps_check:read("*a"):match("%d") ~= nil
-        if ps_check then
-          ps_check:close()
-        end
-        if not alive then
-          local pf = io.open(pidfile, "r")
-          if pf then
-            local watcher_pid = pf:read("*a"):match("^%s*(%d+)%s*$")
-            pf:close()
-            if watcher_pid then
-              os.execute("kill -15 " .. watcher_pid .. " 2>/dev/null || true")
-            end
+  for _, pidfile in ipairs(vim.fn.glob(pidfile_pattern, false, true)) do
+    local owner_pid = pidfile:match("nvim%.[^.]+%.(%d+)%.inotify%.pid$")
+    if owner_pid and owner_pid ~= tostring(nvim_pid) then
+      local alive = vim.uv.kill(tonumber(owner_pid), 0) ~= nil
+      if not alive then
+        local pf = io.open(pidfile, "r")
+        if pf then
+          local watcher_pid = pf:read("*a"):match("^%s*(%d+)%s*$")
+          pf:close()
+          if watcher_pid then
+            vim.uv.kill(tonumber(watcher_pid), 15)
           end
-          os.remove(pidfile)
         end
+        os.remove(pidfile)
       end
     end
-    ls:close()
   end
 
   -- Truncate our own log (fresh start).
