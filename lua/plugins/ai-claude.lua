@@ -81,7 +81,7 @@ local function valid_buf(win_id)
   local buf_name = vim.api.nvim_buf_get_name(buf_info)
   local terminal_win = vim.api.nvim_get_current_win()
 
-  return not config.z and buf_name ~= "" and win_id ~= terminal_win
+  return not config.z and win_id ~= terminal_win and vim.uv.fs_stat(buf_name) ~= nil
 end
 
 local function find_base_window(reverse)
