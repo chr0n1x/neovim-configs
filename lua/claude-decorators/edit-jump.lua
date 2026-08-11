@@ -23,12 +23,18 @@ local function find_adjacent_window()
     local win_id = wins[ix]
     local cfg = vim.api.nvim_win_get_config(win_id)
     -- config.relative is "" for normal windows, non-empty for floats.
-    if cfg.relative ~= "" then goto continue end
+    if cfg.relative ~= "" then
+      goto continue
+    end
     local buf = vim.api.nvim_win_get_buf(win_id)
     local ok, bt = pcall(vim.api.nvim_get_option_value, "buftype", { buf = buf })
     -- Skip terminal, nofile, help, etc. — only normal file buffers.
-    if ok and bt ~= "" then goto continue end
-    if vim.api.nvim_buf_get_name(buf) ~= "" then return win_id end
+    if ok and bt ~= "" then
+      goto continue
+    end
+    if vim.api.nvim_buf_get_name(buf) ~= "" then
+      return win_id
+    end
     ::continue::
   end
   return nil
@@ -78,7 +84,9 @@ local function jump_to_edit(data, file_path)
   -- the last-known cursor position and would otherwise override us.
   if line then
     vim.defer_fn(function()
-      if not vim.api.nvim_win_is_valid(win) then return end
+      if not vim.api.nvim_win_is_valid(win) then
+        return
+      end
       local max_line = vim.api.nvim_buf_line_count(bufnr)
       vim.api.nvim_win_set_cursor(win, { math.max(1, math.min(line, max_line)), 0 })
       if is_terminal_focused() then
@@ -207,7 +215,6 @@ function M.create_jump_autocmds(group)
     pattern = "ClaudeAutoFollowEdit",
     callback = M.on_edit,
   })
-
 end
 
 return M
