@@ -3,6 +3,9 @@ local utils = require("claude-decorators.utils")
 
 local M = {}
 
+---Set true while a jump is in flight so the TermLeave guard knows to restore insert mode.
+local _jump_active = false
+
 ---Dedicated window next to the floating terminal for Claude Code edits.
 M.jump_win = nil
 
@@ -54,7 +57,7 @@ local function get_jump_win()
   return M.jump_win
 end
 
----Perform the actual jump logic (called inside defer_fn).
+---Perform the actual jump logic.
 local function jump_to_edit(data, file_path)
   local win = get_jump_win()
   if not win then
@@ -75,35 +78,28 @@ local function jump_to_edit(data, file_path)
   -- bufload() already fired BufRead/BufReadPost for filetype/LSP, so we don't need them
   -- here, and BufLeave/BufWinEnter from plugins have been observed to exit terminal insert
   -- mode as a side effect, creating a gap where keystrokes trigger normal-mode keybinds.
+  _jump_active = true
+
   local saved_ei = vim.o.eventignore
   vim.o.eventignore = "all"
   vim.api.nvim_win_set_buf(win, bufnr)
   vim.o.eventignore = saved_ei
 
-  -- bufload's BufReadPost handlers (LSP, treesitter, etc.) queue vim.schedule callbacks
-  -- that run on the next event loop tick — after our eventignore block — and can exit
-  -- terminal insert mode as a side effect. vim.schedule here runs after those callbacks,
-  -- so this startinsert() wins the race.
-  vim.schedule(function()
+  -- Defer cursor set so we run after any plugin BufWinEnter callbacks that restore
+  -- the last-known cursor position and would otherwise override us.
+  vim.defer_fn(function()
+    _jump_active = false
+    if not vim.api.nvim_win_is_valid(win) then
+      return
+    end
+    if line then
+      local max_line = vim.api.nvim_buf_line_count(bufnr)
+      vim.api.nvim_win_set_cursor(win, { math.max(1, math.min(line, max_line)), 0 })
+    end
     if is_terminal_focused() then
       vim.cmd.startinsert()
     end
-  end)
-
-  -- Defer cursor set so we run after any plugin BufWinEnter callbacks that restore
-  -- the last-known cursor position and would otherwise override us.
-  if line then
-    vim.defer_fn(function()
-      if not vim.api.nvim_win_is_valid(win) then
-        return
-      end
-      local max_line = vim.api.nvim_buf_line_count(bufnr)
-      vim.api.nvim_win_set_cursor(win, { math.max(1, math.min(line, max_line)), 0 })
-      if is_terminal_focused() then
-        vim.cmd.startinsert()
-      end
-    end, 100)
-  end
+  end, 100)
 end
 
 ---Store an edit source record. Skips incomplete events, deduplicates in-place.
@@ -224,6 +220,22 @@ function M.create_jump_autocmds(group)
     group = group,
     pattern = "ClaudeAutoFollowEdit",
     callback = M.on_edit,
+  })
+
+  -- If something knocks the terminal out of insert mode while a jump is in flight,
+  -- restore it immediately. TermLeave fires the instant insert mode is exited,
+  -- so the gap between the exit and our startinsert() is one vim.schedule tick.
+  vim.api.nvim_create_autocmd("TermLeave", {
+    group = group,
+    callback = function()
+      if _jump_active and is_terminal_focused() then
+        vim.schedule(function()
+          if _jump_active then
+            vim.cmd.startinsert()
+          end
+        end)
+      end
+    end,
   })
 end
 
