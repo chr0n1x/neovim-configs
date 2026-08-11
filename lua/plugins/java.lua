@@ -250,7 +250,13 @@ if debug_jar and debug_jar ~= "" then
           .. dap_addr
           .. " ($JAVA_RUN_CMD_DAP).",
         on_open = function()
-          vim.defer_fn(dap_attach, 10000)
+          local dap_attach_ms = 12000
+          vim.notify(
+            "Attaching DAP to Java server in " .. dap_attach_ms / 1000 .. "sec, enabling mouse for DAP UI ",
+            vim.log.levels.INFO
+          )
+          vim.o.mouse = "a"
+          vim.defer_fn(dap_attach, dap_attach_ms)
         end,
       })
 
