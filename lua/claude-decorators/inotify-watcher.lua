@@ -3,6 +3,12 @@ local parser = require("claude-decorators.jsonl-parser")
 local sidecar = require("claude-decorators.sidecar")
 local edit_jump = require("claude-decorators.edit-jump")
 
+-- Each tool call result (Bash output, file reads, etc.) is written as a user entry in
+-- the JSONL. In an active session this buries the user's typed messages quickly — easily
+-- 100-200KB of tool results between two typed prompts. 512KB gives enough headroom to
+-- reach back past that and find a promptSource:"typed" entry for fingerprinting.
+local FINGERPRINT_TAIL_BYTES = 524288
+
 local M = {}
 
 ---Session pin state: which JSONL session matches the visible terminal.
@@ -99,21 +105,31 @@ end
 
 ---Extract typed user message texts from JSONL lines.
 ---Only returns messages with string content >= 20 chars to avoid false positives.
+---Handles both old format (promptSource:"typed") and current format (type:"user").
 local function extract_typed_messages(lines)
   local msgs = {}
   for _, line in ipairs(lines) do
-    if line:find('"promptSource"') and line:find('"typed"') then
+    local is_candidate = (line:find('"promptSource"') and line:find('"typed"'))
+      or (line:find('"type"') and line:find('"user"') and line:find('"content"'))
+    if is_candidate then
       local ok, entry = pcall(vim.json.decode, line)
-      if
-        ok
-        and entry
-        and entry.type == "user"
-        and entry.promptSource == "typed"
-        and entry.message
-        and type(entry.message.content) == "string"
-        and #entry.message.content >= 20
-      then
-        msgs[#msgs + 1] = entry.message.content
+      if ok and entry and entry.type == "user" and entry.message then
+        local content = entry.message.content
+        -- Old format: top-level promptSource:"typed" with string content.
+        if entry.promptSource == "typed" and type(content) == "string" and #content >= 10 then
+          msgs[#msgs + 1] = content
+        -- Current format: role:"user" with string content (actual typed message).
+        elseif entry.message.role == "user" and type(content) == "string" and #content >= 10 then
+          msgs[#msgs + 1] = content
+        -- Current format with list content: pull first text block.
+        elseif entry.message.role == "user" and type(content) == "table" then
+          for _, item in ipairs(content) do
+            if type(item) == "table" and item.type == "text" and type(item.text) == "string" and #item.text >= 10 then
+              msgs[#msgs + 1] = item.text
+              break
+            end
+          end
+        end
       end
     end
   end
@@ -121,6 +137,7 @@ local function extract_typed_messages(lines)
 end
 
 ---Return true if a typed message content is a session-resetting slash command.
+-- /resume and /new switch to a new JSONL; /clear keeps the same one but wipes history.
 local function is_reset_command(content)
   local trimmed = content:match("^%s*(.-)%s*$")
   return trimmed == "/resume" or trimmed == "/clear" or trimmed == "/new"
@@ -250,7 +267,7 @@ local function process_jsonl_write(jsonl_path)
     jsonl_positions[jsonl_path] = { byte_pos = file_size, line_count = 0 }
 
     -- Read tail for session ownership check (don't process tool results from old content).
-    local tail = parser.read_tail(jsonl_path, 8192)
+    local tail = parser.read_tail(jsonl_path, FINGERPRINT_TAIL_BYTES)
     if tail and #tail > 0 then
       local tail_lines = {}
       for line in tail:gmatch("([^\r\n]+)") do
@@ -346,18 +363,22 @@ local function process_jsonl_write(jsonl_path)
   --- Pinned session: check for reset commands and process tool results --------
   for i, line in ipairs(lines) do
     -- Detect /resume, /clear, /new: reset session state.
-    if line:find('"promptSource"') and line:find('"typed"') then
+    local is_user_line = (line:find('"promptSource"') and line:find('"typed"'))
+      or (line:find('"type"') and line:find('"user"') and line:find('"content"'))
+    if is_user_line then
       local ok, entry = pcall(vim.json.decode, line)
-      if
-        ok
-        and entry
-        and entry.type == "user"
-        and entry.promptSource == "typed"
-        and entry.message
-        and type(entry.message.content) == "string"
-        and is_reset_command(entry.message.content)
-      then
-        local cmd = entry.message.content:match("^%s*(.-)%s*$")
+      local user_text = nil
+      if ok and entry and entry.type == "user" and entry.message then
+        -- Old format.
+        if entry.promptSource == "typed" and type(entry.message.content) == "string" then
+          user_text = entry.message.content
+        -- Current format.
+        elseif entry.message.role == "user" and type(entry.message.content) == "string" then
+          user_text = entry.message.content
+        end
+      end
+      if user_text and is_reset_command(user_text) then
+        local cmd = user_text:match("^%s*(.-)%s*$")
         local old_sid = utils.extract_session_id(M.pinned_jsonl_path)
         utils.log("reset command " .. cmd .. " detected; clearing session state", vim.log.levels.INFO)
         if cmd == "/clear" then
