@@ -1,5 +1,5 @@
 NVIM ?= nvim
-PODMAN ?= podman
+PODMAN ?= $(shell (command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1 && echo podman) || (command -v docker >/dev/null 2>&1 && echo docker) || echo podman)
 DOCKERFILE ?= Dockerfile.test
 IMAGE_TAG ?= nvim-test
 
