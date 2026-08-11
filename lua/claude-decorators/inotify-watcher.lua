@@ -299,7 +299,6 @@ local function process_jsonl_write(jsonl_path)
     line_count = prev_line_count + #lines,
   }
 
-  -- test edit at line 302
   --- Session pin logic -------------------------------------------------------
   if not M.pinned_jsonl_path then
     local ownership = session_ownership(lines)
