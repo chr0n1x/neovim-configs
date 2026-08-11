@@ -239,6 +239,7 @@ if debug_jar and debug_jar ~= "" then
           end
         end
       end)
+
       local project = vim.fn.fnamemodify(vim.fn.getcwd(), ":t")
       local dap_addr = os.getenv("JAVA_RUN_CMD_DAP") or "localhost:5005"
       require("util.procs").register(project .. " (java)", function()
@@ -248,10 +249,11 @@ if debug_jar and debug_jar ~= "" then
           .. "DAP will attach at "
           .. dap_addr
           .. " ($JAVA_RUN_CMD_DAP).",
+        on_open = function()
+          vim.defer_fn(dap_attach, 10000)
+        end,
       })
 
-      vim.notify("Java DAP enabled, setting mouse=a")
-      vim.o.mouse = "a"
       require("dapui").setup()
 
       local dap = require("dap")
