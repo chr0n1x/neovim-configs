@@ -26,12 +26,12 @@
 --    as a colon-separated list of glob patterns; each is passed as -javaagent to jdtls.
 
 -- detect whether java is available on PATH (no JVM startup).
-local handle = io.popen("which java 2>/dev/null")
-local java_path = handle and handle:read("*a")
-if handle then
-  handle:close()
+if vim.fn.exepath("java") == "" then
+  return {}
 end
-if not java_path or java_path == "" then
+
+-- only load in Java projects — instant stat checks, no glob traversal.
+if not vim.fs.root(0, { "pom.xml", "build.gradle", "build.gradle.kts", "gradlew", "mvnw" }) then
   return {}
 end
 
