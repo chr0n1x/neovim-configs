@@ -76,6 +76,8 @@ Forever MoonJanglin'
       -- Im too weenie hut juniors for this
       require("hardtime").setup({
         restriction_mode = "hint",
+        -- REALLY too weenie hut juniors for this
+        disable_mouse = false,
         callback = function(text)
           vim.notify(text, vim.log.levels.WARN, { render = "compact" })
         end,
