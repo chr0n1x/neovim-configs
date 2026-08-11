@@ -94,15 +94,12 @@ local function jump_to_edit(data, file_path)
     maybe_jump_to_line(win, data.starting_line)
   end
 
-  -- Restore insert mode on the terminal window (edit operations can pull it into normal mode).
-  -- Defer in a separate tick to let mode state settle after buffer/window changes.
-  if is_terminal_focused() then
-    vim.defer_fn(function()
-      if is_terminal_focused() then
-        vim.cmd.startinsert()
-      end
-    end, 50)
-  end
+  -- Restore insert mode: always defer so mode state settles after buffer/window changes.
+  vim.defer_fn(function()
+    if is_terminal_focused() then
+      vim.cmd.startinsert()
+    end
+  end, 50)
 end
 
 ---Store an edit source record. Skips incomplete events, deduplicates in-place.
@@ -223,6 +220,16 @@ function M.create_jump_autocmds(group)
     group = group,
     pattern = "ClaudeAutoFollowEdit",
     callback = M.on_edit,
+  })
+
+  -- Re-enter terminal insert mode whenever the Claude terminal window gains focus.
+  vim.api.nvim_create_autocmd("WinEnter", {
+    group = group,
+    callback = function()
+      if is_terminal_focused() then
+        vim.cmd.startinsert()
+      end
+    end,
   })
 end
 
