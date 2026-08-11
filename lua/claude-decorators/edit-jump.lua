@@ -80,6 +80,16 @@ local function jump_to_edit(data, file_path)
   vim.api.nvim_win_set_buf(win, bufnr)
   vim.o.eventignore = saved_ei
 
+  -- bufload's BufReadPost handlers (LSP, treesitter, etc.) queue vim.schedule callbacks
+  -- that run on the next event loop tick — after our eventignore block — and can exit
+  -- terminal insert mode as a side effect. vim.schedule here runs after those callbacks,
+  -- so this startinsert() wins the race.
+  vim.schedule(function()
+    if is_terminal_focused() then
+      vim.cmd.startinsert()
+    end
+  end)
+
   -- Defer cursor set so we run after any plugin BufWinEnter callbacks that restore
   -- the last-known cursor position and would otherwise override us.
   if line then
