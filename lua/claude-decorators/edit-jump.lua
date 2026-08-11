@@ -16,7 +16,7 @@ local function is_terminal_focused()
   return vim.api.nvim_buf_get_option(buf, "buftype") == "terminal"
 end
 
----Find a non-float window with a real buffer (mirrors ai-claude.lua's find_base_window).
+---Find a non-float window with a real buffer (mirrors ai-claude.lua find_base_window).
 local function find_adjacent_window()
   local wins = vim.api.nvim_tabpage_list_wins(0)
   -- Iterate reverse to get the window "next to" the floating terminal.
@@ -56,33 +56,34 @@ local function jump_to_edit(data, file_path)
 
   local line = data.starting_line and tonumber(data.starting_line)
 
-  -- edit! +N positions the cursor after BufReadPost, so it wins over any
-  -- plugin cursor-restore callback. win_execute suppresses WinEnter/WinLeave.
-  local edit_cmd = line and string.format("edit! +%d %s", line, vim.fn.fnameescape(file_path))
-    or ("edit! " .. vim.fn.fnameescape(file_path))
-  vim.fn.win_execute(win, edit_cmd, true)
+  -- Load the buffer without switching the active window or touching terminal mode.
+  -- bufadd creates the buffer entry; bufload reads the file (fires BufRead/BufReadPost
+  -- for filetype/syntax/LSP setup). Neither changes the current window.
+  local bufnr = vim.fn.bufadd(file_path)
+  if not vim.api.nvim_buf_is_loaded(bufnr) then
+    vim.fn.bufload(bufnr)
+  end
 
-  -- After the edit+N lands, center the view and restore insert mode.
-  vim.defer_fn(function()
-    if not vim.api.nvim_win_is_valid(win) then
-      win = get_jump_win()
-    end
-    if not win then
-      return
-    end
-    if line then
-      local max_line = vim.api.nvim_buf_line_count(vim.api.nvim_win_get_buf(win))
-      local clamped = math.max(1, math.min(line, max_line))
-      vim.api.nvim_win_set_cursor(win, { clamped, 0 })
-      local topline = math.max(1, clamped - math.floor(vim.api.nvim_win_get_height(win) / 2))
-      vim.fn.win_execute(win, 'call winrestview({"topline": ' .. topline .. "})", true)
-    end
+  -- Switch the target window to show this buffer. Does not change current window or mode,
+  -- but BufLeave/BufWinEnter autocmds fired by the switch can still exit terminal insert
+  -- mode via plugin side effects. Restore immediately after.
+  vim.api.nvim_win_set_buf(win, bufnr)
+  if is_terminal_focused() then
+    vim.cmd.startinsert()
+  end
+
+  -- Defer cursor set so we run after any plugin BufWinEnter callbacks that restore
+  -- the last-known cursor position and would otherwise override us.
+  if line then
     vim.defer_fn(function()
+      if not vim.api.nvim_win_is_valid(win) then return end
+      local max_line = vim.api.nvim_buf_line_count(bufnr)
+      vim.api.nvim_win_set_cursor(win, { math.max(1, math.min(line, max_line)), 0 })
       if is_terminal_focused() then
         vim.cmd.startinsert()
       end
-    end, 50)
-  end, 100)
+    end, 100)
+  end
 end
 
 ---Store an edit source record. Skips incomplete events, deduplicates in-place.
@@ -205,15 +206,6 @@ function M.create_jump_autocmds(group)
     callback = M.on_edit,
   })
 
-  -- Re-enter terminal insert mode whenever the Claude terminal window gains focus.
-  vim.api.nvim_create_autocmd("WinEnter", {
-    group = group,
-    callback = function()
-      if is_terminal_focused() then
-        vim.cmd.startinsert()
-      end
-    end,
-  })
 end
 
 return M
