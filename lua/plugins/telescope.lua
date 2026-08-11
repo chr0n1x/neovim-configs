@@ -48,5 +48,9 @@ return {
     vim.keymap.set("n", "<leader>P", function()
       require("util.procs").pick()
     end, { desc = "Telescope: long-running processes." })
+
+    vim.keymap.set("n", "<leader>Pr", function()
+      require("util.procs").prompt_new()
+    end, { desc = "Procs: run ad-hoc command." })
   end,
 }
