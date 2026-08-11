@@ -16,12 +16,12 @@ local term_opts = {
 }
 
 -- cmd may be a string or a function() -> string (resolved at toggle time).
--- opts: { desc? = string shown in telescope preview }
+-- opts: { desc?, on_open? = called once the first time the process is started }
 function M.register(name, cmd, opts)
   if not cmd then
     return
   end
-  registry[name] = { cmd = cmd, desc = opts and opts.desc }
+  registry[name] = { cmd = cmd, desc = opts and opts.desc, on_open = opts and opts.on_open }
 end
 
 local function resolve(cmd)
@@ -38,6 +38,10 @@ function M.toggle(name)
   if not cmd or cmd == "" then
     vim.notify("procs: command for '" .. name .. "' resolved to empty", vim.log.levels.WARN)
     return
+  end
+  if entry.on_open and not entry._opened then
+    entry._opened = true
+    entry.on_open()
   end
   require("snacks").terminal.toggle(cmd, term_opts)
 end
@@ -67,7 +71,8 @@ end
 function M.pick()
   local entries = {}
   for name, e in pairs(registry) do
-    table.insert(entries, { name = name, cmd = resolve(e.cmd), desc = e.desc })
+    local cmd = type(e.cmd) == "function" and "(dynamic)" or e.cmd
+    table.insert(entries, { name = name, cmd = cmd, desc = e.desc })
   end
   if #entries == 0 then
     vim.notify("procs: no processes registered", vim.log.levels.INFO)
