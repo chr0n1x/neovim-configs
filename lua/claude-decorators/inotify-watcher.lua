@@ -1,11 +1,18 @@
 local utils = require("claude-decorators.utils")
 local parser = require("claude-decorators.jsonl-parser")
 local sidecar = require("claude-decorators.sidecar")
+local edit_jump = require("claude-decorators.edit-jump")
 
 local M = {}
 
 ---Session pin state: which JSONL session matches the visible terminal.
 M.pinned_jsonl_path = nil
+
+---JSONL paths confirmed to NOT belong to this Neovim's Claude session.
+M.ignored_jsonl_paths = {}
+
+---CWD of this Neovim instance, set at startup.
+M.nvim_cwd = nil
 
 ---Append a raw JSONL line to the sidecar file for the current pinned session.
 local function append_sidecar(raw_line)
@@ -30,11 +37,141 @@ local jsonl_positions = {}
 ---when the more complete toolUseResult arrives.
 local pending_notifications = {}
 
----Pin to a JSONL session. Whichever JSONL is receiving writes is the active session.
+--- Terminal buffer text cache (1s TTL) to avoid re-reading on every write event.
+local TERM_CACHE_TTL_SECS = 1
+local _term_cache = { text = nil, expires = 0 }
+
+---Return concatenated Claude terminal buffer lines, cached for TERM_CACHE_TTL_SECS.
+---Must run on the main thread (Vim API access).
+---@return string
+local function get_terminal_text()
+  local now = os.time()
+  if _term_cache.text and now < _term_cache.expires then
+    return _term_cache.text
+  end
+
+  ---@type string
+  local text = ""
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    local ok, bt = pcall(vim.api.nvim_get_option_value, "buftype", { buf = buf })
+    if ok and bt == "terminal" then
+      local name = vim.api.nvim_buf_get_name(buf)
+      if name:find("claude", 1, true) then
+        local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+        text = table.concat(lines, "\n")
+        break
+      end
+    end
+  end
+
+  _term_cache = { text = text, expires = now + TERM_CACHE_TTL_SECS }
+  return text
+end
+
+---Return true if any message in `typed_messages` appears in the Claude terminal buffer.
+---Uses a 50-char prefix fingerprint because the terminal truncates long lines.
+local function matches_terminal(typed_messages)
+  local term_text = get_terminal_text()
+  if #term_text == 0 then
+    return false
+  end
+  for _, msg in ipairs(typed_messages) do
+    local fingerprint = msg:sub(1, 50)
+    if term_text:find(fingerprint, 1, true) then
+      return true
+    end
+  end
+  return false
+end
+
+---Extract the cwd from the first parseable JSONL line that has it.
+local function extract_cwd(lines)
+  for _, line in ipairs(lines) do
+    if line:find('"cwd"') then
+      local ok, entry = pcall(vim.json.decode, line)
+      if ok and entry and entry.cwd then
+        return entry.cwd
+      end
+    end
+  end
+  return nil
+end
+
+---Extract typed user message texts from JSONL lines.
+---Only returns messages with string content >= 20 chars to avoid false positives.
+local function extract_typed_messages(lines)
+  local msgs = {}
+  for _, line in ipairs(lines) do
+    if line:find('"promptSource"') and line:find('"typed"') then
+      local ok, entry = pcall(vim.json.decode, line)
+      if
+        ok
+        and entry
+        and entry.type == "user"
+        and entry.promptSource == "typed"
+        and entry.message
+        and type(entry.message.content) == "string"
+        and #entry.message.content >= 20
+      then
+        msgs[#msgs + 1] = entry.message.content
+      end
+    end
+  end
+  return msgs
+end
+
+---Return true if a typed message content is a session-resetting slash command.
+local function is_reset_command(content)
+  local trimmed = content:match("^%s*(.-)%s*$")
+  return trimmed == "/resume" or trimmed == "/clear" or trimmed == "/new"
+end
+
+---Determine session ownership from a set of JSONL lines.
+---Returns "match" (this is our session), "mismatch" (definitely not), or
+---"unknown" (no typed messages long enough to compare).
+local function session_ownership(lines)
+  -- Quick cwd pre-filter: any line with a mismatched cwd rules this out immediately.
+  if M.nvim_cwd then
+    local cwd = extract_cwd(lines)
+    if cwd and cwd ~= M.nvim_cwd then
+      return "mismatch"
+    end
+  end
+
+  local typed = extract_typed_messages(lines)
+  if #typed == 0 then
+    return "unknown"
+  end
+
+  return matches_terminal(typed) and "match" or "mismatch"
+end
+
+---Clear all per-session state and fire the reset for the given session ID.
+---Call on /resume, /clear, or re-pin so the history picker starts fresh.
+---jsonl_positions is intentionally NOT cleared: keeping byte offsets avoids a
+---missed-write-batch immediately after re-pin.
+local function reset_session_state(old_session_id)
+  if old_session_id then
+    edit_jump.edit_sources[old_session_id] = nil
+  end
+  M.pinned_jsonl_path = nil
+  M.ignored_jsonl_paths = {}
+  pending_notifications = {}
+  _term_cache = { text = nil, expires = 0 }
+end
+
+---Pin to a JSONL session.
 local function try_pin_session(jsonl_path)
   if M.pinned_jsonl_path == jsonl_path then
     return true
   end
+  -- If re-pinning to a different session, clear the old session's history.
+  local old_session_id = utils.extract_session_id(M.pinned_jsonl_path)
+  if old_session_id then
+    utils.log("re-pin: clearing history for old session " .. old_session_id:sub(1, 8), vim.log.levels.DEBUG)
+  end
+  reset_session_state(old_session_id)
+
   M.pinned_jsonl_path = jsonl_path
   local name = jsonl_path:match("([^/]+)%.jsonl$") or jsonl_path:match("[^/]+$")
   utils.log("session detected " .. name, vim.log.levels.INFO)
@@ -88,30 +225,16 @@ local function parse_fswatch_line(raw_line)
   return jsonl_path
 end
 
----Handle a confirmed JSONL write: pin the session and scan new lines.
+---Handle a confirmed JSONL write: identify session ownership, then scan new lines.
 local function process_jsonl_write(jsonl_path)
   local filename = jsonl_path:match("[^/]+$")
 
-  --- Session pin logic ---------------------------------------------------
-  if not M.pinned_jsonl_path then
-    utils.log("no active pin, trying to pin " .. filename, vim.log.levels.DEBUG)
-    if not try_pin_session(jsonl_path) then
-      return
-    end
-  elseif jsonl_path ~= M.pinned_jsonl_path then
-    utils.log("session switch detected, re-pin to " .. filename, vim.log.levels.DEBUG)
-    M.pinned_jsonl_path = nil
-    if not try_pin_session(jsonl_path) then
-      return
-    end
+  -- Fast reject: path confirmed to belong to a different session.
+  if M.ignored_jsonl_paths[jsonl_path] then
+    return
   end
 
-  --- Tool result processing -----------------------------------------------
-  -- Scan all new content appended to the JSONL since we last checked this file.
-  -- This catches tool results even when non-tool entries (system summaries, etc.)
-  -- are appended after the tool result line.
-  -- We read a byte-range chunk rather than tailing by line count because
-  -- each watcher event fires per-write, and each write is one JSONL line.
+  --- Read new content -------------------------------------------------------
   local f = io.open(jsonl_path, "r")
   if not f then
     return
@@ -119,97 +242,168 @@ local function process_jsonl_write(jsonl_path)
   local file_size = f:seek("end")
   f:close()
 
-  local prev_pos = jsonl_positions[jsonl_path] and jsonl_positions[jsonl_path].byte_pos
+  local prev = jsonl_positions[jsonl_path]
 
-  -- First time seeing this file: mark current size as the baseline.
-  -- Don't scan old content — only react to new writes after startup.
-  if prev_pos == nil then
+  -- First encounter: read the file tail for session identification, then set baseline.
+  if prev == nil then
     jsonl_positions[jsonl_path] = { byte_pos = file_size, line_count = 0 }
+
+    -- Read tail for session ownership check (don't process tool results from old content).
+    local tail = parser.read_tail(jsonl_path, 8192)
+    if tail and #tail > 0 then
+      local tail_lines = {}
+      for line in tail:gmatch("([^\r\n]+)") do
+        tail_lines[#tail_lines + 1] = line
+      end
+
+      if not M.pinned_jsonl_path then
+        local ownership = session_ownership(tail_lines)
+        if ownership == "match" then
+          utils.log("initial pin to " .. filename, vim.log.levels.DEBUG)
+          try_pin_session(jsonl_path)
+        elseif ownership == "mismatch" then
+          utils.log("ignoring non-matching session " .. filename, vim.log.levels.DEBUG)
+          M.ignored_jsonl_paths[jsonl_path] = true
+        end
+        -- "unknown": no typed messages yet, leave as candidate
+      end
+    end
     return
   end
 
-  if file_size <= prev_pos then
+  if file_size <= prev.byte_pos then
     return
   end
 
   local chunk_file = io.open(jsonl_path, "r")
-  if chunk_file then
-    chunk_file:seek("set", prev_pos)
-    local chunk = chunk_file:read(file_size - prev_pos)
-    chunk_file:close()
+  if not chunk_file then
+    return
+  end
+  chunk_file:seek("set", prev.byte_pos)
+  local chunk = chunk_file:read(file_size - prev.byte_pos)
+  chunk_file:close()
 
-    if not chunk then
+  if not chunk then
+    return
+  end
+
+  local lines = {}
+  for line in chunk:gmatch("([^\r\n]+)") do
+    lines[#lines + 1] = line
+  end
+
+  local prev_line_count = prev.line_count or 0
+  local chunk_start_line = prev_line_count + 1
+  jsonl_positions[jsonl_path] = {
+    byte_pos = file_size,
+    line_count = prev_line_count + #lines,
+  }
+
+  -- test edit at line 302
+  --- Session pin logic -------------------------------------------------------
+  if not M.pinned_jsonl_path then
+    local ownership = session_ownership(lines)
+    if ownership == "match" then
+      utils.log("no active pin, pinning " .. filename, vim.log.levels.DEBUG)
+      try_pin_session(jsonl_path)
+    elseif ownership == "mismatch" then
+      utils.log("ignoring non-matching session " .. filename, vim.log.levels.DEBUG)
+      M.ignored_jsonl_paths[jsonl_path] = true
+      return
+    else
+      -- "unknown": no typed messages yet, keep as candidate
       return
     end
+  elseif jsonl_path ~= M.pinned_jsonl_path then
+    local ownership = session_ownership(lines)
+    if ownership == "match" then
+      utils.log("session switch, re-pinning to " .. filename, vim.log.levels.DEBUG)
+      try_pin_session(jsonl_path) -- resets state, sets new pin
+    elseif ownership == "mismatch" then
+      utils.log("ignoring write from non-matching session " .. filename, vim.log.levels.DEBUG)
+      M.ignored_jsonl_paths[jsonl_path] = true
+      return
+    else
+      return
+    end
+  end
 
-    local lines = {}
-    for line in chunk:gmatch("([^\r\n]+)") do
-      lines[#lines + 1] = line
+  --- Pinned session: check for reset commands and process tool results --------
+  for i, line in ipairs(lines) do
+    -- Detect /resume, /clear, /new: reset session state.
+    if line:find('"promptSource"') and line:find('"typed"') then
+      local ok, entry = pcall(vim.json.decode, line)
+      if
+        ok
+        and entry
+        and entry.type == "user"
+        and entry.promptSource == "typed"
+        and entry.message
+        and type(entry.message.content) == "string"
+        and is_reset_command(entry.message.content)
+      then
+        local cmd = entry.message.content:match("^%s*(.-)%s*$")
+        local old_sid = utils.extract_session_id(M.pinned_jsonl_path)
+        utils.log("reset command " .. cmd .. " detected; clearing session state", vim.log.levels.INFO)
+        if cmd == "/clear" then
+          -- Same JSONL continues — only clear history, keep the pin.
+          if old_sid then
+            edit_jump.edit_sources[old_sid] = nil
+          end
+          M.ignored_jsonl_paths = {}
+          pending_notifications = {}
+          _term_cache = { text = nil, expires = 0 }
+        else
+          -- /resume or /new: session will switch to a different JSONL.
+          reset_session_state(old_sid)
+        end
+        return
+      end
     end
 
-    -- The line count tracked at the previous byte position tells us where
-    -- the first line in this chunk starts (1-indexed).
-    local prev_line_count = jsonl_positions[jsonl_path].line_count or 0
-    local chunk_start_line = prev_line_count + 1
+    local change_info = parser.parse_tool_result(line, chunk_start_line + i - 1)
+    if change_info then
+      append_sidecar(line)
 
-    -- Update tracked position after reading, before processing.
-    local new_line_count = prev_line_count + #lines
-    jsonl_positions[jsonl_path] = {
-      byte_pos = file_size,
-      line_count = new_line_count,
-    }
-
-    for i, line in ipairs(lines) do
-      local change_info = parser.parse_tool_result(line, chunk_start_line + i - 1)
-      if change_info then
-        -- Write raw line to sidecar before dedup — we want all events recorded.
-        append_sidecar(line)
-
-        -- Dedup check: prevent firing duplicate autocmds when both the early
-        -- tool_use and the later toolUseResult arrive for the same edit.
-        local dedup_key = change_info.dedup_key
-        if dedup_key and utils.key_seen(dedup_key) then
-          utils.log("NOT firing autocmd; SEEN " .. dedup_key:sub(1, 8), vim.log.levels.DEBUG)
-        else
-          if dedup_key then
-            utils.mark_key_seen(dedup_key)
-          end
-
-          local fp = change_info.file_path
-          local line_str = change_info.starting_line and ":" .. change_info.starting_line or ""
-
-          if change_info.starting_line then
-            -- Complete result: update or show notification with line number.
-            if pending_notifications[fp] then
-              utils.log(fp .. line_str, vim.log.levels.INFO, { replace = pending_notifications[fp] })
-              pending_notifications[fp] = nil
-            else
-              utils.log(fp .. line_str)
-            end
-            utils.log("firing autocmd ClaudeAutoFollowEdit @ " .. fp .. line_str, vim.log.levels.DEBUG)
-          else
-            -- Early tool_use (no line info): show notification that can be
-            -- updated when the toolUseResult arrives.
-            local handle = utils.log(fp, vim.log.levels.INFO)
-            pending_notifications[fp] = handle
-            utils.log("early tool_use @ " .. fp, vim.log.levels.DEBUG)
-          end
-
-          vim.api.nvim_exec_autocmds("User", {
-            pattern = "ClaudeAutoFollowEdit",
-            data = {
-              file_path = change_info.file_path,
-              operation = change_info.operation,
-              starting_line = change_info.starting_line,
-              delta = change_info.delta,
-              source_line = change_info.source_line,
-              jsonl_path = M.pinned_jsonl_path,
-              event_uuid = change_info.event_uuid,
-              event_timestamp = change_info.event_timestamp,
-              event_id = change_info.event_id,
-            },
-          })
+      local dedup_key = change_info.dedup_key
+      if dedup_key and utils.key_seen(dedup_key) then
+        utils.log("NOT firing autocmd; SEEN " .. dedup_key:sub(1, 8), vim.log.levels.DEBUG)
+      else
+        if dedup_key then
+          utils.mark_key_seen(dedup_key)
         end
+
+        local fp = change_info.file_path
+        local line_str = change_info.starting_line and ":" .. change_info.starting_line or ""
+
+        if change_info.starting_line then
+          if pending_notifications[fp] then
+            utils.log(fp .. line_str, vim.log.levels.INFO, { replace = pending_notifications[fp] })
+            pending_notifications[fp] = nil
+          else
+            utils.log(fp .. line_str)
+          end
+          utils.log("firing autocmd ClaudeAutoFollowEdit @ " .. fp .. line_str, vim.log.levels.DEBUG)
+        else
+          local handle = utils.log(fp, vim.log.levels.INFO)
+          pending_notifications[fp] = handle
+          utils.log("early tool_use @ " .. fp, vim.log.levels.DEBUG)
+        end
+
+        vim.api.nvim_exec_autocmds("User", {
+          pattern = "ClaudeAutoFollowEdit",
+          data = {
+            file_path = change_info.file_path,
+            operation = change_info.operation,
+            starting_line = change_info.starting_line,
+            delta = change_info.delta,
+            source_line = change_info.source_line,
+            jsonl_path = M.pinned_jsonl_path,
+            event_uuid = change_info.event_uuid,
+            event_timestamp = change_info.event_timestamp,
+            event_id = change_info.event_id,
+          },
+        })
       end
     end
   end
@@ -346,25 +540,47 @@ function M.start()
     utils.log("$USER not set; live JSONL following disabled", vim.log.levels.WARN)
     return
   end
-  M.inotify_log = string.format("/tmp/nvim.%s.inotify.log", user)
-  M.inotify_pidfile = string.format("/tmp/nvim.%s.inotify.pid", user)
+
+  -- Capture CWD at startup for session identification.
+  M.nvim_cwd = vim.fn.getcwd()
+
+  -- Per-pid paths avoid collisions when multiple Neovim instances run.
+  local nvim_pid = vim.fn.getpid()
+  M.inotify_log = string.format("/tmp/nvim.%s.%d.inotify.log", user, nvim_pid)
+  M.inotify_pidfile = string.format("/tmp/nvim.%s.%d.inotify.pid", user, nvim_pid)
   M.inotify_last_pos = 0
 
-  -- Kill any orphaned watchers (either backend) from previous Neovim
-  -- sessions, identified by them watching our projects dir.
-  local kp =
-    io.popen("pgrep -f '(inotifywait|fswatch).*" .. vim.fn.fnameescape(projects_dir) .. "' 2>/dev/null || true")
-  if kp then
-    for pid_line in kp:lines() do
-      local p = tonumber(pid_line:match("^%s*(.-)%s*$"))
-      if p then
-        os.execute("kill -15 " .. tostring(p) .. " 2>/dev/null || true")
+  -- Kill watchers from dead Neovim instances using pidfiles — fast because
+  -- it only reads /tmp and checks process liveness with ps, no pgrep -f scan.
+  local pidfile_pattern = string.format("/tmp/nvim.%s.*.inotify.pid", user)
+  local ls = io.popen("ls " .. pidfile_pattern .. " 2>/dev/null")
+  if ls then
+    for pidfile in ls:lines() do
+      local owner_pid = pidfile:match("nvim%.[^.]+%.(%d+)%.inotify%.pid$")
+      if owner_pid and owner_pid ~= tostring(nvim_pid) then
+        -- Check if the owner Neovim is still alive via ps (fast, no shell expansion).
+        local ps_check = io.popen("ps -p " .. owner_pid .. " -o pid= 2>/dev/null")
+        local alive = ps_check and ps_check:read("*a"):match("%d") ~= nil
+        if ps_check then
+          ps_check:close()
+        end
+        if not alive then
+          local pf = io.open(pidfile, "r")
+          if pf then
+            local watcher_pid = pf:read("*a"):match("^%s*(%d+)%s*$")
+            pf:close()
+            if watcher_pid then
+              os.execute("kill -15 " .. watcher_pid .. " 2>/dev/null || true")
+            end
+          end
+          os.remove(pidfile)
+        end
       end
     end
-    kp:close()
+    ls:close()
   end
 
-  -- Truncate any leftover log.
+  -- Truncate our own log (fresh start).
   local truncate = io.open(M.inotify_log, "w")
   if truncate then
     truncate:close()
