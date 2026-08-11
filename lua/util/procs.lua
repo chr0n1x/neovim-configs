@@ -39,11 +39,11 @@ function M.toggle(name)
     vim.notify("procs: command for '" .. name .. "' resolved to empty", vim.log.levels.WARN)
     return
   end
+  require("snacks").terminal.toggle(cmd, term_opts)
   if entry.on_open and not entry._opened then
     entry._opened = true
-    entry.on_open()
+    vim.schedule(entry.on_open)
   end
-  require("snacks").terminal.toggle(cmd, term_opts)
 end
 
 local function make_previewer()
