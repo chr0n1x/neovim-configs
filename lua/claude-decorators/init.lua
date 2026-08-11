@@ -23,6 +23,7 @@ M.setup_auto_follow = function()
   utils.reset_dedup()
   utils.reset_log()
   watcher.pinned_jsonl_path = nil
+  watcher.ignored_jsonl_paths = {}
 
   watcher.start()
 end
