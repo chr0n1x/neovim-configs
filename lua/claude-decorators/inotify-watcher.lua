@@ -197,6 +197,7 @@ local function parse_inotify_line(raw_line)
   end
 
   -- Skip subagent directories — we only care about root session JSONLs.
+  -- Subagent paths are one level deeper than the project hash dir.
   if dir:find("/subagents/") then
     return nil
   end
@@ -262,8 +263,23 @@ local function process_jsonl_write(jsonl_path)
           utils.log("initial pin to " .. filename, vim.log.levels.DEBUG)
           try_pin_session(jsonl_path)
         elseif ownership == "mismatch" then
-          utils.log("ignoring non-matching session " .. filename, vim.log.levels.DEBUG)
-          M.ignored_jsonl_paths[jsonl_path] = true
+          -- Terminal may not have rendered the first message yet. Retry once
+          -- after 500ms with a fresh terminal read before permanently ignoring.
+          utils.log("initial mismatch for " .. filename .. "; retrying in 500ms", vim.log.levels.DEBUG)
+          vim.defer_fn(function()
+            if M.pinned_jsonl_path or M.ignored_jsonl_paths[jsonl_path] then
+              return
+            end
+            _term_cache = { text = nil, expires = 0 }
+            local retry = session_ownership(tail_lines)
+            if retry == "match" then
+              utils.log("retry pin to " .. filename, vim.log.levels.DEBUG)
+              try_pin_session(jsonl_path)
+            elseif retry == "mismatch" then
+              utils.log("ignoring non-matching session " .. filename, vim.log.levels.DEBUG)
+              M.ignored_jsonl_paths[jsonl_path] = true
+            end
+          end, 500)
         end
         -- "unknown": no typed messages yet, leave as candidate
       end
@@ -346,6 +362,7 @@ local function process_jsonl_write(jsonl_path)
         utils.log("reset command " .. cmd .. " detected; clearing session state", vim.log.levels.INFO)
         if cmd == "/clear" then
           -- Same JSONL continues — only clear history, keep the pin.
+          -- Pin is preserved; only edit history and pending state are cleared.
           if old_sid then
             edit_jump.edit_sources[old_sid] = nil
           end
@@ -495,6 +512,7 @@ local function spawn_fswatch(projects_dir, log_path)
   end
 
   local handle, pid = vim.uv.spawn("fswatch", {
+    -- -l 0.3: coalesce writes within 300ms to avoid duplicate events.
     args = { "-r", "-l", "0.3", "--event", "Updated", projects_dir },
     stdio = { nil, fd, nil },
   }, on_inotify_exit)
