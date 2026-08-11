@@ -33,24 +33,6 @@ local function find_adjacent_window()
   return nil
 end
 
----Jump to a line number if one is provided.
-local function maybe_jump_to_line(win, starting_line)
-  if starting_line then
-    local line = tonumber(starting_line)
-    if line and vim.api.nvim_win_is_valid(win) then
-      local buf = vim.api.nvim_win_get_buf(win)
-      local max_line = vim.api.nvim_buf_line_count(buf)
-      line = math.max(1, math.min(line, max_line))
-      vim.api.nvim_win_set_cursor(win, { line, 0 })
-      -- Center the window on the cursor line without using :normal! (which fails in terminal mode).
-      local height = vim.api.nvim_win_get_height(win)
-      local target_top = math.max(0, line - math.ceil(height / 2))
-      pcall(vim.api.nvim_win_set_cursor, win, { target_top + 1, 0 })
-      vim.api.nvim_win_set_cursor(win, { line, 0 })
-    end
-  end
-end
-
 ---Get or validate the jump window. Reuses the existing non-float window
 ---next to the floating terminal — no new splits created.
 local function get_jump_win()
@@ -67,39 +49,40 @@ end
 
 ---Perform the actual jump logic (called inside defer_fn).
 local function jump_to_edit(data, file_path)
-  vim.cmd("checktime")
-
   local win = get_jump_win()
   if not win then
     return
   end
 
-  -- Reload buffer if it exists and was modified externally.
-  local bufnr = vim.fn.bufnr(file_path)
-  if bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr) then
-    vim.api.nvim_win_set_buf(win, bufnr)
-    maybe_jump_to_line(win, data.starting_line)
-  else
-    -- Use win_execute to avoid changing current window/tab.
-    vim.api.nvim_win_call(win, function()
-      vim.cmd("edit " .. vim.fn.fnameescape(file_path))
-    end)
-  end
+  local line = data.starting_line and tonumber(data.starting_line)
 
-  -- Window might be invalid after `edit`, re-resolve.
-  if not vim.api.nvim_win_is_valid(win) then
-    win = get_jump_win()
-  end
-  if win then
-    maybe_jump_to_line(win, data.starting_line)
-  end
+  -- edit! +N positions the cursor after BufReadPost, so it wins over any
+  -- plugin cursor-restore callback. win_execute suppresses WinEnter/WinLeave.
+  local edit_cmd = line and string.format("edit! +%d %s", line, vim.fn.fnameescape(file_path))
+    or ("edit! " .. vim.fn.fnameescape(file_path))
+  vim.fn.win_execute(win, edit_cmd, true)
 
-  -- Restore insert mode: always defer so mode state settles after buffer/window changes.
+  -- After the edit+N lands, center the view and restore insert mode.
   vim.defer_fn(function()
-    if is_terminal_focused() then
-      vim.cmd.startinsert()
+    if not vim.api.nvim_win_is_valid(win) then
+      win = get_jump_win()
     end
-  end, 50)
+    if not win then
+      return
+    end
+    if line then
+      local max_line = vim.api.nvim_buf_line_count(vim.api.nvim_win_get_buf(win))
+      local clamped = math.max(1, math.min(line, max_line))
+      vim.api.nvim_win_set_cursor(win, { clamped, 0 })
+      local topline = math.max(1, clamped - math.floor(vim.api.nvim_win_get_height(win) / 2))
+      vim.fn.win_execute(win, 'call winrestview({"topline": ' .. topline .. "})", true)
+    end
+    vim.defer_fn(function()
+      if is_terminal_focused() then
+        vim.cmd.startinsert()
+      end
+    end, 50)
+  end, 100)
 end
 
 ---Store an edit source record. Skips incomplete events, deduplicates in-place.
