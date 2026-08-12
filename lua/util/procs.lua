@@ -14,11 +14,34 @@ local function find_buf_for_name(name)
   end
 end
 
+-- Kill a registered process by name. If ad-hoc, remove from registry.
+local function kill(name)
+  local buf = find_buf_for_name(name)
+  if buf then
+    local st = vim.b[buf] and vim.b[buf].snacks_terminal
+    local job_id = st and st.id
+    if job_id then
+      vim.notify("Killing " .. name .. " ...")
+      pcall(vim.fn.jobstop, job_id)
+    end
+    buf_to_name[buf] = nil
+    attached_bufs[buf] = nil
+    vim.schedule(function()
+      pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    end)
+  end
+  -- Remove ad-hoc entries from registry so they disappear from the picker.
+  if name:find("^%[ad-hoc%]") then
+    registry[name] = nil
+  end
+end
+
 -- Kill, clean up, and reopen a registered process by name.
 local function restart(name)
   local buf = find_buf_for_name(name)
   if buf then
-    local job_id = vim.b[buf] and vim.b[buf].terminal_job_id
+    local st = vim.b[buf] and vim.b[buf].snacks_terminal
+    local job_id = st and st.id
     if job_id then
       pcall(vim.fn.jobstop, job_id)
     end
@@ -85,6 +108,19 @@ local term_opts = {
         end,
         mode = "n",
         desc = "↺ restart",
+      },
+      {
+        "<C-x>",
+        function(self)
+          local name = buf_to_name[self.buf]
+          if not name then
+            return
+          end
+          self:hide()
+          kill(name)
+        end,
+        mode = "n",
+        desc = "✕ kill",
       },
     },
   },
@@ -250,7 +286,7 @@ function M.pick()
 
   pickers
     .new({}, {
-      prompt_title = "long-running processes  <C-n> ⊕  <C-r> ↺",
+      prompt_title = "long-running processes  <C-n> ⊕  <C-r> ↺  <C-x> ✕",
       finder = finders.new_table({
         results = entries,
         entry_maker = function(e)
@@ -284,6 +320,15 @@ function M.pick()
         map("n", "<C-n>", new_adhoc)
         map("i", "<C-r>", do_restart)
         map("n", "<C-r>", do_restart)
+        local function do_kill()
+          local sel = action_state.get_selected_entry()
+          actions.close(prompt_bufnr)
+          if sel then
+            kill(sel.value.name)
+          end
+        end
+        map("i", "<C-x>", do_kill)
+        map("n", "<C-x>", do_kill)
         return true
       end,
     })
