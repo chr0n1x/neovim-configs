@@ -1,6 +1,12 @@
 -- Claude Code terminal integration.
 -- Spawns a floating terminal running the `claude` CLI and handles
 -- focus restoration when alt-tabbing in/out of Neovim.
+-- Default harness; disabled when NVIM_LLM_HARNESS is set to another value.
+local harness = os.getenv("NVIM_LLM_HARNESS") or "claude"
+if harness ~= "claude" then
+  return {}
+end
+
 local command = "claude"
 local claude_cmd_env = os.getenv("CLAUDE_COMMAND")
 
