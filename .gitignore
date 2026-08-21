@@ -5,4 +5,5 @@ plugin/
 .cache/
 chroma.log
 .aider*
+.maki/
 tmp/
