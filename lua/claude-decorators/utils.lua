@@ -1,5 +1,8 @@
 local M = {}
 
+---Which LLM harness this Neovim session uses. Used for the notify prefix.
+M.harness = os.getenv("NVIM_LLM_HARNESS") or "claude"
+
 -- ==========================================================================
 -- RATE-LIMITED LOGGER
 -- ==========================================================================
@@ -37,7 +40,7 @@ function M.log(msg, level, notify_opts)
   end
   M.log_seen[key] = now
   local display_msg = shorten_path(msg)
-  local handle = vim.notify("[claude.nvim auto-follow] " .. display_msg, level or vim.log.levels.INFO, notify_opts)
+  local handle = vim.notify("[" .. M.harness .. ".nvim auto-follow] " .. display_msg, level or vim.log.levels.INFO, notify_opts)
   return handle
 end
 
@@ -102,6 +105,25 @@ end
 function M.format_time(ts)
   local secs = math.floor(ts / 1000)
   return os.date("%b %d %Y %H:%M:%S", secs)
+end
+
+---Maki writes a cwd -> session-id map next to its session JSONLs. Returns the
+---session ID for `cwd`, or nil if the file is missing/unreadable.
+---@param cwd string
+---@return string?
+function M.maki_session_for_cwd(cwd)
+  local path = (os.getenv("HOME") or "") .. "/.local/state/maki/sessions/cwd_latest.json"
+  local f = io.open(path, "r")
+  if not f then
+    return nil
+  end
+  local content = f:read("*a")
+  f:close()
+  local ok, map = pcall(vim.json.decode, content)
+  if not ok or type(map) ~= "table" then
+    return nil
+  end
+  return map[cwd]
 end
 
 return M

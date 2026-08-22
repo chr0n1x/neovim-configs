@@ -1,5 +1,8 @@
 local M = {}
 
+---Which LLM harness this Neovim session uses. Selects the JSONL dialect to parse.
+M.harness = os.getenv("NVIM_LLM_HARNESS") or "claude"
+
 ---Check if a file path is noise (temp/swap files).
 function M.is_noise(file_path)
   if type(file_path) ~= "string" or #file_path == 0 then
@@ -146,12 +149,56 @@ local function parse_tool_use(entry, line_number)
   end
 end
 
+---Extract change_info from a maki msg entry containing edit/write tool_use blocks.
+---Maki's JSONL records no structured patch data, so only the path and operation
+---are available — no starting_line, no delta.
+---@param entry table The decoded JSON object ({t="msg", d={role, content}})
+---@param line_number? integer The 1-based line number in the JSONL file
+local function parse_maki_tool_use(entry, line_number)
+  local msg = entry.d
+  if not msg or msg.role ~= "assistant" or type(msg.content) ~= "table" then
+    return
+  end
+
+  for _, item in ipairs(msg.content) do
+    if item.type == "tool_use" and (item.name == "edit" or item.name == "write") then
+      local fp = item.input and item.input.path
+      if fp and not M.is_noise(fp) then
+        local operation = item.name == "write" and "Create" or "Edit"
+        return {
+          file_path = fp,
+          operation = operation,
+          starting_line = nil,
+          delta = "",
+          event_uuid = nil,
+          event_timestamp = nil,
+          event_id = item.id,
+          dedup_key = item.id and ("maki-" .. item.id) or nil,
+          source_line = line_number,
+        }
+      end
+    end
+  end
+end
+
 ---Parse a JSONL line for file changes. Handles both toolUseResult responses
 ---and tool_use invocations (Edit/Write calls).
 ---@param line string The JSONL line text
 ---@param line_number? integer The 1-based line number in the JSONL file
 ---Returns change_info table or nil.
 function M.parse_tool_result(line, line_number)
+  if M.harness == "maki" then
+    -- Quick pre-filter: maki msg lines with edit/write tool uses.
+    if not (line:find('"t":"msg"') and line:find('"tool_use"')) then
+      return
+    end
+    local ok, entry = pcall(vim.json.decode, line)
+    if not ok or not entry then
+      return
+    end
+    return parse_maki_tool_use(entry, line_number)
+  end
+
   -- Quick pre-filter: only parse lines that look like tool results or tool uses.
   local has_tool_result = line:find('"toolUseResult"')
   local has_tool_use = line:find('"type":"tool_use"')

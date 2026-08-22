@@ -1,5 +1,9 @@
 local utils = require("claude-decorators.utils")
 local parser = require("claude-decorators.jsonl-parser")
+
+---Which LLM harness this Neovim session uses. Selects the JSONL directory,
+---terminal buffer name and line dialect for session identification.
+local HARNESS = parser.harness
 local sidecar = require("claude-decorators.sidecar")
 local edit_jump = require("claude-decorators.edit-jump")
 
@@ -61,8 +65,25 @@ local function get_terminal_text()
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     local ok, bt = pcall(vim.api.nvim_get_option_value, "buftype", { buf = buf })
     if ok and bt == "terminal" then
-      local name = vim.api.nvim_buf_get_name(buf)
-      if name:find("claude", 1, true) then
+      local matched
+      if HARNESS == "maki" then
+        -- Maki terminal buffers are unnamed; match on the job command.
+        local b = vim.b[buf]
+        local cmd = ""
+        if b and b.snacks_terminal then
+          local c = b.snacks_terminal.cmd
+          if type(c) == "string" then
+            cmd = c
+          elseif type(c) == "table" then
+            cmd = table.concat(c, " ")
+          end
+        end
+        matched = cmd:find("maki", 1, true) ~= nil
+      else
+        local name = vim.api.nvim_buf_get_name(buf)
+        matched = name:find("claude", 1, true) ~= nil
+      end
+      if matched then
         local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
         text = table.concat(lines, "\n")
         break
@@ -95,8 +116,16 @@ local function extract_cwd(lines)
   for _, line in ipairs(lines) do
     if line:find('"cwd"') then
       local ok, entry = pcall(vim.json.decode, line)
-      if ok and entry and entry.cwd then
-        return entry.cwd
+      if HARNESS == "maki" then
+        -- Maki format: header line {t="header", cwd=...}.
+        if ok and entry and entry.t == "header" and entry.cwd then
+          return entry.cwd
+        end
+      else
+        -- Claude format: cwd is a top-level field.
+        if ok and entry and entry.cwd then
+          return entry.cwd
+        end
       end
     end
   end
@@ -109,24 +138,40 @@ end
 local function extract_typed_messages(lines)
   local msgs = {}
   for _, line in ipairs(lines) do
-    local is_candidate = (line:find('"promptSource"') and line:find('"typed"'))
-      or (line:find('"type"') and line:find('"user"') and line:find('"content"'))
-    if is_candidate then
-      local ok, entry = pcall(vim.json.decode, line)
-      if ok and entry and entry.type == "user" and entry.message then
-        local content = entry.message.content
-        -- Old format: top-level promptSource:"typed" with string content.
-        if entry.promptSource == "typed" and type(content) == "string" and #content >= 6 then
-          msgs[#msgs + 1] = content
-        -- Current format: role:"user" with string content (actual typed message).
-        elseif entry.message.role == "user" and type(content) == "string" and #content >= 6 then
-          msgs[#msgs + 1] = content
-        -- Current format with list content: pull first text block.
-        elseif entry.message.role == "user" and type(content) == "table" then
-          for _, item in ipairs(content) do
-            if type(item) == "table" and item.type == "text" and type(item.text) == "string" and #item.text >= 6 then
+    if HARNESS == "maki" then
+      -- Maki: {t="msg", d={role="user", content=[{type="text", text=...}, ...]}}.
+      -- tool_result blocks also live in user messages, so only text blocks count.
+      if line:find('"t":"msg"') and line:find('"role":"user"') then
+        local ok, entry = pcall(vim.json.decode, line)
+        if ok and entry and entry.d and entry.d.role == "user" and type(entry.d.content) == "table" then
+          for _, item in ipairs(entry.d.content) do
+            if item.type == "text" and type(item.text) == "string" and #item.text >= 6 then
               msgs[#msgs + 1] = item.text
               break
+            end
+          end
+        end
+      end
+    else
+      local is_candidate = (line:find('"promptSource"') and line:find('"typed"'))
+        or (line:find('"type"') and line:find('"user"') and line:find('"content"'))
+      if is_candidate then
+        local ok, entry = pcall(vim.json.decode, line)
+        if ok and entry and entry.type == "user" and entry.message then
+          local content = entry.message.content
+          -- Old format: top-level promptSource:"typed" with string content.
+          if entry.promptSource == "typed" and type(content) == "string" and #content >= 6 then
+            msgs[#msgs + 1] = content
+          -- Current format: role:"user" with string content (actual typed message).
+          elseif entry.message.role == "user" and type(content) == "string" and #content >= 6 then
+            msgs[#msgs + 1] = content
+          -- Current format with list content: pull first text block.
+          elseif entry.message.role == "user" and type(content) == "table" then
+            for _, item in ipairs(content) do
+              if type(item) == "table" and item.type == "text" and type(item.text) == "string" and #item.text >= 6 then
+                msgs[#msgs + 1] = item.text
+                break
+              end
             end
           end
         end
@@ -140,6 +185,11 @@ end
 -- /resume and /new switch to a new JSONL; /clear keeps the same JSONL but wipes history.
 local function is_reset_command(content)
   local trimmed = content:match("^%s*(.-)%s*$")
+  if HARNESS == "maki" then
+    -- Maki has /new (new session file) and /compact (rewrites the same file,
+    -- archiving old turns). No /clear.
+    return trimmed == "/new" or trimmed == "/compact"
+  end
   return trimmed == "/resume" or trimmed == "/clear" or trimmed == "/new"
 end
 
@@ -219,6 +269,11 @@ local function parse_inotify_line(raw_line)
     return nil
   end
 
+  -- Skip maki's pre-compaction archives (sessions/archive/<id>/N.jsonl).
+  if dir:find("/archive/") then
+    return nil
+  end
+
   -- Strip trailing slash from dir.
   dir = dir:gsub("/+$", "")
   return dir .. "/" .. filename
@@ -237,6 +292,9 @@ local function parse_fswatch_line(raw_line)
     return nil
   end
   if jsonl_path:find("/subagents/") then
+    return nil
+  end
+  if jsonl_path:find("/archive/") then
     return nil
   end
 
@@ -275,7 +333,19 @@ local function process_jsonl_write(jsonl_path)
       end
 
       if not M.pinned_jsonl_path then
+        -- Maki: the tail is usually tool output with no typed messages, so
+        -- ownership comes out "unknown" and the session never pins. Fall back
+        -- to maki's own cwd -> session-id map.
         local ownership = session_ownership(tail_lines)
+        if ownership == "unknown" and HARNESS == "maki" and M.nvim_cwd then
+          local sid = utils.maki_session_for_cwd(M.nvim_cwd)
+          local base = jsonl_path:match("([^/]+)%.jsonl$")
+          if sid and sid == base then
+            ownership = "match"
+          elseif sid then
+            ownership = "mismatch"
+          end
+        end
         if ownership == "match" then
           utils.log("initial pin to " .. filename, vim.log.levels.DEBUG)
           try_pin_session(jsonl_path)
@@ -304,7 +374,19 @@ local function process_jsonl_write(jsonl_path)
     return
   end
 
-  if file_size <= prev.byte_pos then
+  if HARNESS == "maki" then
+    -- Maki's /compact rewrites the same JSONL via tmp+rename, so the new inode
+    -- is smaller than our last read position. Reset the baseline instead of
+    -- skipping — the reset command itself is detected below from the file tail.
+    if file_size < prev.byte_pos then
+      jsonl_positions[jsonl_path] = { byte_pos = file_size, line_count = 0 }
+      return
+    end
+  elseif file_size <= prev.byte_pos then
+    return
+  end
+
+  if file_size == prev.byte_pos then
     return
   end
 
@@ -361,6 +443,91 @@ local function process_jsonl_write(jsonl_path)
   end
 
   --- Pinned session: check for reset commands and process tool results --------
+  if HARNESS == "maki" then
+    -- Maki: scan the tail of the file (not just this chunk) so /compact, which
+    -- rewrites the same JSONL with a new inode, is still detected after the
+    -- shrink baseline reset above.
+    local maki_tail = parser.read_tail(jsonl_path, FINGERPRINT_TAIL_BYTES)
+    if maki_tail then
+      for tline in maki_tail:gmatch("([^\r\n]+)") do
+        if tline:find('"t":"msg"') and tline:find('"role":"user"') then
+          local ok, entry = pcall(vim.json.decode, tline)
+          if ok and entry and entry.d and entry.d.role == "user" and type(entry.d.content) == "table" then
+            for _, item in ipairs(entry.d.content) do
+              if item.type == "text" and type(item.text) == "string" and is_reset_command(item.text) then
+                local cmd = item.text:match("^%s*(.-)%s*$")
+                local old_sid = utils.extract_session_id(M.pinned_jsonl_path)
+                utils.log("reset command " .. cmd .. " detected; clearing session state", vim.log.levels.INFO)
+                if cmd == "/compact" then
+                  -- Same JSONL continues — only clear history, keep the pin.
+                  jsonl_positions[jsonl_path] = { byte_pos = file_size, line_count = 0 }
+                  utils.reset_dedup()
+                  edit_jump.edit_sources[old_sid] = nil
+                  M.ignored_jsonl_paths = {}
+                  pending_notifications = {}
+                  _term_cache = { text = nil, expires = 0 }
+                else
+                  -- /new: session will switch to a different JSONL.
+                  reset_session_state(old_sid)
+                end
+                return
+              end
+            end
+          end
+        end
+      end
+    end
+
+    for i, line in ipairs(lines) do
+      local change_info = parser.parse_tool_result(line, chunk_start_line + i - 1)
+      if change_info then
+        append_sidecar(line)
+
+        local dedup_key = change_info.dedup_key
+        if dedup_key and utils.key_seen(dedup_key) then
+          utils.log("NOT firing autocmd; SEEN " .. dedup_key:sub(1, 8), vim.log.levels.DEBUG)
+        else
+          if dedup_key then
+            utils.mark_key_seen(dedup_key)
+          end
+
+          local fp = change_info.file_path
+          local line_str = change_info.starting_line and ":" .. change_info.starting_line or ""
+
+          if change_info.starting_line then
+            if pending_notifications[fp] then
+              utils.log(fp .. line_str, vim.log.levels.INFO, { replace = pending_notifications[fp] })
+              pending_notifications[fp] = nil
+            else
+              utils.log(fp .. line_str)
+            end
+            utils.log("firing autocmd ClaudeAutoFollowEdit @ " .. fp .. line_str, vim.log.levels.DEBUG)
+          else
+            local handle = utils.log(fp, vim.log.levels.INFO)
+            pending_notifications[fp] = handle
+            utils.log("early tool_use @ " .. fp, vim.log.levels.DEBUG)
+          end
+
+          vim.api.nvim_exec_autocmds("User", {
+            pattern = "ClaudeAutoFollowEdit",
+            data = {
+              file_path = change_info.file_path,
+              operation = change_info.operation,
+              starting_line = change_info.starting_line,
+              delta = change_info.delta,
+              source_line = change_info.source_line,
+              jsonl_path = M.pinned_jsonl_path,
+              event_uuid = change_info.event_uuid,
+              event_timestamp = change_info.event_timestamp,
+              event_id = change_info.event_id,
+            },
+          })
+        end
+      end
+    end
+    return
+  end
+
   for i, line in ipairs(lines) do
     -- Detect /resume, /clear, /new: reset session state.
     local is_user_line = (line:find('"promptSource"') and line:find('"typed"'))
@@ -555,7 +722,10 @@ function M.start()
     return
   end
 
-  local projects_dir = os.getenv("HOME") .. "/.claude/projects"
+  -- Claude keeps per-project dirs under ~/.claude/projects; maki keeps a flat
+  -- list of session JSONLs under ~/.local/state/maki/sessions.
+  local projects_dir = HARNESS == "maki" and (os.getenv("HOME") .. "/.local/state/maki/sessions")
+    or (os.getenv("HOME") .. "/.claude/projects")
 
   -- Check if directory exists.
   local f = io.open(projects_dir, "r")

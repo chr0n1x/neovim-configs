@@ -124,6 +124,12 @@ end
 
 ---Open a Telescope picker showing all recorded edit sources.
 function M.pick()
+  local parser = require("claude-decorators.jsonl-parser")
+  if parser.harness == "maki" then
+    vim.notify("[claude.nvim] Change history is not supported with the maki harness", vim.log.levels.WARN)
+    return
+  end
+
   local edit_jump = require("claude-decorators.edit-jump")
   local inotify = require("claude-decorators.inotify-watcher")
   local utils = require("claude-decorators.utils")
@@ -181,8 +187,8 @@ function M.pick()
   local display_entries = #entries > 0 and entries or {}
 
   local picker_opts = {
-    prompt_title = "🦀 " .. short_id .. " - Change History",
-    results_title = "🦀 " .. short_id .. " - Change History",
+    prompt_title = "🤖 " .. short_id .. " - Change History",
+    results_title = "🤖 " .. short_id .. " - Change History",
     finder = finders.new_table({
       results = display_entries,
       entry_maker = function(entry)

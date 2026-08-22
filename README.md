@@ -21,5 +21,6 @@ Custom plugin (`lua/claude-decorators/`) that adds:
 - **Change history picker** — browse all edits Claude made in the current session (`<leader>cu`). Select an entry to jump to it, with a diff preview _without `git`_. Useful for reviewing changes before commit, or a list of changes that the AI flip-flops between when testing things.
 - **Lualine status** — shows the pinned Claude session name or a spinner while idle in the statusline.
 - **Floating terminal** — `claudecode.nvim` wrapper with animated resize, focus restoration on alt-tab, and `<leader>c` keymap prefix.
+- **Maki harness** — set `NVIM_LLM_HARNESS=maki` to run [maki](https://github.com/tontinton/maki) in the same floating terminal with identical `<leader>c*` keymaps; auto-follow works too (path notifications only, no diff previews or history picker).
 
 **Requirements:** `inotifywait` (Linux, from `inotify-tools`) or `fswatch` (macOS, `brew install fswatch`). If neither is installed, live follow is disabled.
