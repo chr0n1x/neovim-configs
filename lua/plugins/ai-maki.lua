@@ -403,6 +403,14 @@ return {
     },
     keys = {
       { "<leader>c", "<cmd>ClaudeCodeFocus<cr>", desc = "Maki", mode = { "n", "x" } },
+      {
+        "<leader>cu",
+        function()
+          require("claude-decorators.telescope-history-picker").pick()
+        end,
+        desc = "view list of changes maki made.",
+        mode = { "n" },
+      },
       { "<leader>cr", "<cmd>ClaudeCode --resume<cr>", desc = "Resume Maki" },
       { "<leader>cc", "<cmd>ClaudeCode --continue<cr>", desc = "Continue Maki" },
       { "<leader>cm", "<cmd>ClaudeCodeSelectModel<cr>", desc = "Select Maki model" },

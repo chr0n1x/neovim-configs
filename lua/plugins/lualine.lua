@@ -82,13 +82,13 @@ return {
         local path = decorators.get_pinned_path()
         if not path then
           -- No pin yet — show spinner.
-          return "🦀 " .. spinner_frame
+          return "🤖 " .. spinner_frame
         end
         local name = path:match("([^/]+)%.jsonl$")
         if not name then
           return ""
         end
-        return "🦀 " .. name
+        return "🤖 " .. name
       end,
       padding = { left = 1, right = 1 },
     })
