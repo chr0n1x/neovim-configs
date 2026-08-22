@@ -120,6 +120,9 @@ Forever MoonJanglin'
     "chrisgrieser/nvim-origami",
     event = "VeryLazy",
     opts = {
+      -- disabled: its async vim.lsp.foldclose races with edits and throws
+      -- E490 (No fold found) in the scheduled callback
+      autoFold = { enabled = false },
       foldtext = {
         enabled = true,
         padding = {
