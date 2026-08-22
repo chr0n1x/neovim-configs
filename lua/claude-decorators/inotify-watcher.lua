@@ -675,6 +675,40 @@ local function which(bin)
   return #path > 0 and path or nil
 end
 
+---Build the list of directories fswatch should monitor (non-recursively).
+---
+---Recursive fswatch (`-r`) walks and stats every node in the tree to build its
+---watch list before reporting. On a large ~/.claude/projects that walk takes
+---seconds, and it repeats once per Neovim instance — freezing the pane on macOS.
+---We only ever act on root-session JSONLs (parse_fswatch_line skips /subagents/),
+---so we watch just the directories that directly contain them:
+---  * claude: the per-project hash subdirs of ~/.claude/projects
+---  * maki:   the flat sessions dir itself (session JSONLs live at its top level)
+---@return string[]
+local function list_watch_dirs(projects_dir)
+  if HARNESS == "maki" then
+    return { projects_dir }
+  end
+
+  local dirs = {}
+  for path in vim.fs.dir(projects_dir, { depth = 1 }) do
+    -- Skip hidden entries (leading dot on the basename). Note: claude project-hash
+    -- dirs are named with a leading DASH (e.g. "-home-kran-Code"), so this must
+    -- match a literal dot, not "any char after a slash".
+    local base = path:match("([^/]+)$")
+    if base and base:sub(1, 1) ~= "." and vim.uv.fs_stat(path) then
+      dirs[#dirs + 1] = path
+    end
+  end
+
+  -- Degenerate case (empty/unknown layout): fall back to the root so we never
+  -- spawn fswatch with zero paths. Rare, and still far cheaper than -r.
+  if #dirs == 0 then
+    dirs[#dirs + 1] = projects_dir
+  end
+  return dirs
+end
+
 ---Spawn inotifywait, writing its own output to `log_path` via --outfile.
 local function spawn_inotifywait(projects_dir, log_path)
   return vim.uv.spawn("inotifywait", {
@@ -693,15 +727,23 @@ local function spawn_inotifywait(projects_dir, log_path)
 end
 
 ---Spawn fswatch, redirecting its stdout (bare path per line) to `log_path`.
-local function spawn_fswatch(projects_dir, log_path)
+---Watches each dir in `dirs` non-recursively (no -r), so fswatch never walks the
+---whole tree to build its watch list. See list_watch_dirs for how dirs is built.
+local function spawn_fswatch(dirs, log_path)
   local fd = vim.uv.fs_open(log_path, "w", tonumber("644", 8))
   if not fd then
     return nil
   end
 
+  -- fswatch accepts multiple path arguments; without -r each is watched as-is.
+  local args = { "-l", "0.3", "--event", "Updated" }
+  for _, dir in ipairs(dirs) do
+    args[#args + 1] = dir
+  end
+
   local handle, pid = vim.uv.spawn("fswatch", {
     -- -l 0.3: coalesce writes within 300ms to avoid duplicate events.
-    args = { "-r", "-l", "0.3", "--event", "Updated", projects_dir },
+    args = args,
     stdio = { nil, fd, nil },
   }, on_inotify_exit)
 
@@ -781,9 +823,13 @@ function M.start()
 
   local handle, pid
   if backend == "inotifywait" then
+    -- inotifywait handles recursion in the kernel; spawning is cheap. Unchanged.
     handle, pid = spawn_inotifywait(projects_dir, M.inotify_log)
   else
-    handle, pid = spawn_fswatch(projects_dir, M.inotify_log)
+    -- fswatch: watch only the dirs that directly hold session JSONLs, non-recursive.
+    local dirs = list_watch_dirs(projects_dir)
+    utils.log("fswatch watching " .. #dirs .. " dir(s)", vim.log.levels.DEBUG)
+    handle, pid = spawn_fswatch(dirs, M.inotify_log)
   end
 
   if not handle then
