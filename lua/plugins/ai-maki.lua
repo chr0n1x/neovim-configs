@@ -406,7 +406,7 @@ return {
       {
         "<leader>cu",
         function()
-          require("claude-decorators.telescope-history-picker").pick()
+          require("harness-decorators.telescope-history-picker").pick()
         end,
         desc = "view list of changes maki made.",
         mode = { "n" },

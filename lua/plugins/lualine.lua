@@ -75,7 +75,7 @@ return {
     -- Custom component: show pinned Claude session slug or spinner.
     table.insert(opts.sections.lualine_x, {
       function()
-        local ok, decorators = pcall(require, "claude-decorators")
+        local ok, decorators = pcall(require, "harness-decorators")
         if not ok then
           return ""
         end

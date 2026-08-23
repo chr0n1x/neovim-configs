@@ -1,6 +1,9 @@
-local sidecar = require("claude-decorators.sidecar")
-local utils = require("claude-decorators.utils")
+local sidecar = require("harness-decorators.sidecar")
+local utils = require("harness-decorators.utils")
 
+-- Handles the ClaudeAutoFollowEdit autocmd: opens the edited buffer in an
+-- adjacent window and jumps to the exact edit line. Harness-agnostic: it only
+-- consumes the normalized change events the watcher fires.
 local M = {}
 
 ---Set true while a jump is in flight so the TermLeave guard knows to restore insert mode.
@@ -11,13 +14,6 @@ M.jump_win = nil
 
 ---Edit sources keyed by session ID. Each value is a list of records.
 M.edit_sources = {}
-
----Check if the currently focused window is a terminal buffer (the Claude terminal).
-local function is_terminal_focused()
-  local win = vim.api.nvim_get_current_win()
-  local buf = vim.api.nvim_win_get_buf(win)
-  return vim.api.nvim_buf_get_option(buf, "buftype") == "terminal"
-end
 
 ---Find a non-float window with a real file buffer.
 local function find_adjacent_window()
@@ -67,11 +63,20 @@ local function jump_to_edit(data, file_path)
   local line = data.starting_line and tonumber(data.starting_line)
 
   -- Load the buffer without switching the active window or touching terminal mode.
-  -- bufadd creates the buffer entry; bufload reads the file (fires BufRead/BufReadPost
-  -- for filetype/syntax/LSP setup). Neither changes the current window.
+  -- The harness just wrote the file on disk, so re-read it even if the buffer is
+  -- already loaded. bufadd creates the entry; checktime detects the external change;
+  -- bufload re-reads from disk (the agent's version wins). Neither changes the window.
   local bufnr = vim.fn.bufadd(file_path)
-  if not vim.api.nvim_buf_is_loaded(bufnr) then
-    vim.fn.bufload(bufnr)
+  if vim.uv.fs_stat(file_path) then
+    pcall(vim.api.nvim_buf_call, bufnr, function()
+      vim.cmd.checktime()
+    end)
+    -- Always reload for loaded buffers: checktime alone only marks the buffer as
+    -- externally changed; it does NOT re-read the file. Without bufload the buffer
+    -- keeps stale (shorter) content and the target line can be out of range.
+    if vim.api.nvim_buf_is_loaded(bufnr) then
+      pcall(vim.fn.bufload, bufnr)
+    end
   end
 
   -- Switch the target window to show this buffer. Suppress autocmds during the switch:
@@ -92,12 +97,17 @@ local function jump_to_edit(data, file_path)
     if not vim.api.nvim_win_is_valid(win) then
       return
     end
+    -- Re-read the line count at set-time (not cached): the buffer may have been
+    -- reloaded since jump_to_edit started. Clamp to [1, max] and wrap in pcall
+    -- so a race between reload and cursor-set can never throw into the timer.
     if line then
-      local max_line = vim.api.nvim_buf_line_count(bufnr)
-      vim.api.nvim_win_set_cursor(win, { math.max(1, math.min(line, max_line)), 0 })
-    end
-    if is_terminal_focused() then
-      vim.cmd.startinsert()
+      local ok, err = pcall(vim.api.nvim_win_set_cursor, win, {
+        math.max(1, math.min(line, vim.api.nvim_buf_line_count(bufnr))),
+        0,
+      })
+      if not ok then
+        utils.log("cursor set failed: " .. tostring(err), vim.log.levels.WARN)
+      end
     end
   end, 100)
 end
@@ -186,10 +196,6 @@ function M.on_edit(args)
   store_edit_source(args.data)
 
   vim.defer_fn(function()
-    -- Skip jumping if focus is not on the Claude terminal.
-    if not is_terminal_focused() then
-      return
-    end
     jump_to_edit(args.data, file_path)
   end, 500)
 end
@@ -200,9 +206,6 @@ function M.on_diff_closed(args)
     return
   end
   if not args.data.reason:find("save") then
-    return
-  end
-  if not is_terminal_focused() then
     return
   end
   M.on_edit(args)
@@ -228,12 +231,15 @@ function M.create_jump_autocmds(group)
   vim.api.nvim_create_autocmd("TermLeave", {
     group = group,
     callback = function()
-      if _jump_active and is_terminal_focused() then
-        vim.schedule(function()
-          if _jump_active then
-            vim.cmd.startinsert()
-          end
-        end)
+      if _jump_active then
+        local buf = vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win())
+        if vim.api.nvim_buf_get_option(buf, "buftype") == "terminal" then
+          vim.schedule(function()
+            if _jump_active then
+              vim.cmd.startinsert()
+            end
+          end)
+        end
       end
     end,
   })

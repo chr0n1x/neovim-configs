@@ -1,4 +1,4 @@
-local sidecar = require("claude-decorators.sidecar")
+local sidecar = require("harness-decorators.sidecar")
 
 local M = {}
 
@@ -124,18 +124,18 @@ end
 
 ---Open a Telescope picker showing all recorded edit sources.
 function M.pick()
-  local parser = require("claude-decorators.jsonl-parser")
+  local parser = require("harness-decorators.jsonl-parser")
+  local utils = require("harness-decorators.utils")
   if parser.harness == "maki" then
-    vim.notify("[claude.nvim] Change history is not supported with the maki harness", vim.log.levels.WARN)
+    utils.log("change history is not supported with the maki harness", vim.log.levels.WARN)
     return
   end
 
-  local edit_jump = require("claude-decorators.edit-jump")
-  local inotify = require("claude-decorators.inotify-watcher")
-  local utils = require("claude-decorators.utils")
+  local edit_jump = require("harness-decorators.edit-jump")
+  local watcher = require("harness-decorators.watcher")
 
   -- Determine current session from the pinned JSONL path (source of truth).
-  local pinned_path = inotify.pinned_jsonl_path
+  local pinned_path = watcher.pinned_jsonl_path
   local current_session = utils.extract_session_id(pinned_path) or nil
 
   -- If we can't determine the current session, fall back to the most recent

@@ -1,8 +1,8 @@
 local M = {}
 
-local utils = require("claude-decorators.utils")
-local watcher = require("claude-decorators.inotify-watcher")
-local edit_jump = require("claude-decorators.edit-jump")
+local utils = require("harness-decorators.utils")
+local watcher = require("harness-decorators.watcher")
+local edit_jump = require("harness-decorators.edit-jump")
 
 ---Callback for VimLeavePre autocmd.
 local function on_vim_leave()
@@ -26,6 +26,18 @@ M.setup_auto_follow = function()
   watcher.ignored_jsonl_paths = {}
 
   watcher.start()
+
+  if utils.harness == "maki" then
+    -- Maki's floating terminal loses focus back to the code window after each
+    -- edit, so the buffer-jump-on-edit feature is unreliable. Tell the user
+    -- once per session instead of silently not jumping.
+    vim.schedule(function()
+      utils.log(
+        "file auto-follow (buffer jump on agent edits) is not supported; notifications only",
+        vim.log.levels.WARN
+      )
+    end)
+  end
 end
 
 M.setup = function()

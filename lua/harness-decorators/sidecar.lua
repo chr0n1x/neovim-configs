@@ -1,11 +1,13 @@
+-- Sidecar event log: mirrors pinned session JSONL lines to a per-nvim file.
+-- TODO: verify sidecar receives maki tool result lines during live auto-follow (line 2).
+local utils = require("harness-decorators.utils")
 local M = {}
 
 ---Get the USER env var, warn and return "unknown-user" if not set.
 local function get_user()
   local user = os.getenv("USER")
   if not user then
-    -- Use vim.notify directly to avoid circular dep on utils.
-    vim.notify("[claude.nvim] USER env var not set, using 'unknown-user'", vim.log.levels.WARN)
+    utils.log("USER env var not set, using 'unknown-user'", vim.log.levels.WARN)
     return "unknown-user"
   end
   return user
@@ -103,6 +105,7 @@ function M.lookup(sidecar_path, uuid, timestamp, id)
     return 0
   end
 
+  -- pick the entry closest to the requested timestamp
   local best = nil
   local best_score = -1
   local ts_str = tostring(timestamp)

@@ -15,7 +15,7 @@ The goal of having a separate repo is so that I can manage the two configuration
 
 ![claude work history](/docs/assets/claude-work-history.gif?raw=true)
 
-Custom plugin (`lua/claude-decorators/`) that adds:
+Custom plugin (`lua/harness-decorators/`) that adds:
 
 - **Auto-follow** — automatically jumps to edited files when Claude Code modifies them on disk. Watches for file changes via `inotifywait` (Linux) or `fswatch` (macOS), no manual buffer switching needed.
 - **Change history picker** — browse all edits Claude made in the current session (`<leader>cu`). Select an entry to jump to it, with a diff preview _without `git`_. Useful for reviewing changes before commit, or a list of changes that the AI flip-flops between when testing things.
