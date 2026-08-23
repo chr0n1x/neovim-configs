@@ -182,11 +182,31 @@ local function parse_tool_use_result(entry, line_number)
     operation = "Edit"
   end
 
-  -- Extract starting line from structuredPatch.
-  -- "create" events don't have line info — they create a new file.
+  -- Compute the line of the first changed line from structuredPatch. The hunk
+  -- header's newStart points at the first CONTEXT line (~3 lines above the
+  -- change), so walk the hunk: context and added lines advance the new-file
+  -- position, deleted lines do not. This lands exactly on the change for both
+  -- additions and deletions (for a pure deletion the target may no longer exist
+  -- after the edit; edit-jump clamps to the buffer length).
   local starting_line = nil
-  if tur.structuredPatch and tur.structuredPatch[1] then
-    starting_line = tur.structuredPatch[1].newStart or tur.structuredPatch[1].oldStart
+  if tur.structuredPatch then
+    for _, hunk in ipairs(tur.structuredPatch) do
+      if type(hunk) == "table" and type(hunk.lines) == "table" then
+        local pos = hunk.newStart or 0
+        for _, l in ipairs(hunk.lines) do
+          if type(l) == "string" then
+            if l:sub(1, 1) == "+" or l:sub(1, 1) == "-" then
+              starting_line = pos
+              break
+            end
+            pos = pos + 1 -- context line: advance new-file position
+          end
+        end
+        if starting_line then
+          break
+        end
+      end
+    end
   end
 
   -- Build a delta string for logging.

@@ -55,12 +55,19 @@ end
 
 ---Perform the actual jump logic.
 local function jump_to_edit(data, file_path)
+  -- No line number means we can't place the cursor meaningfully (early tool_use
+  -- events and Create events carry none), so don't swap the window at all.
+  -- When present, starting_line already points at the changed line: the parser
+  -- walks the hunk past its leading context lines.
+  local line = tonumber(data.starting_line)
+  if not line then
+    return
+  end
+
   local win = get_jump_win()
   if not win then
     return
   end
-
-  local line = data.starting_line and tonumber(data.starting_line)
 
   -- Load the buffer without switching the active window or touching terminal mode.
   -- The harness just wrote the file on disk, so re-read it even if the buffer is
@@ -98,16 +105,13 @@ local function jump_to_edit(data, file_path)
       return
     end
     -- Re-read the line count at set-time (not cached): the buffer may have been
-    -- reloaded since jump_to_edit started. Clamp to [1, max] and wrap in pcall
-    -- so a race between reload and cursor-set can never throw into the timer.
-    if line then
-      local ok, err = pcall(vim.api.nvim_win_set_cursor, win, {
-        math.max(1, math.min(line, vim.api.nvim_buf_line_count(bufnr))),
-        0,
-      })
-      if not ok then
-        utils.log("cursor set failed: " .. tostring(err), vim.log.levels.WARN)
-      end
+    -- reloaded since jump_to_edit started. clamp_line keeps the target in
+    -- [1, max] so a race between reload and cursor-set can never throw into
+    -- the timer.
+    local target = utils.clamp_line(line, vim.api.nvim_buf_line_count(bufnr))
+    local ok, err = pcall(vim.api.nvim_win_set_cursor, win, { target, 0 })
+    if not ok then
+      utils.log("cursor set failed: " .. tostring(err), vim.log.levels.WARN)
     end
   end, 100)
 end

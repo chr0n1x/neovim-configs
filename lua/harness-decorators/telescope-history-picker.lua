@@ -1,4 +1,5 @@
 local sidecar = require("harness-decorators.sidecar")
+local utils = require("harness-decorators.utils")
 
 local M = {}
 
@@ -125,7 +126,6 @@ end
 ---Open a Telescope picker showing all recorded edit sources.
 function M.pick()
   local parser = require("harness-decorators.jsonl-parser")
-  local utils = require("harness-decorators.utils")
   if parser.harness == "maki" then
     utils.log("change history is not supported with the maki harness", vim.log.levels.WARN)
     return
@@ -221,6 +221,8 @@ function M.pick()
 
         local entry = selection.value
         local file_path = entry.file_path
+        -- starting_line already points at the changed line (same value edit-jump
+        -- uses for live auto-follow); clamp it once the buffer is loaded.
         local line = entry.starting_line
 
         -- Use edit-jump's jump window if available, otherwise just :edit.
@@ -234,9 +236,9 @@ function M.pick()
           -- Set cursor in the jump window after edit.
           if vim.api.nvim_win_is_valid(win) then
             local buf = vim.api.nvim_win_get_buf(win)
-            if line then
-              local max_line = vim.api.nvim_buf_line_count(buf)
-              vim.api.nvim_win_set_cursor(win, { math.min(line, math.max(1, max_line)), 0 })
+            local target = utils.clamp_line(line, vim.api.nvim_buf_line_count(buf))
+            if target then
+              vim.api.nvim_win_set_cursor(win, { target, 0 })
             end
           end
         else

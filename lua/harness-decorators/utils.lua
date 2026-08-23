@@ -104,6 +104,20 @@ function M.is_noise(file_path)
     or file_path:match("^/proc/")
 end
 
+---Clamp a target line to [1, max_line] for cursor placement. Guards against
+---deletions that removed the line (target past EOF) or empty buffers; the
+---parser's starting_line already points at the changed line.
+---@param starting_line number? Line from the change event
+---@param max_line number Buffer/file line count to clamp against
+---@return number? Line to place the cursor at, or nil if no starting_line
+function M.clamp_line(starting_line, max_line)
+  if type(starting_line) ~= "number" then
+    return nil
+  end
+  local clamped = math.min(starting_line, max_line)
+  return math.max(1, clamped)
+end
+
 ---Extract the session ID from a JSONL file path.
 ---@param jsonl_path string|nil
 ---@return string|nil

@@ -25,7 +25,7 @@ the functions below. Implementations: `claude/init.lua`, `maki/init.lua`.
 
 - `file_path` (string): absolute path of the edited file. Required.
 - `operation` (string): `"Edit"` or `"Create"`.
-- `starting_line` (number?): 1-based line of the edit; nil for early events that lack line info.
+- `starting_line` (number?): 1-based line of the first changed line, positioned in the file as it exists after the edit. Nil for early events that lack line info; consumers must not jump when nil. May point past EOF for pure deletions - consumers clamp to buffer length.
 - `dedup_key` (string?): deduplicates repeated autocmds for the same logical edit.
 - `delta`, `source_line`, `event_uuid`, `event_timestamp`, `event_id`: optional, harness-specific extras stored in the edit history.
 
