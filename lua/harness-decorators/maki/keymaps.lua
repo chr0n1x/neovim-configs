@@ -7,16 +7,6 @@
 -- claudecode's server-backed ones.
 
 -- ==========================================================================
--- VISUAL-SELECTION ANCHOR CAPTURE
--- ==========================================================================
-
--- Capture the start line when visual mode begins. We hook the v/V/Ctrl-v keys
--- directly (keymaps are reliable here; a ModeChanged autocmd never fired, and
--- the '< mark reads stale), stashing where the selection began. Declared up top
--- because send_visual_selection (below) reads it as an upvalue.
-local _vis_start_line = nil
-
--- ==========================================================================
 -- CONTEXT INJECTION
 -- ==========================================================================
 
@@ -34,18 +24,67 @@ local function find_maki_terminal_win()
   end
 end
 
+---Shorten a path for display. Maki reads files itself, so the reference just needs
+---to be unambiguous and short. Preference order:
+---  1. cwd-relative (e.g. "lua/harness-decorators/maki/keymaps.lua") when the file is
+---     under the current working dir - shortest and matches how you'd type it.
+---  2. ~ collapse (e.g. "~/Code/kran/...") when under $HOME but not under cwd.
+---  3. the full path otherwise.
+---@param file_path string
+---@return string
+local function shorten_path(file_path)
+  -- 1. cwd-relative. Strip the cwd prefix when the file lives under it, yielding a
+  --    short relative path like "lua/harness-decorators/maki/keymaps.lua". Only accept
+  --    when there's actually a remainder (a bare filename under cwd is fine too).
+  local cwd = vim.uv.cwd()
+  if cwd and cwd ~= "" then
+    local bare_cwd = cwd:gsub("/+$", "")
+    if bare_cwd ~= "" then
+      local prefix = bare_cwd .. "/"
+      if file_path:sub(1, #prefix) == prefix then
+        local rel = file_path:sub(#prefix + 1)
+        if rel ~= "" then
+          return rel
+        end
+      end
+    end
+  end
+
+  -- 2. ~ collapse for anything under $HOME.
+  local home = vim.env.HOME
+  if home and home ~= "" then
+    local bare_home = home:gsub("/+$", "")
+    if bare_home ~= "" then
+      if file_path == bare_home then
+        return "~"
+      end
+      -- Only shorten when the path is home + "/" + more, so /home/kran2/foo is NOT
+      -- shortened when HOME=/home/kran (the char right after home must be a slash).
+      local prefix = bare_home .. "/"
+      if file_path:sub(1, #prefix) == prefix then
+        return "~/" .. file_path:sub(#prefix + 1)
+      end
+    end
+  end
+
+  -- 3. Full path.
+  return file_path
+end
+
 ---Build a path-labeled snippet. Maki reads files itself, so context is always just
----a path reference: <path>, <path>:<line>, or <path>:<line1>-<line2>.
+---a path reference. Line ranges use the same #L<start>-<end> form claude-code uses
+---(e.g. <path>#L31-32), so references look consistent across both harnesses.
 ---@param file_path string
 ---@param start_line? integer
 ---@param end_line? integer
 ---@return string
 local function build_context_text(file_path, start_line, end_line)
+  file_path = shorten_path(file_path)
   if not (start_line and end_line) then
     return file_path
   end
-  return start_line == end_line and (file_path .. ":" .. start_line)
-    or (file_path .. ":" .. start_line .. "-" .. end_line)
+  return start_line == end_line and (file_path .. "#L" .. start_line)
+    or (file_path .. "#L" .. start_line .. "-" .. end_line)
 end
 
 ---Write text into the maki terminal's PTY via chansend (same mechanism as
@@ -112,9 +151,15 @@ local function send_visual_selection()
   local file_path = vim.fn.expand("%:p")
 
   if vim.fn.mode():match("[vV]") then
-    -- End is the cursor's line (always live); start is where visual began.
-    local end_line = vim.fn.line(".")
-    local start_line = _vis_start_line or end_line
+    -- Exit visual first so the '< / '> marks are set to the true selection
+    -- bounds. A captured anchor (where v was pressed) is wrong for text-object
+    -- motions like vap, where the selection starts before the entry point; and
+    -- the marks are only written when visual mode ends, so we must leave it.
+    -- feedkeys with 'x' fully consumes the <Esc> so no stray byte leaks into
+    -- the terminal's insert mode after startinsert() below.
+    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "x", false)
+    local start_line = vim.fn.line("'<")
+    local end_line = vim.fn.line("'>")
     if start_line > end_line then
       start_line, end_line = end_line, start_line
     end
@@ -183,22 +228,6 @@ vim.api.nvim_create_user_command("MakiTreeAdd", function()
     type_into_terminal(build_context_text(path))
   end
 end, {})
-
----Record the cursor line as the visual anchor when v/V/Ctrl-v is pressed.
-local function capture_vis_start()
-  _vis_start_line = vim.fn.line(".")
-end
-
--- Wrap v/V/Ctrl-v: record the cursor line, then re-issue the original key so
--- normal visual behavior is unchanged.
-for _, key in ipairs({ "v", "V", "<C-v>" }) do
-  vim.keymap.set("n", key, function()
-    capture_vis_start()
-    -- Re-issue the original visual-mode key (Ctrl-v is byte 0x16).
-    local raw = key == "<C-v>" and "\22" or key
-    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(raw, true, false, true), "n", false)
-  end, { desc = "Visual (capture start for Maki)" })
-end
 
 -- ==========================================================================
 -- PER-KEY ENTRIES (consumed by ai-harness.lua's consolidated keys table)
