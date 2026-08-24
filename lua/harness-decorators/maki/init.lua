@@ -64,6 +64,109 @@ function M.inotify_events()
   return "close_write,moved_to,modify"
 end
 
+---Sidecar filename for a session (without the .jsonl extension).
+---@param session_id string
+---@return string
+function M.sidecar_name(session_id)
+  return "maki-events-session-" .. session_id
+end
+
+---Score a sidecar event by how much diff data it contains. Higher = richer.
+---@param ev table Decoded JSONL line
+---@return integer score
+function M.score_event(ev)
+  -- Maki Diff records: full-file before/after in d.Diff.
+  if ev.d and ev.d.Diff and ev.d.Diff.before and ev.d.Diff.after then
+    return 3
+  end
+  return 0
+end
+
+---Compute a unified-style diff from two full-file text blobs. Returns lines
+---in the same "%5d  <prefix><content>" format used by the previewer.
+---@param before string Full file content before edit
+---@param after string Full file content after edit
+---@return string[] numbered diff lines
+local function diff_full_files(before, after)
+  local before_lines = vim.split(before, "\n", { plain = true })
+  local after_lines = vim.split(after, "\n", { plain = true })
+
+  -- Find common prefix.
+  local prefix_len = 0
+  local max_prefix = math.min(#before_lines, #after_lines)
+  for i = 1, max_prefix do
+    if before_lines[i] == after_lines[i] then
+      prefix_len = i
+    else
+      break
+    end
+  end
+
+  -- Find common suffix (not overlapping with prefix).
+  local suffix_len = 0
+  local max_suffix = math.min(#before_lines, #after_lines) - prefix_len
+  for i = 1, max_suffix do
+    if before_lines[#before_lines - i + 1] == after_lines[#after_lines - i + 1] then
+      suffix_len = i
+    else
+      break
+    end
+  end
+
+  -- Build the numbered diff.
+  local numbered = {}
+  -- Context: common prefix (show up to 3 lines before the change).
+  local ctx_start = math.max(1, prefix_len - 2)
+  for i = ctx_start, prefix_len do
+    table.insert(numbered, string.format("%5d  %s", i, " " .. after_lines[i]))
+  end
+
+  -- Deletions (old lines between prefix and suffix).
+  for i = prefix_len + 1, #before_lines - suffix_len do
+    table.insert(numbered, string.format("%5d  %s", i, "-" .. before_lines[i]))
+  end
+
+  -- Additions (new lines between prefix and suffix).
+  for i = prefix_len + 1, #after_lines - suffix_len do
+    table.insert(numbered, string.format("%5d  %s", i, "+" .. after_lines[i]))
+  end
+
+  -- Context: common suffix (show up to 3 lines after the change).
+  local ctx_end = math.min(3, suffix_len)
+  for i = 1, ctx_end do
+    local new_idx = #after_lines - suffix_len + i
+    table.insert(numbered, string.format("%5d  %s", new_idx, " " .. after_lines[new_idx]))
+  end
+
+  return numbered
+end
+
+---Extract diff text from a matched sidecar event (maki dialect).
+---@param ev table|nil Decoded JSONL line
+---@return string
+function M.extract_diff(ev)
+  if not ev then
+    return "(no diff data available)"
+  end
+
+  -- Maki Diff records: full-file before/after in d.Diff.
+  local maki_diff = ev.d and ev.d.Diff
+  if maki_diff and maki_diff.before and maki_diff.after then
+    local before_lines = vim.split(maki_diff.before, "\n", { plain = true })
+    local after_lines = vim.split(maki_diff.after, "\n", { plain = true })
+    local parts = {}
+    table.insert(parts, string.format("%d -> %d lines", #before_lines, #after_lines))
+    table.insert(parts, "") -- blank separator before diff
+    local numbered = diff_full_files(maki_diff.before, maki_diff.after)
+    if #numbered > 0 then
+      table.insert(parts, table.concat(numbered, "\n"))
+    end
+    return table.concat(parts, "\n")
+  end
+
+  return "(event matched but contains no diff data)"
+end
+
 ---Called by the watcher when it first pins this session. Maki writes its JSONL in
 ---atomic bursts (write-to-temp + rename), so an edit made in the same burst as the
 ---pin sits below the "current size" baseline and would be missed. Read the last

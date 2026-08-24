@@ -27,18 +27,6 @@ M.setup_auto_follow = function()
   watcher.pin_notified = false
 
   watcher.start()
-
-  if utils.harness == "maki" then
-    -- Maki's floating terminal loses focus back to the code window after each
-    -- edit, so the buffer-jump-on-edit feature is unreliable. Tell the user
-    -- once per session instead of silently not jumping.
-    vim.schedule(function()
-      utils.log(
-        "file auto-follow (buffer jump on agent edits) is not supported; notifications only",
-        vim.log.levels.WARN
-      )
-    end)
-  end
 end
 
 M.setup = function()

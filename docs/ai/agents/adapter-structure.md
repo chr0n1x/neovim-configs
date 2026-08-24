@@ -22,6 +22,9 @@ the functions below. Implementations: `claude/init.lua`, `maki/init.lua`.
 | `extract_cwd(lines)` | Dialect-specific cwd extraction, used by `session_ownership`. |
 | `on_pin(jsonl_path, file_size)` | Called when the watcher first pins a session. Lets the harness recover in-flight edits (maki does, because it writes its JSONL in atomic write+rename bursts) by scanning a tail and calling `watcher.process_recovered_lines(lines, offset)`. Must return the new baseline byte offset (where live scanning resumes); return `file_size` to recover nothing. Absent hook = no recovery, baseline stays at `file_size`. |
 | `inotify_events()` | Returns the full inotify event string the watcher subscribes to (e.g. `"close_write,moved_to"`). Absent hook = default `close_write,moved_to`. Maki returns `close_write,moved_to,modify` because it keeps its JSONL open and appends (firing modify, not close_write). |
+| `sidecar_name(session_id)` | Returns the sidecar filename (without `.jsonl`) for a session. Used by `sidecar.path()` to build `/tmp/nvim.${USER}/${pid}-<name>.jsonl`. Each harness controls its own naming convention (e.g. `claude-events-session-<id>`, `maki-events-session-<id>`). |
+| `score_event(ev)` | Scores a decoded sidecar event by how much diff data it contains (higher = richer). Used by `sidecar.lookup()` to pick the best matching line. |
+| `extract_diff(ev)` | Renders a decoded sidecar event as numbered diff text for the previewer. Each harness knows its own dialect (claude: structuredPatch/newString/content; maki: full-file before/after in d.Diff). |
 
 ## Normalized change event fields
 

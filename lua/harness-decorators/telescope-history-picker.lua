@@ -4,11 +4,11 @@ local utils = require("harness-decorators.utils")
 local M = {}
 
 ---Highlight group names for preview regions.
-local SIDECAR_DATE_HL = "ClaudeSidecarDate"
-local SIDECAR_PATH_HL = "ClaudeSidecarPath"
-local SIDECAR_DIFF_NUM = "ClaudeSidecarDiffNum"
-local SIDECAR_DIFF_ADD = "ClaudeSidecarDiffAdd"
-local SIDECAR_DIFF_DEL = "ClaudeSidecarDiffDel"
+local SIDECAR_DATE_HL = "SidecarDate"
+local SIDECAR_PATH_HL = "SidecarPath"
+local SIDECAR_DIFF_NUM = "SidecarDiffNum"
+local SIDECAR_DIFF_ADD = "SidecarDiffAdd"
+local SIDECAR_DIFF_DEL = "SidecarDiffDel"
 
 ---Register all highlight groups if they don't exist yet.
 local function ensure_hl()

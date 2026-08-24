@@ -50,6 +50,111 @@ function M.is_same_file_reset(cmd)
   return cmd == "/clear"
 end
 
+---Sidecar filename for a session (without the .jsonl extension).
+---@param session_id string
+---@return string
+function M.sidecar_name(session_id)
+  return "claude-events-session-" .. session_id
+end
+
+---Score a sidecar event by how much diff data it contains. Higher = richer.
+---@param ev table Decoded JSONL line
+---@return integer score
+function M.score_event(ev)
+  if ev.toolUseResult then
+    local tur = ev.toolUseResult
+    if tur.structuredPatch then
+      return 3
+    end
+    if tur.newString then
+      return 2
+    end
+    if tur.content then
+      return 1
+    end
+  end
+  if ev.message and ev.message.content then
+    for _, item in ipairs(ev.message.content) do
+      if item.type == "tool_use" and item.input then
+        if item.input.new_string then
+          return 2
+        end
+        if item.input.content then
+          return 1
+        end
+      end
+    end
+  end
+  return 0
+end
+
+---Extract diff text from a matched sidecar event (claude dialect).
+---@param ev table|nil Decoded JSONL line
+---@return string
+function M.extract_diff(ev)
+  if not ev then
+    return "(no diff data available)"
+  end
+
+  local tur = ev.toolUseResult
+  if tur and tur.structuredPatch and tur.structuredPatch[1] then
+    local sp = tur.structuredPatch[1]
+    local parts = {}
+    if sp.oldLines or sp.newLines then
+      table.insert(parts, string.format("%d -> %d lines", sp.oldLines or 0, sp.newLines or 0))
+    end
+    table.insert(parts, "") -- blank separator before diff
+    -- The diff content lives in the `lines` array (+/-/space prefixed).
+    -- Walk it tracking line numbers: additions advance the new counter,
+    -- deletions advance the old counter, context advances both.
+    if sp.lines and #sp.lines > 0 then
+      local old_ln = sp.oldStart or 0
+      local new_ln = sp.newStart or 0
+      local numbered = {}
+      for _, l in ipairs(sp.lines) do
+        local first = l:sub(1, 1)
+        if first == "+" then
+          table.insert(numbered, string.format("%5d  %s", new_ln, l))
+          new_ln = new_ln + 1
+        elseif first == "-" then
+          table.insert(numbered, string.format("%5d  %s", old_ln, l))
+          old_ln = old_ln + 1
+        else
+          -- Context line: show new_ln so numbers are contiguous after additions.
+          table.insert(numbered, string.format("%5d  %s", new_ln, l))
+          old_ln = old_ln + 1
+          new_ln = new_ln + 1
+        end
+      end
+      table.insert(parts, table.concat(numbered, "\n"))
+    end
+    return table.concat(parts, "\n")
+  end
+
+  if tur and tur.newString then
+    return tur.newString
+  end
+
+  if tur and tur.content then
+    return tur.content
+  end
+
+  if ev.message and ev.message.content then
+    for _, item in ipairs(ev.message.content) do
+      if item.type == "tool_use" and item.input then
+        if item.input.new_string then
+          return item.input.new_string
+        end
+        if item.input.content then
+          return item.input.content
+        end
+      end
+    end
+  end
+
+  return "(event matched but contains no diff data)"
+end
+
 -- ==========================================================================
 -- TERMINAL MATCHING
 -- ==========================================================================
