@@ -127,7 +127,10 @@ local term_opts = {
 }
 
 local function resolve(cmd)
-  return type(cmd) == "function" and cmd() or cmd
+  if type(cmd) == "function" then
+    return cmd()
+  end
+  return cmd
 end
 
 function M.register(name, cmd, opts)

@@ -3,7 +3,7 @@
 -- implementations live in lua/harness-decorators/<harness>/keymaps.lua; the
 -- binding strings are consolidated here into one keys table.
 local harness = os.getenv("NVIM_LLM_HARNESS") or "claude"
-if harness ~= "claude" and harness ~= "maki" then
+if harness ~= "claude" and harness ~= "maki" and harness ~= "copilot" then
   return {}
 end
 
