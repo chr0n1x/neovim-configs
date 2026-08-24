@@ -13,6 +13,10 @@ local M = {}
 ---Session pin state: which JSONL session belongs to this Neovim instance.
 M.pinned_jsonl_path = nil
 
+---True after the first visible pin notification for the current session.
+---Reset on session switch so a new session gets its own notification.
+M.pin_notified = false
+
 ---JSONL paths confirmed to NOT belong to this Neovim's session.
 M.ignored_jsonl_paths = {}
 
@@ -60,6 +64,7 @@ local function reset_session_state(old_session_id)
   M.pinned_jsonl_path = nil
   M.ignored_jsonl_paths = {}
   pending_notifications = {}
+  M.pin_notified = false
 end
 
 ---Pin to a JSONL session.
@@ -76,7 +81,12 @@ local function try_pin_session(jsonl_path)
 
   M.pinned_jsonl_path = jsonl_path
   local name = jsonl_path:match("([^/]+)%.jsonl$") or jsonl_path:match("[^/]+$")
-  utils.log("session detected " .. name, vim.log.levels.INFO)
+  if not M.pin_notified then
+    utils.log("session detected " .. name, vim.log.levels.INFO)
+    M.pin_notified = true
+  else
+    utils.log("session detected " .. name, vim.log.levels.DEBUG)
+  end
   return true
 end
 
@@ -522,7 +532,7 @@ function M.start()
     truncate:close()
   end
 
-  utils.log("starting " .. backend .. " on " .. projects_dir, vim.log.levels.INFO)
+  utils.log("starting " .. backend .. " on " .. projects_dir, vim.log.levels.DEBUG)
 
   local handle, pid
   if backend == "inotifywait" then
