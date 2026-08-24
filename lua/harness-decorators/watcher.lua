@@ -209,6 +209,14 @@ local function process_jsonl_write(jsonl_path)
   -- returns a new baseline byte offset after scanning whatever it chose to
   -- recover. Nil/absent hook = no recovery, baseline stays at file_size.
   if prev == nil then
+    -- Already pinned: record position for this new file but never re-pin.
+    -- The pin is locked until a reset command is detected in the pinned session.
+    if M.pinned_jsonl_path then
+      utils.log("pin locked; ignoring new session " .. filename, vim.log.levels.DEBUG)
+      jsonl_positions[jsonl_path] = { byte_pos = file_size, line_count = 0 }
+      return
+    end
+
     local ownership = session_ownership({}, jsonl_path)
     if ownership == "match" then
       utils.log("initial pin to " .. filename, vim.log.levels.DEBUG)
@@ -275,17 +283,8 @@ local function process_jsonl_write(jsonl_path)
       return
     end
   elseif jsonl_path ~= M.pinned_jsonl_path then
-    local ownership = session_ownership(lines, jsonl_path)
-    if ownership == "match" then
-      utils.log("session switch, re-pinning to " .. filename, vim.log.levels.DEBUG)
-      try_pin_session(jsonl_path) -- resets state, sets new pin
-    elseif ownership == "mismatch" then
-      utils.log("ignoring write from non-matching session " .. filename, vim.log.levels.DEBUG)
-      M.ignored_jsonl_paths[jsonl_path] = true
-      return
-    else
-      return
-    end
+    -- Pin is locked; ignore writes from any other session.
+    return
   end
 
   --- Pinned session: check for reset commands and process tool results --------
@@ -447,13 +446,9 @@ local function list_watch_dirs(projects_dir)
   end
 
   local dirs = {}
-  for path in vim.fs.dir(projects_dir, { depth = 1 }) do
-    -- Skip hidden entries (leading dot on the basename). Note: claude project-hash
-    -- dirs are named with a leading DASH (e.g. "-home-kran-Code"), so this must
-    -- match a literal dot, not "any char after a slash".
-    local base = path:match("([^/]+)$")
-    if base and base:sub(1, 1) ~= "." and vim.uv.fs_stat(path) then
-      dirs[#dirs + 1] = path
+  for name, ftype in vim.fs.dir(projects_dir, { depth = 1 }) do
+    if ftype == "directory" and name:sub(1, 1) ~= "." then
+      dirs[#dirs + 1] = projects_dir .. "/" .. name
     end
   end
 
