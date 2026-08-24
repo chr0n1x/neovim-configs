@@ -2,9 +2,6 @@ local deps = {
   "nvim-web-devicons",
 }
 
-if os.getenv("NVIM_MINUET_ENABLED") == "true" then
-  table.insert(deps, { "milanglacier/minuet-ai.nvim", lazy = false })
-end
 
 local spinner = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 
@@ -93,17 +90,5 @@ return {
       padding = { left = 1, right = 1 },
     })
 
-    if os.getenv("NVIM_MINUET_ENABLED") == "true" then
-      table.insert(opts.sections.lualine_x, {
-        require("minuet.lualine"),
-        -- the follwing is the default configuration
-        -- the name displayed in the lualine. Set to "provider", "model" or "both"
-        -- display_name = 'both',
-        -- separator between provider and model name for option "both"
-        -- provider_model_separator = ':',
-        -- whether show display_name when no completion requests are active
-        -- display_on_idle = false,
-      })
-    end
   end,
 }

@@ -86,10 +86,6 @@ return {
       ["<C-Space>"] = cmp.mapping.complete(),
     }
 
-    if os.getenv("NVIM_MINUET_ENABLED") == "true" then
-      mapping_cfg["<A-y>"] = require("minuet").make_cmp_map()
-    end
-
     local setup_cfg = {
       sources = sources_list,
       sorting = {
