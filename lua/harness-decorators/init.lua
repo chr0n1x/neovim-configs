@@ -10,7 +10,7 @@ local function on_vim_leave()
 end
 
 M.setup_auto_follow = function()
-  local group = vim.api.nvim_create_augroup("ClaudeAutoFollow", { clear = true })
+  local group = vim.api.nvim_create_augroup("HarnessAutoFollow", { clear = true })
 
   edit_jump.create_jump_autocmds(group)
 

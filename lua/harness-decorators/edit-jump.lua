@@ -1,7 +1,7 @@
 local sidecar = require("harness-decorators.sidecar")
 local utils = require("harness-decorators.utils")
 
--- Handles the ClaudeAutoFollowEdit autocmd: opens the edited buffer in an
+-- Handles the HarnessEdit autocmd: opens the edited buffer in an
 -- adjacent window and jumps to the exact edit line. Harness-agnostic: it only
 -- consumes the normalized change events the watcher fires.
 local M = {}
@@ -204,7 +204,7 @@ function M.on_edit(args)
   end, 500)
 end
 
----Callback for ClaudeCodeDiffClosed autocmd.
+---Callback for ClaudeCodeDiffClosed autocmd (fired by coder/claudecode.nvim).
 function M.on_diff_closed(args)
   if not args.data or not args.data.reason then
     return
@@ -217,6 +217,7 @@ end
 
 ---Create the autocmds that trigger jump behavior. Call from init setup.
 function M.create_jump_autocmds(group)
+  -- ClaudeCodeDiffClosed is fired by coder/claudecode.nvim when its diff view closes.
   vim.api.nvim_create_autocmd("User", {
     group = group,
     pattern = "ClaudeCodeDiffClosed",
@@ -225,7 +226,7 @@ function M.create_jump_autocmds(group)
 
   vim.api.nvim_create_autocmd("User", {
     group = group,
-    pattern = "ClaudeAutoFollowEdit",
+    pattern = "HarnessEdit",
     callback = M.on_edit,
   })
 

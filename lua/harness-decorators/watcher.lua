@@ -165,7 +165,7 @@ function M.process_recovered_lines(lines, line_offset)
           utils.mark_key_seen(dedup_key)
         end
         vim.api.nvim_exec_autocmds("User", {
-          pattern = "ClaudeAutoFollowEdit",
+          pattern = "HarnessEdit",
           data = {
             file_path = change_info.file_path,
             operation = change_info.operation,
@@ -335,7 +335,7 @@ local function process_jsonl_write(jsonl_path)
           else
             utils.log(fp .. line_str)
           end
-          utils.log("firing autocmd ClaudeAutoFollowEdit @ " .. fp .. line_str, vim.log.levels.DEBUG)
+          utils.log("firing autocmd HarnessEdit @ " .. fp .. line_str, vim.log.levels.DEBUG)
         else
           -- Early event (no line info yet): show a provisional notification
           -- that the tool result will replace once it lands.
@@ -345,7 +345,7 @@ local function process_jsonl_write(jsonl_path)
         end
 
         vim.api.nvim_exec_autocmds("User", {
-          pattern = "ClaudeAutoFollowEdit",
+          pattern = "HarnessEdit",
           data = {
             file_path = change_info.file_path,
             operation = change_info.operation,
