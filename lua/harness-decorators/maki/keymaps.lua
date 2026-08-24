@@ -79,7 +79,13 @@ local function type_into_terminal(text)
   local normalized = (text:gsub("\r\n", "\n"):gsub("\r", "\n"))
   local payload = normalized
   if string.find(normalized, "\n", 1, true) then
-    payload = "\27[200~" .. normalized .. "\27[201~ "
+    payload = "\27[200~" .. normalized .. "\27[201~"
+  end
+
+  -- Append a space so the next thing typed doesn't glue onto the inserted text,
+  -- unless the text already ends in whitespace (e.g. MakiTreeAdd's "\n" separator).
+  if not normalized:match("[%s ]$") then
+    payload = payload .. " "
   end
 
   local ok_send, written = pcall(vim.fn.chansend, chan, payload)
