@@ -49,6 +49,72 @@ end
 ---per-project subdirs), so fswatch should watch the dir itself, non-recursively.
 M.flat_sessions_dir = true
 
+---Trailing bytes of a freshly-pinned session to scan on pin. Comfortably holds
+---several full-file Diff records, capped so a long resumed session doesn't replay
+---its whole history.
+local PIN_TAIL_BYTES = 16384
+
+---inotify events the watcher should subscribe to for this harness. Maki keeps its
+---session JSONL open and appends to it, which fires "modify" on each write rather
+---than "close_write". close_write+moved_to are kept for the tmp+rename pattern
+---(/compact and session rewrites). Extra events are harmless: the watcher's
+---byte-offset dedup makes a redundant poll a cheap no-op.
+---@return string
+function M.inotify_events()
+  return "close_write,moved_to,modify"
+end
+
+---Called by the watcher when it first pins this session. Maki writes its JSONL in
+---atomic bursts (write-to-temp + rename), so an edit made in the same burst as the
+---pin sits below the "current size" baseline and would be missed. Read the last
+---PIN_TAIL_BYTES, recover the very last recorded event(s) via the watcher's
+---process_recovered_lines, and return the byte offset to use as the new baseline
+---(start of the scanned region's first complete line). Returns file_size when
+---there is nothing to recover.
+---@param jsonl_path string
+---@param file_size number
+---@return number base_byte_offset
+function M.on_pin(jsonl_path, file_size)
+  local start = math.max(0, file_size - PIN_TAIL_BYTES)
+  local f = io.open(jsonl_path, "r")
+  if not f then
+    return file_size
+  end
+  f:seek("set", start)
+  local chunk = f:read(file_size - start)
+  f:close()
+  if not chunk or #chunk == 0 then
+    return file_size
+  end
+
+  -- Byte offset (absolute) of the first complete line in the tail. If we started
+  -- mid-line, skip to just after the next newline.
+  local base = start
+  if start > 0 then
+    local nl = chunk:find("\n", 1, true)
+    if not nl then
+      return file_size -- no complete line in the tail; nothing to recover
+    end
+    base = start + nl -- byte just after that newline = start of first full line
+    chunk = chunk:sub(nl + 1)
+  end
+
+  local lines = {}
+  for line in chunk:gmatch("([^\r\n]+)") do
+    lines[#lines + 1] = line
+  end
+  if #lines == 0 then
+    return file_size
+  end
+
+  -- We don't know how many lines precede the tail, so use a negative offset for
+  -- source_line (display only); dedup keys are id-based and unaffected. The
+  -- recovered events feed edit_sources and the sidecar exactly like live ones.
+  require("harness-decorators.watcher").process_recovered_lines(lines, -#lines)
+
+  return base
+end
+
 ---Maki writes a cwd -> session-id map next to its session JSONLs. Returns the
 ---session ID for `cwd`, or nil if the file is missing/unreadable.
 ---@param cwd string
@@ -143,6 +209,7 @@ end
 ---@param cmd string The reset command text (e.g. "/compact")
 ---@return boolean
 function M.is_same_file_reset(cmd)
+  -- /compact archives old turns into the same JSONL; the pin survives.
   return cmd == "/compact"
 end
 
@@ -161,18 +228,122 @@ function M.find_reset_command(_lines)
 end
 
 -- ==========================================================================
--- TOOL RESULT PARSING (STUB)
+-- TOOL RESULT PARSING
 -- ==========================================================================
 
+---Find the first divergent line between two full-file text blobs (1-indexed).
+---@param before string Full file content before edit
+---@param after string Full file content after edit
+---@return integer? starting_line 1-based line number of first change, or nil
+local function find_starting_line(before, after)
+  local before_lines = vim.split(before, "\n", { plain = true })
+  local after_lines = vim.split(after, "\n", { plain = true })
+  local max_len = math.min(#before_lines, #after_lines)
+  for i = 1, max_len do
+    if before_lines[i] ~= after_lines[i] then
+      return i
+    end
+  end
+  -- All common lines match; change is at the boundary (insertion or deletion).
+  if #before_lines ~= #after_lines then
+    return max_len + 1
+  end
+  return nil
+end
+
+---Extract change_info from a Diff out record.
+---@param entry table The decoded JSON object
+---@param line_number? integer The 1-based line number in the JSONL file
+local function parse_diff_out(entry, line_number)
+  local d = entry.d
+  if not d or not d.Diff then
+    return nil
+  end
+  local diff = d.Diff
+  local fp = diff.path
+  if not fp or utils.is_noise(fp) then
+    return nil
+  end
+
+  local starting_line = find_starting_line(diff.before, diff.after)
+  local before_count = #vim.split(diff.before, "\n", { plain = true })
+  local after_count = #vim.split(diff.after, "\n", { plain = true })
+  local delta = string.format("%d -> %d lines", before_count, after_count)
+
+  return {
+    file_path = fp,
+    operation = "Edit",
+    starting_line = starting_line,
+    delta = delta,
+    event_uuid = nil,
+    event_timestamp = nil,
+    event_id = entry.id,
+    dedup_key = "maki-out-" .. tostring(entry.id),
+    source_line = line_number,
+  }
+end
+
+---Extract change_info from a tool_use msg record (early notification).
+---@param entry table The decoded JSON object
+---@param line_number? integer The 1-based line number in the JSONL file
+local function parse_tool_use_msg(entry, line_number)
+  local d = entry.d
+  if not d or not d.content then
+    return nil
+  end
+  for _, item in ipairs(d.content) do
+    if item.type == "tool_use" and (item.name == "edit" or item.name == "multiedit") then
+      local fp = item.input and item.input.path
+      if fp and not utils.is_noise(fp) then
+        local delta = ""
+        if item.input.new_string then
+          delta = item.input.new_string:gsub("\n", "\\n"):sub(1, 60)
+        end
+        return {
+          file_path = fp,
+          operation = "Edit",
+          starting_line = nil,
+          delta = delta,
+          event_uuid = nil,
+          event_timestamp = nil,
+          event_id = item.id,
+          dedup_key = "maki-" .. tostring(item.id),
+          source_line = line_number,
+        }
+      end
+    end
+  end
+  return nil
+end
+
 ---Parse a maki JSONL line for file changes. Returns the normalized change_info
----table or nil.
----TODO(maki): implement - maki's edit/multiedit/write tool results carry a
----full-file Diff (d.Diff = {path, before, after}); derive file_path and
----starting_line from it so notifications can fire. Until then the watcher
----pins the session but reports no edits.
+---table or nil. Handles both Diff out records (full-file before/after) and
+---tool_use msg records (early notification without line info).
 ---@param line string The JSONL line text
 ---@param line_number? integer The 1-based line number in the JSONL file
-function M.parse_tool_result(_line, _line_number)
+function M.parse_tool_result(line, line_number)
+  local has_diff = line:find('"t":"out"') and line:find('"Diff"')
+  local has_tool_use = line:find('"t":"msg"') and line:find('"tool_use"')
+
+  if not has_diff and not has_tool_use then
+    return nil
+  end
+
+  local ok, entry = pcall(vim.json.decode, line)
+  if not ok or not entry then
+    return nil
+  end
+
+  -- Prefer Diff records (have starting_line from before/after diff).
+  if has_diff then
+    return parse_diff_out(entry, line_number)
+  end
+
+  -- Fallback to tool_use invocation (no line info, but catches edits early).
+  if has_tool_use then
+    return parse_tool_use_msg(entry, line_number)
+  end
+
   return nil
 end
 

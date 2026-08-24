@@ -58,7 +58,7 @@ local function make_previewer()
       ensure_hl()
 
       local e = entry.value
-      if not e.sidecar_path or not e.event_uuid then
+      if not e.sidecar_path or (not e.event_uuid and not e.event_id) then
         vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
           "(no sidecar data available for this entry)",
         })
@@ -125,12 +125,6 @@ end
 
 ---Open a Telescope picker showing all recorded edit sources.
 function M.pick()
-  local parser = require("harness-decorators.jsonl-parser")
-  if parser.harness == "maki" then
-    utils.log("change history is not supported with the maki harness", vim.log.levels.WARN)
-    return
-  end
-
   local edit_jump = require("harness-decorators.edit-jump")
   local watcher = require("harness-decorators.watcher")
 

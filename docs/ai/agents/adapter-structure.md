@@ -20,6 +20,8 @@ the functions below. Implementations: `claude/init.lua`, `maki/init.lua`.
 |---|---|
 | `flat_sessions_dir = true` (field) | Session JSONLs live at the top level of `projects_dir()`; fswatch watches that dir non-recursively instead of its subdirs. |
 | `extract_cwd(lines)` | Dialect-specific cwd extraction, used by `session_ownership`. |
+| `on_pin(jsonl_path, file_size)` | Called when the watcher first pins a session. Lets the harness recover in-flight edits (maki does, because it writes its JSONL in atomic write+rename bursts) by scanning a tail and calling `watcher.process_recovered_lines(lines, offset)`. Must return the new baseline byte offset (where live scanning resumes); return `file_size` to recover nothing. Absent hook = no recovery, baseline stays at `file_size`. |
+| `inotify_events()` | Returns the full inotify event string the watcher subscribes to (e.g. `"close_write,moved_to"`). Absent hook = default `close_write,moved_to`. Maki returns `close_write,moved_to,modify` because it keeps its JSONL open and appends (firing modify, not close_write). |
 
 ## Normalized change event fields
 
@@ -33,6 +35,9 @@ the functions below. Implementations: `claude/init.lua`, `maki/init.lua`.
 
 - Baseline: on first encounter of a JSONL the watcher pins (if ownership is
   `"match"`) and starts reading from the current file size, so preexisting
-  content is never replayed.
+  content is never replayed. An adapter that implements `on_pin()` may return a
+  smaller baseline (after recovering in-flight events), but must never return an
+  offset that would cause already-replayed lines to be scanned again on the next
+  write.
 - Shrinking files are skipped (`file_size <= prev.byte_pos`); an adapter that
   rewrites its own JSONL in place must surface that via `find_reset_command`.

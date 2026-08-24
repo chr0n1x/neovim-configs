@@ -62,13 +62,18 @@ end
 ---String matching is used as a fast pre-filter before full JSON decode.
 ---This avoids decoding every line in the sidecar, which keeps lookup O(n)
 ---with a very small constant for the majority of non-matching lines.
+---For maki (no uuid/timestamp), falls back to id-only matching.
 ---@param sidecar_path string
----@param uuid string
----@param timestamp any
+---@param uuid string|nil
+---@param timestamp any|nil
 ---@param id string|nil
 ---@return table|nil
 function M.lookup(sidecar_path, uuid, timestamp, id)
-  if not sidecar_path or not uuid then
+  if not sidecar_path then
+    return nil
+  end
+  -- Need at least one identifier to match against.
+  if not uuid and not id then
     return nil
   end
   local f = io.open(sidecar_path, "r")
@@ -78,6 +83,10 @@ function M.lookup(sidecar_path, uuid, timestamp, id)
 
   ---Score an event by how much diff data it contains. Higher = richer.
   local function score(ev)
+    -- Maki Diff records: full-file before/after in d.Diff.
+    if ev.d and ev.d.Diff and ev.d.Diff.before and ev.d.Diff.after then
+      return 3
+    end
     if ev.toolUseResult then
       local tur = ev.toolUseResult
       if tur.structuredPatch then
@@ -105,16 +114,16 @@ function M.lookup(sidecar_path, uuid, timestamp, id)
     return 0
   end
 
-  -- pick the entry closest to the requested timestamp
   local best = nil
   local best_score = -1
   local ts_str = tostring(timestamp)
 
   for line in f:lines() do
-    if not line:find(uuid, 1, true) then
+    -- Match by whatever identifiers are available.
+    if uuid and not line:find(uuid, 1, true) then
       goto continue
     end
-    if not line:find(ts_str, 1, true) then
+    if timestamp and not line:find(ts_str, 1, true) then
       goto continue
     end
     if id and not line:find(id, 1, true) then
@@ -135,12 +144,86 @@ function M.lookup(sidecar_path, uuid, timestamp, id)
   return best
 end
 
+---Compute a unified-style diff from two full-file text blobs. Returns lines
+---in the same "%5d  <prefix><content>" format used by the previewer.
+---@param before string Full file content before edit
+---@param after string Full file content after edit
+---@return string[] numbered diff lines
+local function diff_full_files(before, after)
+  local before_lines = vim.split(before, "\n", { plain = true })
+  local after_lines = vim.split(after, "\n", { plain = true })
+
+  -- Find common prefix.
+  local prefix_len = 0
+  local max_prefix = math.min(#before_lines, #after_lines)
+  for i = 1, max_prefix do
+    if before_lines[i] == after_lines[i] then
+      prefix_len = i
+    else
+      break
+    end
+  end
+
+  -- Find common suffix (not overlapping with prefix).
+  local suffix_len = 0
+  local max_suffix = math.min(#before_lines, #after_lines) - prefix_len
+  for i = 1, max_suffix do
+    if before_lines[#before_lines - i + 1] == after_lines[#after_lines - i + 1] then
+      suffix_len = i
+    else
+      break
+    end
+  end
+
+  -- Build the numbered diff.
+  local numbered = {}
+  -- Context: common prefix (show up to 3 lines before the change).
+  local ctx_start = math.max(1, prefix_len - 2)
+  for i = ctx_start, prefix_len do
+    table.insert(numbered, string.format("%5d  %s", i, " " .. after_lines[i]))
+  end
+
+  -- Deletions (old lines between prefix and suffix).
+  for i = prefix_len + 1, #before_lines - suffix_len do
+    table.insert(numbered, string.format("%5d  %s", i, "-" .. before_lines[i]))
+  end
+
+  -- Additions (new lines between prefix and suffix).
+  for i = prefix_len + 1, #after_lines - suffix_len do
+    table.insert(numbered, string.format("%5d  %s", i, "+" .. after_lines[i]))
+  end
+
+  -- Context: common suffix (show up to 3 lines after the change).
+  local ctx_end = math.min(3, suffix_len)
+  for i = 1, ctx_end do
+    local new_idx = #after_lines - suffix_len + i
+    table.insert(numbered, string.format("%5d  %s", new_idx, " " .. after_lines[new_idx]))
+  end
+
+  return numbered
+end
+
 ---Extract diff text from a matched sidecar event.
 ---@param ev table|nil
 ---@return string
 function M.extract_diff(ev)
   if not ev then
     return "(no diff data available)"
+  end
+
+  -- Maki Diff records: full-file before/after in d.Diff.
+  local maki_diff = ev.d and ev.d.Diff
+  if maki_diff and maki_diff.before and maki_diff.after then
+    local before_lines = vim.split(maki_diff.before, "\n", { plain = true })
+    local after_lines = vim.split(maki_diff.after, "\n", { plain = true })
+    local parts = {}
+    table.insert(parts, string.format("%d -> %d lines", #before_lines, #after_lines))
+    table.insert(parts, "") -- blank separator before diff
+    local numbered = diff_full_files(maki_diff.before, maki_diff.after)
+    if #numbered > 0 then
+      table.insert(parts, table.concat(numbered, "\n"))
+    end
+    return table.concat(parts, "\n")
   end
 
   local tur = ev.toolUseResult

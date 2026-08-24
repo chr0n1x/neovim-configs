@@ -2,7 +2,6 @@ local deps = {
   "nvim-web-devicons",
 }
 
-
 local spinner = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 
 -- Timer-driven spinner frame for smooth animation.
@@ -89,6 +88,5 @@ return {
       end,
       padding = { left = 1, right = 1 },
     })
-
   end,
 }

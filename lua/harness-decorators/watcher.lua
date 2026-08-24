@@ -146,6 +146,43 @@ local function parse_fswatch_line(raw_line)
   return jsonl_path
 end
 
+---Process a set of recovered JSONL lines (e.g. from a pin-time tail scan) through
+---the same parse + autocmd path as live writes, so they land in edit_sources and
+---the sidecar. Exposed to adapters via M.process_recovered_lines so the harness
+---owns *what* to recover while the watcher owns *how* an event is dispatched.
+---@param lines string[] The JSONL lines to process
+---@param line_offset number? Offset added to each 1-based index to derive source_line.
+---                           Adapters scanning a tail pass a negative base since they
+---                           don't know the absolute line numbers.
+function M.process_recovered_lines(lines, line_offset)
+  for i, line in ipairs(lines) do
+    local change_info = parser.parse_tool_result(line, (line_offset or 0) + i)
+    if change_info then
+      append_sidecar(line)
+      local dedup_key = change_info.dedup_key
+      if not (dedup_key and utils.key_seen(dedup_key)) then
+        if dedup_key then
+          utils.mark_key_seen(dedup_key)
+        end
+        vim.api.nvim_exec_autocmds("User", {
+          pattern = "ClaudeAutoFollowEdit",
+          data = {
+            file_path = change_info.file_path,
+            operation = change_info.operation,
+            starting_line = change_info.starting_line,
+            delta = change_info.delta,
+            source_line = change_info.source_line,
+            jsonl_path = M.pinned_jsonl_path,
+            event_uuid = change_info.event_uuid,
+            event_timestamp = change_info.event_timestamp,
+            event_id = change_info.event_id,
+          },
+        })
+      end
+    end
+  end
+end
+
 ---Handle a confirmed JSONL write: identify session ownership, then scan new lines.
 local function process_jsonl_write(jsonl_path)
   local filename = jsonl_path:match("[^/]+$")
@@ -165,20 +202,33 @@ local function process_jsonl_write(jsonl_path)
 
   local prev = jsonl_positions[jsonl_path]
 
-  -- First encounter: check session ownership, then set the baseline at the
-  -- current size. The session may have preexisting content (e.g. a resumed
-  -- session), and replaying old edits would flood the buffer.
+  -- First encounter: check session ownership. On a match, pin. By default the
+  -- baseline is set at the current file size so preexisting content is never
+  -- replayed. An adapter may opt into recovering in-flight edits via on_pin()
+  -- (maki does, because it writes its JSONL in atomic write+rename bursts): it
+  -- returns a new baseline byte offset after scanning whatever it chose to
+  -- recover. Nil/absent hook = no recovery, baseline stays at file_size.
   if prev == nil then
     local ownership = session_ownership({}, jsonl_path)
     if ownership == "match" then
       utils.log("initial pin to " .. filename, vim.log.levels.DEBUG)
       try_pin_session(jsonl_path)
+
+      local base = file_size
+      if adapter.on_pin then
+        local ok, result = pcall(adapter.on_pin, jsonl_path, file_size)
+        if ok and type(result) == "number" and result >= 0 then
+          base = result
+        end
+      end
+
+      jsonl_positions[jsonl_path] = { byte_pos = base, line_count = 0 }
     elseif ownership == "mismatch" then
       utils.log("ignoring non-matching session " .. filename, vim.log.levels.DEBUG)
       M.ignored_jsonl_paths[jsonl_path] = true
+      jsonl_positions[jsonl_path] = { byte_pos = file_size, line_count = 0 }
     end
     -- "unknown": no evidence yet, leave as candidate and retry on the next write.
-    jsonl_positions[jsonl_path] = { byte_pos = file_size, line_count = 0 }
     return
   end
 
@@ -416,16 +466,25 @@ local function list_watch_dirs(projects_dir)
 end
 
 ---Spawn inotifywait, writing its own output to `log_path` via --outfile.
----Watches for close_write (direct writes) and moved_to (tmp+rename pattern used
----by maki's /compact and session rewrites). Without moved_to, the watch goes
----silent after the first rename because the inode changes.
+---The set of inotify events is harness-specific: each adapter returns its full
+---event string via inotify_events(). The default (close_write,moved_to) covers
+---direct writes and the tmp+rename pattern; maki adds modify because it keeps
+---its JSONL open and appends. Extra events are harmless - the byte-offset dedup
+---in process_jsonl_write makes a redundant poll a cheap no-op.
 local function spawn_inotifywait(projects_dir, log_path)
+  local events = "close_write,moved_to"
+  if adapter.inotify_events then
+    local ev = adapter.inotify_events()
+    if type(ev) == "string" and #ev > 0 then
+      events = ev
+    end
+  end
   return vim.uv.spawn("inotifywait", {
     args = {
       "-m",
       "-r",
       "-e",
-      "close_write,moved_to",
+      events,
       "--format",
       "%w %e %f",
       projects_dir,
