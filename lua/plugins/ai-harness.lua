@@ -2,8 +2,14 @@
 -- floating CLI terminal with focus restoration on alt-tab. Per-harness keymap
 -- implementations live in lua/harness-decorators/<harness>/keymaps.lua; the
 -- binding strings are consolidated here into one keys table.
+--
+-- <leader>cl opens a Telescope picker (harness-decorators/switch.lua) over the
+-- available lua/harness-decorators/<dir> harnesses and swaps the backing CLI
+-- at runtime: it kills the floating terminal, repoints claudecode.nvim's
+-- terminal_cmd, and rebinds these <leader>c*/ft keymaps to the chosen harness.
+local switch = require("harness-decorators.switch")
 local harness = os.getenv("NVIM_LLM_HARNESS") or "claude"
-if harness ~= "claude" and harness ~= "maki" and harness ~= "copilot" then
+if not vim.tbl_contains(switch.list_harnesses(), harness) then
   return {}
 end
 
@@ -38,7 +44,7 @@ vim.api.nvim_create_autocmd("FocusGained", {
 vim.api.nvim_create_autocmd("ExitPre", {
   pattern = "*",
   callback = function()
-    if harness == "claude" then
+    if switch.current() == "claude" then
       vim.cmd("silent! ClaudeCodeClose<CR>")
       vim.cmd("silent! ClaudeCodeStop<CR>")
     end
@@ -127,14 +133,28 @@ end
 
 -- Consolidated <leader>c* keymaps. Each harness's keymaps.lua returns its own list of
 -- lazy.nvim key specs (lhs, action, desc, mode/ft); ai-harness.lua just wires it in so
--- there is exactly one keys table for the plugin spec.
+-- there is exactly one keys table for the plugin spec. <leader>cl is harness-agnostic
+-- (lives here, not in any harness's keymaps.lua) and always opens the switcher picker.
 local keys = require("harness-decorators." .. harness .. ".keymaps")
+table.insert(keys, {
+  "<leader>cl",
+  function()
+    switch.pick()
+  end,
+  desc = "Switch AI harness",
+  mode = { "n" },
+})
 
 return {
   {
     "coder/claudecode.nvim",
     dependencies = { "folke/snacks.nvim" },
-    config = true,
+    config = function(_, opts)
+      require("claudecode").setup(opts)
+      -- Record initial harness state for switch.lua; the keymaps themselves
+      -- are already registered by lazy.nvim's own `keys` handling below.
+      switch.init(harness, keys)
+    end,
     opts = vim.tbl_extend("force", {
       terminal_cmd = command,
       log_level = "info",
