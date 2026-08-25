@@ -89,12 +89,22 @@ local term_opts = {
     end,
     keys = {
       {
-        "q",
+        "<Esc>",
         function(self)
           self:hide()
+          vim.cmd.redraw()
+          vim.cmd("noh")
         end,
-        mode = "n",
-        desc = "close",
+        mode = { "n", "t" },
+        desc = "⊘ minimize",
+      },
+      {
+        "<C-n>",
+        function()
+          vim.cmd("stopinsert")
+        end,
+        mode = "t",
+        desc = "✥ normal mode",
       },
       {
         "<C-r>",
