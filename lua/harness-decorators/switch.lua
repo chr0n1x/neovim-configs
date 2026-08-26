@@ -227,6 +227,17 @@ function M.pick()
   pickers
     .new({}, {
       prompt_title = "AI Harness (current: " .. (current_harness or "?") .. ")",
+      -- small fixed-size window; the harness list is short, no need for the
+      -- default near-fullscreen layout. The horizontal strategy's valid keys
+      -- are height/width (fractions of the window) and prompt_position -
+      -- results_height only exists on the vertical strategy.
+      layout_strategy = "horizontal",
+      layout_config = {
+        prompt_position = "top",
+        preview_width = 0,
+        height = 8,
+        width = 40,
+      },
       finder = finders.new_table({
         results = M.list_harnesses(),
         entry_maker = function(name)
