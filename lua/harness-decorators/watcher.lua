@@ -80,7 +80,7 @@ local function try_pin_session(jsonl_path)
   reset_session_state(old_session_id)
 
   M.pinned_jsonl_path = jsonl_path
-  local name = jsonl_path:match("([^/]+)%.jsonl$") or jsonl_path:match("[^/]+$")
+  local name = utils.extract_session_id(jsonl_path) or jsonl_path:match("[^/]+$")
   if not M.pin_notified then
     utils.log("session detected " .. name, vim.log.levels.INFO)
     M.pin_notified = true
@@ -622,6 +622,35 @@ function M.start()
   M.watcher_poll_timer:start(0, 500, vim.schedule_wrap(on_watcher_poll))
 
   utils.log("watcher started on " .. projects_dir, vim.log.levels.INFO)
+end
+
+---Re-point the watcher at a different harness at runtime (called by switch.lua
+---when the user swaps the backing CLI without restarting Neovim).
+---
+---The adapter and notify prefix are otherwise bound once at module load, so a
+---plain harness swap would leave this watcher following the OLD harness's
+---sessions dir, still pinned to the old session, and still firing HarnessEdit -
+---which is what let edit-jump wander into files edited by another harness.
+---
+---This reloads the adapter, updates utils.harness, and wipes ALL per-session
+---state so nothing from the previous harness can leak into the new one. The
+---caller is responsible for stop()/start() around it.
+---@param name string the new harness name (must match a sibling adapter dir)
+function M.set_harness(name)
+  utils.harness = name
+  package.loaded["harness-decorators." .. name] = nil
+  adapter = require("harness-decorators." .. name)
+
+  -- Drop every session's edit history so edit-jump can't follow old-harness files.
+  edit_jump.edit_sources = {}
+
+  -- Clear pin, ownership and scan state so the new harness re-pins from scratch.
+  M.pinned_jsonl_path = nil
+  M.ignored_jsonl_paths = {}
+  M.pin_notified = false
+  jsonl_positions = {}
+  pending_notifications = {}
+  utils.reset_dedup()
 end
 
 ---Stop the watcher process.

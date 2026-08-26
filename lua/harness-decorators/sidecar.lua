@@ -33,7 +33,7 @@ function M.path_from_jsonl(jsonl_path)
   if not jsonl_path then
     return nil
   end
-  local session_id = jsonl_path:match("([^/]+)%.jsonl$")
+  local session_id = utils.extract_session_id(jsonl_path)
   if not session_id then
     return nil
   end

@@ -118,12 +118,22 @@ function M.clamp_line(starting_line, max_line)
   return math.max(1, clamped)
 end
 
----Extract the session ID from a JSONL file path.
+---Extract the session ID from a JSONL file path. Harness-aware: an adapter may
+---define `session_id(jsonl_path)` when its id isn't the filename stem (copilot
+---stores <session-id>/events.jsonl, so the id is the parent dir). Falls back to
+---the filename stem used by claude/maki (<session-id>.jsonl).
 ---@param jsonl_path string|nil
 ---@return string|nil
 function M.extract_session_id(jsonl_path)
   if not jsonl_path then
     return nil
+  end
+  local ok, adapter = pcall(require, "harness-decorators." .. M.harness)
+  if ok and adapter and adapter.session_id then
+    local id = adapter.session_id(jsonl_path)
+    if id then
+      return id
+    end
   end
   return jsonl_path:match("([^/]+)%.jsonl$")
 end

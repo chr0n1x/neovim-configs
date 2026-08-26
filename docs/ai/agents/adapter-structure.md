@@ -18,7 +18,8 @@ the functions below. Implementations: `claude/init.lua`, `maki/init.lua`.
 
 | Function | Purpose |
 |---|---|
-| `flat_sessions_dir = true` (field) | Session JSONLs live at the top level of `projects_dir()`; fswatch watches that dir non-recursively instead of its subdirs. |
+| `session_id(jsonl_path)` | Extract the session id from a JSONL path when it isn't the filename stem. Default (claude/maki): `<session-id>.jsonl` → stem. Copilot overrides it because it stores `<session-id>/events.jsonl`, so the id is the parent dir. Absent hook = filename stem. |
+| `flat_sessions_dir = true` (field) | Session JSONLs live at the top level of `projects_dir()`; fswatch watches that dir non-recursively instead of its subdirs. Copilot also sets this: its JSONLs sit one dir down, but macOS FSEvents reports subtree writes, so watching the root catches every (including newly-created) session. |
 | `extract_cwd(lines)` | Dialect-specific cwd extraction, used by `session_ownership`. |
 | `on_pin(jsonl_path, file_size)` | Called when the watcher first pins a session. Lets the harness recover in-flight edits (maki does, because it writes its JSONL in atomic write+rename bursts) by scanning a tail and calling `watcher.process_recovered_lines(lines, offset)`. Must return the new baseline byte offset (where live scanning resumes); return `file_size` to recover nothing. Absent hook = no recovery, baseline stays at `file_size`. |
 | `inotify_events()` | Returns the full inotify event string the watcher subscribes to (e.g. `"close_write,moved_to"`). Absent hook = default `close_write,moved_to`. Maki returns `close_write,moved_to,modify` because it keeps its JSONL open and appends (firing modify, not close_write). |

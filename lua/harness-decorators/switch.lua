@@ -209,6 +209,16 @@ function M.switch(new_harness)
   apply_keymaps(new_harness)
   current_harness = new_harness
 
+  -- Re-point the JSONL watcher at the new harness: stop the old backend, clear
+  -- all pinned/session state (so edit-jump can't keep following the previous
+  -- harness's files), then restart against the new harness's sessions dir.
+  pcall(function()
+    local watcher = require("harness-decorators.watcher")
+    watcher.stop()
+    watcher.set_harness(new_harness)
+    watcher.start()
+  end)
+
   vim.notify("harness: switched to " .. new_harness .. " (" .. command .. ")", vim.log.levels.INFO)
 end
 
