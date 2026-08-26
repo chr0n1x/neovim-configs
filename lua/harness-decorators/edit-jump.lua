@@ -74,6 +74,23 @@ local function jump_to_edit(data, file_path)
   -- already loaded. bufadd creates the entry; checktime detects the external change;
   -- bufload re-reads from disk (the agent's version wins). Neither changes the window.
   local bufnr = vim.fn.bufadd(file_path)
+
+  -- The agent may have written a file the user also has open with unsaved
+  -- changes, or a stale <file>.swp may linger. Loading such a file (checktime/
+  -- bufload/win_set_buf) raises E325 ATTENTION and pops an interactive swap
+  -- prompt mid-jump — which, uncaught, escaped this scheduled callback and left
+  -- eventignore pinned to "all" (every autocmd globally suppressed) with
+  -- _jump_active stuck true. Auto-answer SwapExists with "edit anyway" so the
+  -- jump stays silent and non-blocking; the on-disk (agent) version is exactly
+  -- what we want to display.
+  local swap_grp = vim.api.nvim_create_augroup("HarnessJumpSwap", { clear = true })
+  vim.api.nvim_create_autocmd("SwapExists", {
+    group = swap_grp,
+    callback = function()
+      vim.v.swapchoice = "e"
+    end,
+  })
+
   if vim.uv.fs_stat(file_path) then
     pcall(vim.api.nvim_buf_call, bufnr, function()
       vim.cmd.checktime()
@@ -94,8 +111,18 @@ local function jump_to_edit(data, file_path)
 
   local saved_ei = vim.o.eventignore
   vim.o.eventignore = "all"
-  vim.api.nvim_win_set_buf(win, bufnr)
+  local ok_switch, switch_err = pcall(vim.api.nvim_win_set_buf, win, bufnr)
   vim.o.eventignore = saved_ei
+
+  pcall(vim.api.nvim_del_augroup_by_id, swap_grp)
+
+  -- If the switch failed (e.g. despite the guard), unwind cleanly: never leave
+  -- _jump_active latched, and skip the deferred cursor set below.
+  if not ok_switch then
+    _jump_active = false
+    utils.log("jump window switch failed: " .. tostring(switch_err), vim.log.levels.WARN)
+    return
+  end
 
   -- Defer cursor set so we run after any plugin BufWinEnter callbacks that restore
   -- the last-known cursor position and would otherwise override us.
