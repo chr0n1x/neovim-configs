@@ -1,11 +1,10 @@
 -- Copilot harness: per-key entries for the consolidated <leader>c* keymap table in
 -- lua/plugins/ai-harness.lua. Each entry is a lazy.nvim key spec (lhs, action, desc,
--- mode/ft). The Copilot CLI has no @file mention expansion and isn't the real `claude`
--- binary, so claudecode.nvim's server-backed ClaudeCodeAdd/ClaudeCodeSend do nothing -
--- "adding" a file means typing a path reference into the floating terminal, same trick
--- as the maki harness. That context-injection logic (type_into_terminal /
--- build_context_text / send_visual_selection) plus the CopilotAdd / CopilotTreeAdd
--- user-commands live here.
+-- mode/ft). Copilot supports @file mentions, but isn't the real `claude` binary, so
+-- claudecode.nvim's server-backed ClaudeCodeAdd/ClaudeCodeSend do nothing. The
+-- context-injection logic (type_into_terminal / build_context_text /
+-- send_visual_selection) plus the CopilotAdd / CopilotTreeAdd user-commands live
+-- here.
 
 -- ==========================================================================
 -- CONTEXT INJECTION
@@ -72,9 +71,9 @@ local function shorten_path(file_path)
   return file_path
 end
 
----Build a path-labeled snippet. The Copilot CLI reads files itself, so context is
----always just a path reference. Line ranges use the same #L<start>-<end> form
----claude-code uses (e.g. <path>#L31-32), so references look consistent across harnesses.
+---Build a Copilot @file mention. Line ranges use the same #L<start>-<end> form
+---Claude Code uses (e.g. @<path>#L31-32), so references look consistent across
+---harnesses.
 ---@param file_path string
 ---@param start_line? integer
 ---@param end_line? integer
@@ -82,10 +81,10 @@ end
 local function build_context_text(file_path, start_line, end_line)
   file_path = shorten_path(file_path)
   if not (start_line and end_line) then
-    return file_path
+    return "@" .. file_path
   end
-  return start_line == end_line and (file_path .. "#L" .. start_line)
-    or (file_path .. "#L" .. start_line .. "-" .. end_line)
+  local range = start_line == end_line and ("#L" .. start_line) or ("#L" .. start_line .. "-" .. end_line)
+  return "@" .. file_path .. range
 end
 
 ---Write text into the copilot terminal's PTY via chansend (same mechanism as
