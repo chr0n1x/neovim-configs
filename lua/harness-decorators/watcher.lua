@@ -37,6 +37,11 @@ M.watcher_log = nil
 M.watcher_last_pos = 0
 M.watcher_poll_timer = nil
 
+---How often the poll loop sweeps orphaned watchers from crashed nvims (ms), and
+---the monotonic timestamp of the last sweep.
+M.reap_interval_ms = 30000
+M._last_reap_ms = nil
+
 ---Track read position per JSONL session so we can scan new lines on each event.
 ---Each value is { byte_pos, line_count } — byte offset and the number of lines
 ---scanned up to that point, so we know the absolute line number of new content.
@@ -417,10 +422,61 @@ local function on_watcher_exit(code)
   end
 end
 
+---Reap watcher processes left behind by dead Neovim instances.
+---
+---Each nvim writes /tmp/nvim.$USER.<nvim_pid>.inotify.pid containing its
+---watcher's pid. When an nvim exits cleanly, VimLeavePre -> stop() kills its
+---watcher and removes the pidfile. But a crash or `kill -9` skips VimLeavePre,
+---so the watcher (fswatch/inotifywait) is reparented to init/launchd and keeps
+---running forever - an orphan. This walks every pidfile, and for any whose
+---OWNER nvim is dead, kills the recorded watcher pid and removes the pidfile.
+---
+---Safe to run from any live instance: the owner-alive check (signal 0) means we
+---never touch a running nvim's watcher, and we always skip our own pidfile.
+---Concurrent sweeps from multiple instances race harmlessly (SIGTERM to an
+---already-dead pid and os.remove of an already-gone file are both no-ops).
+---@param self_pid number This nvim's pid, never reaped.
+function M.reap_dead_watchers(self_pid)
+  local user = os.getenv("USER")
+  if not user then
+    return
+  end
+  local pidfile_pattern = string.format("/tmp/nvim.%s.*.inotify.pid", user)
+  for _, pidfile in ipairs(vim.fn.glob(pidfile_pattern, false, true)) do
+    local owner_pid = pidfile:match("nvim%.[^.]+%.(%d+)%.inotify%.pid$")
+    if owner_pid and owner_pid ~= tostring(self_pid) then
+      -- signal 0 probes liveness without delivering a signal: non-nil => alive.
+      local alive = vim.uv.kill(tonumber(owner_pid), 0) ~= nil
+      if not alive then
+        local pf = io.open(pidfile, "r")
+        if pf then
+          local watcher_pid = pf:read("*a"):match("^%s*(%d+)%s*$")
+          pf:close()
+          if watcher_pid then
+            vim.uv.kill(tonumber(watcher_pid), 15)
+          end
+        end
+        os.remove(pidfile)
+      end
+    end
+  end
+end
+
 ---Timer callback: process new watcher log entries.
 local function on_watcher_poll()
   -- wrap in pcall so a bad log line can't kill the poll loop
   pcall(process_watcher_log)
+
+  -- Periodically sweep orphaned watchers from crashed nvims. Reaping at start()
+  -- alone is lazy - orphans from a crash linger until the NEXT nvim launch. Any
+  -- live instance running this loop cleans them within one sweep interval, so
+  -- orphans self-heal without waiting for a fresh nvim. Throttled well below the
+  -- 500ms poll cadence to keep it cheap.
+  local now = math.floor(vim.uv.hrtime() / 1000000)
+  if not M._last_reap_ms or (now - M._last_reap_ms) >= M.reap_interval_ms then
+    M._last_reap_ms = now
+    pcall(M.reap_dead_watchers, vim.fn.getpid())
+  end
 end
 
 ---Return the resolved path of `bin` if it's on $PATH, else nil.
@@ -434,30 +490,26 @@ end
 ---Recursive fswatch (`-r`) walks and stats every node in the tree to build its
 ---watch list before reporting. On a large ~/.claude/projects that walk takes
 ---seconds, and it repeats once per Neovim instance — freezing the pane on macOS.
----We only ever act on root-session JSONLs (parse_fswatch_line skips /subagents/),
----so we watch just the directories that directly contain them:
----  * claude: the per-project hash subdirs of ~/.claude/projects
----  * maki:   the flat sessions dir itself (session JSONLs live at its top level)
+---
+---macOS avoids this entirely: fswatch's FSEvents backend reports the whole
+---SUBTREE of any watched path even without -r, so we watch just the root. That
+---keeps the command short, skips the startup tree-walk, and — unlike enumerating
+---subdirs at spawn time — automatically catches session dirs created AFTER nvim
+---started (e.g. the first Claude session in a brand-new repo).
+---
+---Non-macOS fswatch (a rare fallback; Linux prefers inotifywait) uses the inotify
+---backend, which is NOT subtree-recursive. There we watch the root but must let
+---the caller add -r for non-flat layouts (JSONLs one dir deep). Flat layouts keep
+---their JSONLs at the root, so no recursion is needed on any platform.
 ---@param projects_dir string
----@return string[]
-local function list_watch_dirs(projects_dir)
-  if adapter.flat_sessions_dir then
-    return { projects_dir }
-  end
-
-  local dirs = {}
-  for name, ftype in vim.fs.dir(projects_dir, { depth = 1 }) do
-    if ftype == "directory" and name:sub(1, 1) ~= "." then
-      dirs[#dirs + 1] = projects_dir .. "/" .. name
-    end
-  end
-
-  -- Degenerate case (empty/unknown layout): fall back to the root so we never
-  -- spawn fswatch with zero paths. Rare, and still far cheaper than -r.
-  if #dirs == 0 then
-    dirs[#dirs + 1] = projects_dir
-  end
-  return dirs
+---@return string[] dirs, boolean recursive
+local function resolve_watch(projects_dir)
+  local is_macos = vim.uv.os_uname().sysname == "Darwin"
+  -- Root-only is sufficient when either the backend reports the subtree (macOS
+  -- FSEvents) or the JSONLs already sit at the root (flat harness). Otherwise the
+  -- caller needs -r so nested per-project JSONLs are seen.
+  local recursive = not is_macos and not adapter.flat_sessions_dir
+  return { projects_dir }, recursive
 end
 
 ---Spawn inotifywait, writing its own output to `log_path` via --outfile.
@@ -490,16 +542,19 @@ local function spawn_inotifywait(projects_dir, log_path)
 end
 
 ---Spawn fswatch, redirecting its stdout (bare path per line) to `log_path`.
----Watches each dir in `dirs` non-recursively (no -r), so fswatch never walks the
----whole tree to build its watch list. See list_watch_dirs for how dirs is built.
-local function spawn_fswatch(dirs, log_path)
+---Watches `dirs`; passes -r only when `recursive` is set (non-macOS non-flat).
+---On macOS the FSEvents backend already reports the subtree, so -r is omitted to
+---avoid the expensive whole-tree watch-list build. See resolve_watch.
+local function spawn_fswatch(dirs, log_path, recursive)
   local fd = vim.uv.fs_open(log_path, "w", tonumber("644", 8))
   if not fd then
     return nil
   end
 
-  -- fswatch accepts multiple path arguments; without -r each is watched as-is.
   local args = { "-l", "0.3", "--event", "Updated" }
+  if recursive then
+    args[#args + 1] = "-r"
+  end
   for _, dir in ipairs(dirs) do
     args[#args + 1] = dir
   end
@@ -559,26 +614,9 @@ function M.start()
   M.watcher_pidfile = string.format("/tmp/nvim.%s.%d.inotify.pid", user, nvim_pid)
   M.watcher_last_pos = 0
 
-  -- Kill watchers from dead Neovim instances using pidfiles.
-  -- vim.fn.glob + vim.uv.kill avoid spawning any subprocesses.
-  local pidfile_pattern = string.format("/tmp/nvim.%s.*.inotify.pid", user)
-  for _, pidfile in ipairs(vim.fn.glob(pidfile_pattern, false, true)) do
-    local owner_pid = pidfile:match("nvim%.[^.]+%.(%d+)%.inotify%.pid$")
-    if owner_pid and owner_pid ~= tostring(nvim_pid) then
-      local alive = vim.uv.kill(tonumber(owner_pid), 0) ~= nil
-      if not alive then
-        local pf = io.open(pidfile, "r")
-        if pf then
-          local watcher_pid = pf:read("*a"):match("^%s*(%d+)%s*$")
-          pf:close()
-          if watcher_pid then
-            vim.uv.kill(tonumber(watcher_pid), 15)
-          end
-        end
-        os.remove(pidfile)
-      end
-    end
-  end
+  -- Kill watchers from dead Neovim instances using pidfiles. Also runs
+  -- periodically from the poll loop so crash-orphans don't wait for a new start.
+  M.reap_dead_watchers(nvim_pid)
 
   -- Truncate our own log (fresh start) so old entries don't leak into the new session.
   local truncate = io.open(M.watcher_log, "w")
@@ -593,10 +631,10 @@ function M.start()
     -- inotifywait handles recursion in the kernel; spawning is cheap. Unchanged.
     handle, pid = spawn_inotifywait(projects_dir, M.watcher_log)
   else
-    -- fswatch: watch only the dirs that directly hold session JSONLs, non-recursive.
-    local dirs = list_watch_dirs(projects_dir)
-    utils.log("fswatch watching " .. #dirs .. " dir(s)", vim.log.levels.DEBUG)
-    handle, pid = spawn_fswatch(dirs, M.watcher_log)
+    -- fswatch: watch the root; recursion depends on backend/layout (resolve_watch).
+    local dirs, recursive = resolve_watch(projects_dir)
+    utils.log("fswatch watching " .. #dirs .. " dir(s)" .. (recursive and " (-r)" or ""), vim.log.levels.DEBUG)
+    handle, pid = spawn_fswatch(dirs, M.watcher_log, recursive)
   end
 
   if not handle then
