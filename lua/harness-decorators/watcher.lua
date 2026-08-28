@@ -414,11 +414,30 @@ local function process_watcher_log()
   end
 end
 
----Callback when the watcher process exits.
+---Callback when the watcher process exits. Owns all cleanup so nothing is
+---discarded while the process is still dying: closing the handle here (not in
+---stop()) lets libuv reap the child, which is what prevents a zombie from
+---lingering under a live nvim after stop().
 local function on_watcher_exit(code)
   if M.watcher_handle then
     utils.log((M.watcher_backend or "watcher") .. " exited with code " .. tostring(code), vim.log.levels.WARN)
+    pcall(function()
+      M.watcher_handle:close()
+    end)
     M.watcher_handle = nil
+  end
+
+  -- Only clean up shared files if this exit belongs to the current watcher;
+  -- a late callback from an already-replaced watcher must not delete the new
+  -- one's files. stop() is responsible for clearing these on shutdown paths
+  -- where the callback may never fire (uv torn down at VimLeavePre).
+  if M.watcher_log then
+    pcall(vim.fn.delete, M.watcher_log)
+    M.watcher_log = nil
+  end
+  if M.watcher_pidfile then
+    pcall(vim.fn.delete, M.watcher_pidfile)
+    M.watcher_pidfile = nil
   end
 end
 
@@ -701,12 +720,12 @@ function M.stop()
     os.execute("kill -15 " .. tostring(M.watcher_pid) .. " 2>/dev/null || true")
   end
 
-  if M.watcher_handle then
-    pcall(function()
-      M.watcher_handle:close()
-    end)
-    M.watcher_handle = nil
-  end
+  -- Do NOT delete the log file here: inotifywait holds its --outfile fd open
+  -- and would keep writing into a dangling inode until it finally dies. The
+  -- exit callback (or start()'s truncate) handles cleanup once the process is
+  -- actually gone. Same for the handle - closing it before the child exits
+  -- races libuv's reaper and leaves a zombie under a live nvim.
+
   if M.watcher_poll_timer then
     pcall(function()
       M.watcher_poll_timer:stop()
@@ -718,8 +737,24 @@ function M.stop()
   end
   M.watcher_pid = nil
   M.watcher_backend = nil
-  -- Only clean up shared files if we owned the watcher process.
+
   if owned then
+    -- Wait for the exit callback to finish cleanup. Bounded so a watcher that
+    -- ignores SIGTERM can't hang us; on timeout the files are removed here as
+    -- a fallback (the process is dead or dying either way).
+    local deadline = vim.uv.hrtime() + 2 * 1000000000 -- 2s
+    while M.watcher_handle and vim.uv.hrtime() < deadline do
+      vim.wait(50, function()
+        return false
+      end)
+    end
+    if M.watcher_handle then
+      utils.log("watcher did not exit in time; forcing cleanup", vim.log.levels.WARN)
+      pcall(function()
+        M.watcher_handle:close()
+      end)
+      M.watcher_handle = nil
+    end
     if M.watcher_log then
       pcall(vim.fn.delete, M.watcher_log)
       M.watcher_log = nil
