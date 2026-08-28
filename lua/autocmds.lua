@@ -14,5 +14,9 @@ vim.api.nvim_create_autocmd("User", {
     if mod then
       mod.setup()
     end
+
+    -- Define harness title hl groups so they exist before any terminal opens.
+    -- Re-defined on ColorScheme (see ai-harness.lua) to survive `hi clear`.
+    require("harness-decorators.title").define_all()
   end,
 })

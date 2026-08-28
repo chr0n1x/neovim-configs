@@ -8,6 +8,14 @@
 -- at runtime: it kills the floating terminal, repoints claudecode.nvim's
 -- terminal_cmd, and rebinds these <leader>c*/ft keymaps to the chosen harness.
 local switch = require("harness-decorators.switch")
+local title = require("harness-decorators.title")
+
+-- Re-define title groups after colorscheme switches (nord does `hi clear`).
+vim.api.nvim_create_autocmd("ColorScheme", {
+  pattern = "*",
+  callback = title.define_all,
+})
+
 local harness = os.getenv("NVIM_LLM_HARNESS") or "claude"
 if not vim.tbl_contains(switch.list_harnesses(), harness) then
   return {}
@@ -166,6 +174,13 @@ return {
         snacks_win_opts = {
           position = "float",
           border = "rounded",
+          title = title.title(harness),
+          -- Snacks' style default maps FloatTitle:SnacksTitle, which overrides
+          -- the per-segment groups in `title`. Set winhighlight after all merging
+          -- is done so our override sticks.
+          on_win = function(self)
+            vim.api.nvim_set_option_value("winhighlight", "FloatFooter:SnacksFooter", { win = self.win })
+          end,
           footer_keys = true,
           fix_buf = true,
           resize = true,

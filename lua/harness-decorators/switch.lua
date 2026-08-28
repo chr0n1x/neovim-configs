@@ -16,6 +16,7 @@ local M = {}
 
 local this_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h")
 local FT_AUGROUP = "AiHarnessFtKeys"
+local title = require("harness-decorators.title")
 
 local current_harness = nil
 local current_specs = {} -- last-applied keymaps.lua spec list, for teardown on switch
@@ -200,6 +201,13 @@ function M.switch(new_harness)
   local ok_cc, claudecode = pcall(require, "claudecode")
   if ok_cc then
     claudecode.state.config.terminal_cmd = command
+    -- snacks_win_opts.title was built from the harness at config-load time;
+    -- re-point it so the next terminal open shows the new harness's name and color.
+    local win_opts = claudecode.state.config.snacks_win_opts
+      or claudecode.state.config.terminal and claudecode.state.config.terminal.snacks_win_opts
+    if type(win_opts) == "table" then
+      win_opts.title = title.title(new_harness)
+    end
   end
   -- nil user_term_config leaves previously configured terminal opts (snacks
   -- window layout, keymaps, etc.) untouched; only terminal_cmd/env change.
