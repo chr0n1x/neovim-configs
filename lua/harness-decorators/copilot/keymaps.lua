@@ -81,10 +81,10 @@ end
 local function build_context_text(file_path, start_line, end_line)
   file_path = shorten_path(file_path)
   if not (start_line and end_line) then
-    return "@" .. file_path
+    return " @" .. file_path
   end
   local range = start_line == end_line and ("#L" .. start_line) or ("#L" .. start_line .. "-" .. end_line)
-  return "@" .. file_path .. range
+  return " @" .. file_path .. range
 end
 
 ---Write text into the copilot terminal's PTY via chansend (same mechanism as
@@ -121,16 +121,20 @@ local function type_into_terminal(text)
     payload = "\27[200~" .. normalized .. "\27[201~"
   end
 
-  -- Append a space so the next thing typed doesn't glue onto the inserted text,
-  -- unless the text already ends in whitespace (e.g. CopilotTreeAdd's "\n" separator).
-  if not normalized:match("[%s ]$") then
-    payload = payload .. " "
-  end
-
   local ok_send, written = pcall(vim.fn.chansend, chan, payload)
   if not ok_send or written == 0 then
     vim.notify("copilot: terminal channel is closed (process may have exited)", vim.log.levels.WARN)
     return nil
+  end
+
+  -- Send the separator separately. Copilot's line editor can discard trailing
+  -- whitespace when it arrives in the same PTY write as an @file reference.
+  if not normalized:match("[%s ]$") then
+    local ok_space, space_written = pcall(vim.fn.chansend, chan, " ")
+    if not ok_space or space_written == 0 then
+      vim.notify("copilot: failed to add spacing after file reference", vim.log.levels.WARN)
+      return nil
+    end
   end
 
   -- chansend writes to the PTY without moving focus; jump to the copilot terminal
