@@ -14,35 +14,10 @@
 --      don't exist, per harness) match whatever is now active.
 local M = {}
 
-local this_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h")
-local FT_AUGROUP = "AiHarnessFtKeys"
+local keymaps = require("harness-decorators.keymaps")
 local title = require("harness-decorators.title")
 
 local current_harness = nil
-local current_specs = {} -- last-applied keymaps.lua spec list, for teardown on switch
-
----List sibling directories that look like a harness (env.lua + keymaps.lua).
----@return string[]
-function M.list_harnesses()
-  local found = {}
-  local fd = vim.uv.fs_scandir(this_dir)
-  if fd then
-    while true do
-      local name, ftype = vim.uv.fs_scandir_next(fd)
-      if not name then
-        break
-      end
-      if ftype == "directory" then
-        local dir = this_dir .. "/" .. name
-        if vim.uv.fs_stat(dir .. "/env.lua") and vim.uv.fs_stat(dir .. "/keymaps.lua") then
-          table.insert(found, name)
-        end
-      end
-    end
-  end
-  table.sort(found)
-  return found
-end
 
 ---@return string? the currently active harness name
 function M.current()
@@ -58,72 +33,6 @@ local function ensure_plugin_loaded()
   if ok_lazy then
     pcall(lazy.load, { plugins = { "claudecode.nvim" } })
   end
-end
-
----rhs from keymaps.lua is either a Lua function or a string like
----"<cmd>ClaudeCode --resume<cr>" - vim.keymap.set accepts both forms
----natively, so no conversion needed; kept as a passthrough for clarity.
-local function set_buffer_ft_keymap(buf, spec)
-  vim.keymap.set(spec.mode or "n", spec[1], spec[2], {
-    buffer = buf,
-    desc = spec.desc,
-    silent = true,
-  })
-end
-
----Remove whatever keymaps the previously-active harness registered.
-local function clear_current_keymaps()
-  for _, spec in ipairs(current_specs) do
-    if not spec.ft then
-      pcall(vim.keymap.del, spec.mode or "n", spec[1])
-    end
-  end
-  pcall(vim.api.nvim_del_augroup_by_name, FT_AUGROUP)
-end
-
----Register the given harness's <leader>c* keymaps, plus the harness-agnostic
----<leader>cl switcher itself so it always survives a switch's clear/reapply.
----@param harness string
-local function apply_keymaps(harness)
-  package.loaded["harness-decorators." .. harness .. ".keymaps"] = nil
-  local specs = require("harness-decorators." .. harness .. ".keymaps")
-  table.insert(specs, {
-    "<leader>cl",
-    function()
-      M.pick()
-    end,
-    desc = "Switch AI harness",
-    mode = { "n" },
-  })
-
-  local ft_group = vim.api.nvim_create_augroup(FT_AUGROUP, { clear = true })
-
-  for _, spec in ipairs(specs) do
-    if spec.ft then
-      -- Buffer-local: apply immediately to already-open matching buffers,
-      -- then keep applying to future ones via FileType.
-      local fts = type(spec.ft) == "table" and spec.ft or { spec.ft }
-      for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-        if vim.api.nvim_buf_is_loaded(buf) and vim.tbl_contains(fts, vim.bo[buf].filetype) then
-          set_buffer_ft_keymap(buf, spec)
-        end
-      end
-      vim.api.nvim_create_autocmd("FileType", {
-        group = ft_group,
-        pattern = spec.ft,
-        callback = function(args)
-          set_buffer_ft_keymap(args.buf, spec)
-        end,
-      })
-    else
-      vim.keymap.set(spec.mode or "n", spec[1], spec[2], {
-        desc = spec.desc,
-        silent = true,
-      })
-    end
-  end
-
-  current_specs = specs
 end
 
 ---Kill the running floating terminal so the next open spawns a fresh process
@@ -156,15 +65,13 @@ local function kill_terminal()
   end
 end
 
----Record initial state for the harness lazy.nvim starts with. The actual
----keymaps for this first harness are registered by lazy.nvim's own `keys`
----handling (ai-harness.lua still passes the full spec list as `keys` on the
----plugin), so this just remembers what's active for later switches/teardown.
+---Record initial state for the harness ai-harness.lua starts with. The keymaps
+---for this first harness are registered by ai-harness.lua's config (via
+---harness-decorators.keymaps), so this just remembers what's active for later
+---switches/teardown.
 ---@param harness string
----@param specs table[] the keymaps.lua spec list currently in effect
-function M.init(harness, specs)
+function M.init(harness)
   current_harness = harness
-  current_specs = specs
 end
 
 ---Swap the backing CLI: kill the current floating terminal, point
@@ -176,7 +83,7 @@ function M.switch(new_harness)
     vim.notify("harness: already using " .. new_harness, vim.log.levels.INFO)
     return
   end
-  if not vim.tbl_contains(M.list_harnesses(), new_harness) then
+  if not vim.tbl_contains(keymaps.list_harnesses(), new_harness) then
     vim.notify("harness: unknown harness " .. tostring(new_harness), vim.log.levels.ERROR)
     return
   end
@@ -213,13 +120,16 @@ function M.switch(new_harness)
   -- window layout, keymaps, etc.) untouched; only terminal_cmd/env change.
   require("claudecode.terminal").setup(nil, command, {})
 
-  clear_current_keymaps()
-  apply_keymaps(new_harness)
+  keymaps.clear()
+  keymaps.apply(keymaps.build(new_harness))
   current_harness = new_harness
 
-  -- Re-point the JSONL watcher at the new harness: stop the old backend, clear
-  -- all pinned/session state (so edit-jump can't keep following the previous
-  -- harness's files), then restart against the new harness's sessions dir.
+  -- Re-point the JSONL watcher at the new harness: stop the old backend (it's
+  -- still subscribed to the OLD harness's sessions dir), clear all pinned/session
+  -- state (so edit-jump can't keep following the previous harness's files), then
+  -- restart against the new harness's sessions dir. If no terminal has opened yet
+  -- there is no watcher running; start() spawns it, which is fine - the first
+  -- <leader>c press will find it already up and skip its own start.
   pcall(function()
     local watcher = require("harness-decorators.watcher")
     watcher.stop()
@@ -242,7 +152,7 @@ function M.pick()
   local actions = require("telescope.actions")
   local action_state = require("telescope.actions.state")
 
-  local harnesses = M.list_harnesses()
+  local harnesses = keymaps.list_harnesses()
   -- Size the window to the list so nothing scrolls off, capped so a large set
   -- doesn't fill the screen (past the cap it scrolls). In telescope's horizontal
   -- layout with no previewer and prompt at top, the visible result rows are

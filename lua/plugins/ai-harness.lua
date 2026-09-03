@@ -3,10 +3,13 @@
 -- implementations live in lua/harness-decorators/<harness>/keymaps.lua; the
 -- binding strings are consolidated here into one keys table.
 --
--- <leader>cl opens a Telescope picker (harness-decorators/switch.lua) over the
--- available lua/harness-decorators/<dir> harnesses and swaps the backing CLI
--- at runtime: it kills the floating terminal, repoints claudecode.nvim's
--- terminal_cmd, and rebinds these <leader>c*/ft keymaps to the chosen harness.
+-- The consolidated <leader>c* table (harness entries + <leader>cl switcher) lives in
+-- harness-decorators/keymaps.lua. <leader>c opens/focuses the floating terminal and,
+-- on first open, starts the JSONL watcher; <leader>cl opens a Telescope picker
+-- (harness-decorators/switch.lua) over the available lua/harness-decorators/<dir>
+-- harnesses and swaps the backing CLI at runtime: it kills the floating terminal,
+-- repoints claudecode.nvim's terminal_cmd, and rebinds these <leader>c*/ft keymaps
+-- to the chosen harness. The terminal is never auto-started (auto_start = false).
 local switch = require("harness-decorators.switch")
 local title = require("harness-decorators.title")
 
@@ -17,7 +20,8 @@ vim.api.nvim_create_autocmd("ColorScheme", {
 })
 
 local harness = os.getenv("NVIM_LLM_HARNESS") or "claude"
-if not vim.tbl_contains(switch.list_harnesses(), harness) then
+local keymaps = require("harness-decorators.keymaps")
+if not vim.tbl_contains(keymaps.list_harnesses(), harness) then
   return {}
 end
 
@@ -122,8 +126,11 @@ local set_next_win = function()
   find_base_window(true)
 end
 
--- Per-harness opts differences (everything else in `opts` is shared).
+-- Per-harness opts differences (everything else in `opts` is shared). The terminal
+-- is never auto-started: it opens on the first <leader>c press, which is also what
+-- starts the JSONL watcher (see harness-decorators/keymaps.lua).
 local opts_overrides = {
+  auto_start = false,
   diff_opts = {
     layout = "vertical",
     open_in_new_tab = true,
@@ -132,26 +139,9 @@ local opts_overrides = {
     on_new_file_reject = "close_window",
   },
 }
-if harness == "maki" then
-  opts_overrides.auto_start = false
-else
-  opts_overrides.auto_start = true
+if harness ~= "maki" then
   opts_overrides.focus_after_send = true -- after <leader>ca go to terminal
 end
-
--- Consolidated <leader>c* keymaps. Each harness's keymaps.lua returns its own list of
--- lazy.nvim key specs (lhs, action, desc, mode/ft); ai-harness.lua just wires it in so
--- there is exactly one keys table for the plugin spec. <leader>cl is harness-agnostic
--- (lives here, not in any harness's keymaps.lua) and always opens the switcher picker.
-local keys = require("harness-decorators." .. harness .. ".keymaps")
-table.insert(keys, {
-  "<leader>cl",
-  function()
-    switch.pick()
-  end,
-  desc = "Switch AI harness",
-  mode = { "n" },
-})
 
 return {
   {
@@ -159,9 +149,11 @@ return {
     dependencies = { "folke/snacks.nvim" },
     config = function(_, opts)
       require("claudecode").setup(opts)
-      -- Record initial harness state for switch.lua; the keymaps themselves
-      -- are already registered by lazy.nvim's own `keys` handling below.
-      switch.init(harness, keys)
+      -- Register the consolidated <leader>c* keymaps (harness entries + <leader>cl
+      -- switcher) and record initial harness state for switch.lua. The terminal is
+      -- not started here; the first <leader>c press opens it (and starts the watcher).
+      keymaps.apply(keymaps.build(harness))
+      switch.init(harness)
     end,
     opts = vim.tbl_extend("force", {
       terminal_cmd = command,
@@ -275,6 +267,5 @@ return {
         },
       },
     }, opts_overrides),
-    keys = keys,
   },
 }

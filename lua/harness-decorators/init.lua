@@ -9,7 +9,12 @@ local function on_vim_leave()
   watcher.stop()
 end
 
-M.setup_auto_follow = function()
+---Start the JSONL watcher (and only it) if it isn't running yet. Called from the
+---first <leader>c press, i.e. when claudecode.nvim creates the floating terminal
+---buffer for the first time: no terminal means no session, so there is nothing to
+---watch until then. Idempotent - watcher.start() returns early while a handle
+---exists, and the VimLeavePre group's clear=true keeps this re-entrant safe.
+function M.setup_auto_follow()
   local group = vim.api.nvim_create_augroup("HarnessAutoFollow", { clear = true })
 
   edit_jump.create_jump_autocmds(group)
@@ -27,13 +32,6 @@ M.setup_auto_follow = function()
   watcher.pin_notified = false
 
   watcher.start()
-end
-
-M.setup = function()
-  local ok, err = pcall(M.setup_auto_follow)
-  if not ok then
-    utils.log("setup failed: " .. tostring(err), vim.log.levels.ERROR)
-  end
 end
 
 ---Public accessor: always reads from the watcher module.
