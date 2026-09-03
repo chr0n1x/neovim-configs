@@ -242,6 +242,15 @@ function M.pick()
   local actions = require("telescope.actions")
   local action_state = require("telescope.actions.state")
 
+  local harnesses = M.list_harnesses()
+  -- Size the window to the list so nothing scrolls off, capped so a large set
+  -- doesn't fill the screen (past the cap it scrolls). In telescope's horizontal
+  -- layout with no previewer and prompt at top, the visible result rows are
+  -- (height - 5): 1 prompt line + 4 border/spacing lines of chrome (verified in
+  -- telescope/pickers/layout_strategies.lua). So height = <rows to show> + 5.
+  local visible_rows = math.max(1, math.min(#harnesses, 10))
+  local height = visible_rows + 5
+
   pickers
     .new({}, {
       prompt_title = "AI Harness (current: " .. (current_harness or "?") .. ")",
@@ -253,14 +262,29 @@ function M.pick()
       layout_config = {
         prompt_position = "top",
         preview_width = 0,
-        height = 8,
+        height = height,
         width = 40,
       },
       finder = finders.new_table({
-        results = M.list_harnesses(),
+        results = harnesses,
         entry_maker = function(name)
           local marker = name == current_harness and "* " or "  "
-          return { value = name, display = marker .. name, ordinal = name }
+          local text = marker .. name
+          -- Color the harness name with its shared HarnessTitle<Name> group (the
+          -- same color used for the floating-terminal title). A function display
+          -- returns (text, highlights); highlight columns are 0-indexed byte
+          -- offsets into `text`, so the name starts right after the 2-char marker.
+          local group = title.define(name)
+          return {
+            value = name,
+            ordinal = name,
+            display = function()
+              if not group then
+                return text
+              end
+              return text, { { { #marker, #marker + #name }, group } }
+            end,
+          }
         end,
       }),
       sorter = conf.generic_sorter({}),

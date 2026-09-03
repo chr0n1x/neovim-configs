@@ -6,6 +6,8 @@ M.colors = {
   claude = "#f0965f", -- light rust
   maki = "#6eb9f0", -- light cerulean
   copilot = "#aa78ff", -- purple
+  crush = "#ff60ff", -- charm magenta
+  pi = "#ffffff", -- white (pi.dev logo)
 }
 
 ---Define the HarnessTitle<Name> hl group for a harness.
