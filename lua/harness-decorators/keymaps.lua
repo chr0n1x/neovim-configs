@@ -37,7 +37,7 @@ local function focus_spec(harness)
           require("harness-decorators").setup_auto_follow()
         end)
       end
-      vim.cmd("silent! ClaudeCodeFocus<cr>")
+      vim.cmd("silent! ClaudeCodeFocus")
     end,
     desc = harness,
     mode = { "n", "x" },

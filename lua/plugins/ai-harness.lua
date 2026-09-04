@@ -57,8 +57,8 @@ vim.api.nvim_create_autocmd("ExitPre", {
   pattern = "*",
   callback = function()
     if switch.current() == "claude" then
-      vim.cmd("silent! ClaudeCodeClose<CR>")
-      vim.cmd("silent! ClaudeCodeStop<CR>")
+      vim.cmd("silent! ClaudeCodeClose")
+      vim.cmd("silent! ClaudeCodeStop")
     end
     for _, buf in ipairs(vim.api.nvim_list_bufs()) do
       if vim.api.nvim_buf_get_option(buf, "buftype") == "terminal" then
