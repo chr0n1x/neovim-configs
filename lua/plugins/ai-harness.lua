@@ -9,7 +9,9 @@
 -- (harness-decorators/switch.lua) over the available lua/harness-decorators/<dir>
 -- harnesses and swaps the backing CLI at runtime: it kills the floating terminal,
 -- repoints claudecode.nvim's terminal_cmd, and rebinds these <leader>c*/ft keymaps
--- to the chosen harness. The terminal is never auto-started (auto_start = false).
+-- to the chosen harness. The websocket server auto-starts (claudecode.nvim default)
+-- so context keys work from the first <leader>ca press; the floating terminal itself
+-- only opens on demand via <leader>c.
 local switch = require("harness-decorators.switch")
 local title = require("harness-decorators.title")
 
@@ -126,11 +128,13 @@ local set_next_win = function()
   find_base_window(true)
 end
 
--- Per-harness opts differences (everything else in `opts` is shared). The terminal
--- is never auto-started: it opens on the first <leader>c press, which is also what
--- starts the JSONL watcher (see harness-decorators/keymaps.lua).
+-- Per-harness opts differences (everything else in `opts` is shared). auto_start
+-- controls the websocket server only - it has no effect on the floating terminal,
+-- which opens on the first <leader>c press (that press also starts the JSONL watcher,
+-- see harness-decorators/keymaps.lua). The server must be up for <leader>ca /
+-- <C-t> to deliver @ mentions: with auto_start = false nothing ever calls M.start(),
+-- so send_at_mention() bails on `not M.state.server` and the context keys are dead.
 local opts_overrides = {
-  auto_start = false,
   diff_opts = {
     layout = "vertical",
     open_in_new_tab = true,
