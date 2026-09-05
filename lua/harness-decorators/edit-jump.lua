@@ -95,17 +95,15 @@ local function jump_to_edit(data, file_path)
     pcall(vim.api.nvim_buf_call, bufnr, function()
       vim.cmd.checktime()
     end)
-    -- Always reload for loaded buffers: checktime alone only marks the buffer as
-    -- externally changed; it does NOT re-read the file. Without bufload the buffer
-    -- keeps stale (shorter) content and the target line can be out of range.
-    if vim.api.nvim_buf_is_loaded(bufnr) then
-      pcall(vim.fn.bufload, bufnr)
-    end
+    -- Load the buffer so BufRead/BufReadPost fire and filetype/syntax get set.
+    -- For already-loaded buffers this re-reads from disk (the agent's version wins);
+    -- checktime alone only marks externally-changed without actually re-reading.
+    -- For new buffers this is what triggers the initial read + FileType chain.
+    pcall(vim.fn.bufload, bufnr)
   end
 
   -- Switch the target window to show this buffer. Suppress autocmds during the switch:
-  -- bufload() already fired BufRead/BufReadPost for filetype/LSP, so we don't need them
-  -- here, and BufLeave/BufWinEnter from plugins have been observed to exit terminal insert
+  -- BufLeave/BufWinEnter from plugins have been observed to exit terminal insert
   -- mode as a side effect, creating a gap where keystrokes trigger normal-mode keybinds.
   _jump_active = true
 
@@ -139,6 +137,13 @@ local function jump_to_edit(data, file_path)
     local ok, err = pcall(vim.api.nvim_win_set_cursor, win, { target, 0 })
     if not ok then
       utils.log("cursor set failed: " .. tostring(err), vim.log.levels.WARN)
+    end
+    -- Switching a non-current window's buffer under eventignore=all can leave the
+    -- grid out of sync: the jump window paints its cursor while the terminal (the
+    -- actual current window) doesn't reclaim it, so the visible cursor appears to
+    -- sit in the jumped-to file. Force a redraw to resync the display.
+    if ok then
+      vim.cmd.redraw()
     end
   end, 100)
 end

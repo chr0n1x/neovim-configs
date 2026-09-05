@@ -5,15 +5,14 @@ local utils = require("harness-decorators.utils")
 
 local M = {}
 
----Which LLM harness this Neovim session uses. Selects the JSONL dialect to parse.
-M.harness = utils.harness
-
 ---Parse a JSONL line for file changes. Dispatches to the active harness adapter.
+---Reads utils.harness live (not cached at load time) so a runtime harness switch
+---(switch.lua) repoints parsing without requiring the module to be reloaded.
 ---@param line string The JSONL line text
 ---@param line_number? integer The 1-based line number in the JSONL file
 ---Returns change_info table or nil.
 function M.parse_tool_result(line, line_number)
-  return require("harness-decorators." .. M.harness).parse_tool_result(line, line_number)
+  return require("harness-decorators." .. utils.harness).parse_tool_result(line, line_number)
 end
 
 return M
