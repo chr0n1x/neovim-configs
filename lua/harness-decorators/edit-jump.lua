@@ -144,6 +144,27 @@ local function jump_to_edit(data, file_path)
     -- sit in the jumped-to file. Force a redraw to resync the display.
     if ok then
       vim.cmd.redraw()
+      -- Refresh neo-tree's filesystem listing after the jump so it reflects files
+      -- the agent just wrote. Uses the source refresh command (not `NeoTree reveal`)
+      -- so it updates in place without stealing focus, re-centering, or opening a
+      -- closed tree. Guarded: only fires when a neo-tree window is actually open.
+      -- Deferred past the cursor set so its redraw doesn't fight ours.
+      vim.defer_fn(function()
+        local ok_mgr, manager = pcall(require, "neo-tree.sources.manager")
+        if not ok_mgr then
+          return
+        end
+        -- get_state auto-creates a state on demand, so a non-nil result is NOT proof
+        -- the tree is open. Scan for a live neo-tree window and refresh its state.
+        for _, tree_win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+          local buf = vim.api.nvim_win_get_buf(tree_win)
+          if vim.bo[buf].filetype == "neo-tree" then
+            local state = manager.get_state("filesystem", nil, tree_win)
+            pcall(require("neo-tree.sources.filesystem.commands").refresh, state)
+            return
+          end
+        end
+      end, 100)
     end
   end, 100)
 end
