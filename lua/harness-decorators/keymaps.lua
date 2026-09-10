@@ -9,6 +9,12 @@ local M = {}
 local this_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h")
 local FT_AUGROUP = "AiHarnessFtKeys"
 
+---Buffer-local ft-mappings written by M.apply (bufnr -> list of {mode, lhs}).
+---Tracked so M.clear can remove them: deleting the FileType augroup alone leaves
+---these mappings on already-open buffers, so a stale harness's <C-t> survives a
+---switch (e.g. claude -> crush) and keeps firing the old command.
+local ft_buf_maps = {}
+
 ---The harness-agnostic switcher key. Appended to every harness's spec list so it
 ---always survives a switch's clear/reapply (see switch.lua).
 local function switch_spec()
@@ -61,6 +67,8 @@ function M.apply(specs)
             desc = spec.desc,
             silent = true,
           })
+          ft_buf_maps[buf] = ft_buf_maps[buf] or {}
+          table.insert(ft_buf_maps[buf], { mode = spec.mode or "n", lhs = spec[1] })
         end
       end
       vim.api.nvim_create_autocmd("FileType", {
@@ -83,9 +91,22 @@ function M.apply(specs)
   end
 end
 
----Remove whatever keymaps the previously-active harness registered.
+---Remove whatever keymaps the previously-active harness registered: the FileType
+---autocmd group AND the buffer-local ft-mappings M.apply wrote directly onto
+---already-open buffers. Without the latter, a stale harness's <C-t> survives a
+---switch (e.g. claude -> crush) on any still-open tree buffer and keeps firing the
+---old command.
 function M.clear()
   pcall(vim.api.nvim_del_augroup_by_name, FT_AUGROUP)
+  for buf, maps in pairs(ft_buf_maps) do
+    if vim.api.nvim_buf_is_valid(buf) then
+      for _, m in ipairs(maps) do
+        -- Unmap only what we set; ignore if the buffer or mapping is already gone.
+        pcall(vim.keymap.del, m.mode, m.lhs, { buffer = buf })
+      end
+    end
+  end
+  ft_buf_maps = {}
 end
 
 ---Build the consolidated spec list for a harness: its own entries (with the
