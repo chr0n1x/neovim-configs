@@ -1,5 +1,6 @@
 nvim/plugin/
 .test-plugins/
+docs/*prd.md
 .nvimlog
 *.swp
 plugin/
