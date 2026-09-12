@@ -71,17 +71,6 @@ function M.mark_key_seen(key)
   M.seen_keys[key] = true
 end
 
----Legacy: kept for backwards compat, not used by the file watcher.
----@param tool_uses table Mutable ref to per-path tool tracking table.
-function M.path_pos_seen(tool_uses, path, tool, pos)
-  if not (path and tool and pos) then
-    return false
-  end
-  tool_uses[path] = tool_uses[path] or {}
-  tool_uses[path][tool] = tool_uses[path][tool] or {}
-  return tool_uses[path][tool][pos] ~= nil
-end
-
 ---Reset dedup state.
 function M.reset_dedup()
   M.seen_keys = {}

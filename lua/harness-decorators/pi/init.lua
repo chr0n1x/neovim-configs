@@ -20,11 +20,6 @@
 -- disabled" and no-ops; the remaining required functions are never reached.
 local M = {}
 
----True when this Neovim session runs under the pi harness.
-function M.is_active()
-  return require("harness-decorators.utils").harness == "pi"
-end
-
 -- ==========================================================================
 -- PATHS
 -- ==========================================================================

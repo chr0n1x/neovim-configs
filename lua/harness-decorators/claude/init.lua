@@ -5,11 +5,6 @@ local utils = require("harness-decorators.utils")
 
 local M = {}
 
----True when this Neovim session runs under the Claude Code harness.
-function M.is_active()
-  return utils.harness == "claude"
-end
-
 -- ==========================================================================
 -- PATHS
 -- ==========================================================================
@@ -157,14 +152,6 @@ end
 -- TERMINAL MATCHING
 -- ==========================================================================
 
----True if the buffer is Claude Code's terminal (matched by buffer name).
----@param buf number
----@return boolean
-function M.is_terminal_buffer(buf)
-  local name = vim.api.nvim_buf_get_name(buf)
-  return name:find("claude", 1, true) ~= nil
-end
-
 -- ==========================================================================
 -- JSONL DIALECT
 -- ==========================================================================
@@ -182,40 +169,6 @@ function M.extract_cwd(lines)
     end
   end
   return nil
-end
-
----Extract typed user message texts from Claude JSONL lines. Handles both the
----old format (promptSource:"typed") and current format (type:"user").
----@param lines string[]
----@return string[]
-function M.extract_typed_messages(lines)
-  local msgs = {}
-  for _, line in ipairs(lines) do
-    local is_candidate = (line:find('"promptSource"') and line:find('"typed"'))
-      or (line:find('"type"') and line:find('"user"') and line:find('"content"'))
-    if is_candidate then
-      local ok, entry = pcall(vim.json.decode, line)
-      if ok and entry and entry.type == "user" and entry.message then
-        local content = entry.message.content
-        -- Old format: top-level promptSource:"typed" with string content.
-        if entry.promptSource == "typed" and type(content) == "string" and #content >= 6 then
-          msgs[#msgs + 1] = content
-        -- Current format: role:"user" with string content (actual typed message).
-        elseif entry.message.role == "user" and type(content) == "string" and #content >= 6 then
-          msgs[#msgs + 1] = content
-        -- Current format with list content: pull first text block.
-        elseif entry.message.role == "user" and type(content) == "table" then
-          for _, item in ipairs(content) do
-            if type(item) == "table" and item.type == "text" and type(item.text) == "string" and #item.text >= 6 then
-              msgs[#msgs + 1] = item.text
-              break
-            end
-          end
-        end
-      end
-    end
-  end
-  return msgs
 end
 
 ---True if a typed message content is a session-resetting slash command.

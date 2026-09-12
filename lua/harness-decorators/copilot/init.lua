@@ -3,10 +3,6 @@ local diff = require("harness-decorators.diff")
 
 local M = {}
 
-function M.is_active()
-  return utils.harness == "copilot"
-end
-
 -- ==========================================================================
 -- PATHS
 -- ==========================================================================
@@ -104,37 +100,8 @@ function M.sidecar_name(session_id)
 end
 
 -- ==========================================================================
--- TERMINAL MATCHING
--- ==========================================================================
-
-function M.is_terminal_buffer(buf)
-  local name = vim.api.nvim_buf_get_name(buf)
-  return name:find("copilot", 1, true) ~= nil
-end
-
--- ==========================================================================
 -- JSONL DIALECT
 -- ==========================================================================
-
-function M.extract_typed_messages(lines)
-  local msgs = {}
-  for _, line in ipairs(lines) do
-    if line:find('"user.message"') then
-      local ok, entry = pcall(vim.json.decode, line)
-      if ok and entry and entry.type == "user.message" then
-        local content = entry.data and entry.data.content
-        if type(content) == "string" and #content >= 6 then
-          msgs[#msgs + 1] = content
-        end
-      end
-    end
-  end
-  return msgs
-end
-
-function M.is_reset_command(_content)
-  return false
-end
 
 function M.find_reset_command(_lines)
   return nil

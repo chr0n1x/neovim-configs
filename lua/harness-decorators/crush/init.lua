@@ -17,11 +17,6 @@
 -- nil (the watcher never spawns, so no writes are ever processed).
 local M = {}
 
----True when this Neovim session runs under the crush harness.
-function M.is_active()
-  return require("harness-decorators.utils").harness == "crush"
-end
-
 -- ==========================================================================
 -- PATHS
 -- ==========================================================================

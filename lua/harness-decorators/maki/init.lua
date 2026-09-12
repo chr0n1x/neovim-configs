@@ -11,11 +11,6 @@ local diff = require("harness-decorators.diff")
 
 local M = {}
 
----True when this Neovim session runs under the maki harness.
-function M.is_active()
-  return utils.harness == "maki"
-end
-
 -- ==========================================================================
 -- PATHS
 -- ==========================================================================
@@ -158,28 +153,6 @@ function M.on_pin(jsonl_path, file_size)
   require("harness-decorators.watcher").process_recovered_lines(lines, -#lines)
 
   return base
-end
-
----Maki writes a cwd -> session-id map next to its session JSONLs. Returns the
----session ID for `cwd`, or nil if the file is missing/unreadable.
----@param cwd string
----@return string?
-function M.session_for_cwd(cwd)
-  local dir = M.sessions_dir()
-  if not dir then
-    return nil
-  end
-  local f = io.open(dir .. "/cwd_latest.json", "r")
-  if not f then
-    return nil
-  end
-  local content = f:read("*a")
-  f:close()
-  local ok, map = pcall(vim.json.decode, content)
-  if ok and type(map) == "table" and map[cwd] then
-    return map[cwd]
-  end
-  return nil
 end
 
 -- ==========================================================================

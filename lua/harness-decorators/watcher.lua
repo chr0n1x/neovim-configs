@@ -480,7 +480,7 @@ end
 ---Concurrent sweeps from multiple instances race harmlessly (SIGTERM to an
 ---already-dead pid and os.remove of an already-gone file are both no-ops).
 ---@param self_pid number This nvim's pid, never reaped.
-function M.reap_dead_watchers(self_pid)
+local function reap_dead_watchers(self_pid)
   local user = os.getenv("USER")
   if not user then
     return
@@ -519,7 +519,7 @@ local function on_watcher_poll()
   local now = math.floor(vim.uv.hrtime() / 1000000)
   if not M._last_reap_ms or (now - M._last_reap_ms) >= M.reap_interval_ms then
     M._last_reap_ms = now
-    pcall(M.reap_dead_watchers, vim.fn.getpid())
+    pcall(reap_dead_watchers, vim.fn.getpid())
   end
 end
 
@@ -660,7 +660,7 @@ function M.start()
 
   -- Kill watchers from dead Neovim instances using pidfiles. Also runs
   -- periodically from the poll loop so crash-orphans don't wait for a new start.
-  M.reap_dead_watchers(nvim_pid)
+  reap_dead_watchers(nvim_pid)
 
   -- Truncate our own log (fresh start) so old entries don't leak into the new session.
   local truncate = io.open(M.watcher_log, "w")

@@ -90,12 +90,6 @@ function M.restore()
   return true
 end
 
----Schedule M.restore one tick from now so it runs after the pending focus change.
-function M.schedule_restore()
-  _suppress = false
-  vim.schedule(M.restore)
-end
-
 ---Clear all internal state (saved window and every guard). Used to start from a clean
 -- slate - e.g. by tests, or if a transition left a guard stuck. After this, the next
 -- capture() records fresh.
