@@ -10,15 +10,15 @@ IMAGE_TAG ?= nvim-test
 SKIP_CHECK := lua/util/task_notifications.lua \
               lua/config/lazy.lua
 
-# Combined test target: static analysis + integration tests.
-# Used as the CMD entrypoint in Dockerfile.test.
+# Combined test target: static analysis + integration tests. Runs in-container via
+# Dockerfile.test (CMD bash tests/ci.sh). Kept for running the full pass manually inside a
+# dev container; `make ci` below is the normal entry point and does not use this.
 test: lint style check test-runtime
 
-# Integration tests (docs/testing-prd.md): sync plugins into the host-mounted cache,
-# then run busted in-process against a headless nvim that has loaded the full real
-# config. Everything runs in-container; only the config source and plugin cache come
-# from the host mount. The plugin cache dir must exist before the container starts (the
-# Makefile's ci target creates it) so podman can bind-mount it.
+# Integration specs only (docs/testing-prd.md): sync plugins into the host-mounted cache,
+# then run busted in-process against a headless nvim that has loaded the full real config.
+# Everything runs in-container; only the config source and plugin cache come from the host
+# mount. The plugin cache dir must exist before the container starts so podman can bind-mount it.
 test-runtime:
 	@test -d .test-plugins || mkdir -p .test-plugins
 	@echo "==> integration tests (full real config, in-container)"
@@ -51,6 +51,9 @@ check:
 			-c "qa!" 2>/dev/null || { echo "FAIL: $$f"; exit 1; }; \
 	done
 
+# Full CI: build the image if needed, then run it once with the codebase + plugin cache
+# mounted. The container runs tests/ci.sh (lint + style + load check + integration specs) -
+# a single in-container definition of CI. No nested make; the host only mounts and invokes.
 ci:
 	@test -x "$$(command -v $(PODMAN))" || { echo "podman not found"; exit 1; }
 	@$(PODMAN) images --format '{{.Repository}}:{{.Tag}}' | grep -qF "$(IMAGE_TAG)" || \

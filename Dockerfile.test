@@ -28,4 +28,7 @@ ENV XDG_CONFIG_HOME=/nvim-config
 
 WORKDIR /nvim-config/nvim
 
-CMD ["make", "test"]
+# Full CI pass in one container: static analysis (lint + style + load check) then the
+# integration specs. The host's `make ci` just mounts the codebase and runs this image, so
+# there is a single place that defines what "CI" means - no nested make, no duplicated lint.
+CMD ["bash", "tests/ci.sh"]
