@@ -170,4 +170,22 @@ function M.format_time(ts)
   return os.date("%b %d %Y %H:%M:%S", secs)
 end
 
+---Map an extracted session cwd to the tri-state ownership verdict every harness's
+---session_ownership must return. This is the single definition of the contract so all
+---adapters agree: a known cwd that differs from this nvim's cwd is a definite "mismatch";
+---a known cwd equal to it is a "match"; and no cwd evidence yet (cwd is nil) is
+---"unknown" - leave as a candidate and retry on the next write rather than guessing.
+---@param nvim_cwd string? CWD of this Neovim instance (assumed non-nil by callers).
+---@param cwd string? The session's extracted cwd, or nil if no evidence yet.
+---@return "match"|"mismatch"|"unknown"
+function M.ownership_from_cwd(nvim_cwd, cwd)
+  if cwd and cwd ~= nvim_cwd then
+    return "mismatch"
+  end
+  if cwd == nvim_cwd then
+    return "match"
+  end
+  return "unknown"
+end
+
 return M

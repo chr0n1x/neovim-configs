@@ -27,19 +27,17 @@ end
 ---Determine whether a JSONL session belongs to this Neovim instance.
 ---Returns "match", "mismatch", or "unknown".
 ---Claude: the cwd field on any line is authoritative; other sessions in the
----same project dir have a different cwd, so a mismatched cwd rules them out.
+---same project dir have a different cwd, so a mismatched cwd rules them out. A
+---session with no cwd evidence yet is "unknown" (retry on the next write), not an
+---assumed match - see utils.ownership_from_cwd for the shared tri-state contract.
 ---@param nvim_cwd string? CWD of this Neovim instance (nil = unknown)
 ---@param lines string[] JSONL lines to inspect
 ---@return "match"|"mismatch"|"unknown"
 function M.session_ownership(nvim_cwd, lines)
-  if nvim_cwd then
-    local cwd = M.extract_cwd(lines)
-    if cwd and cwd ~= nvim_cwd then
-      return "mismatch"
-    end
+  if not nvim_cwd then
+    return "unknown"
   end
-  -- A matching (or absent) cwd means this is our session.
-  return "match"
+  return utils.ownership_from_cwd(nvim_cwd, M.extract_cwd(lines))
 end
 
 ---True when a reset command keeps the SAME jsonl file (only history is wiped).

@@ -236,16 +236,11 @@ end
 ---@param jsonl_path string? Full path of the session JSONL
 ---@return "match"|"mismatch"|"unknown"
 function M.session_ownership(nvim_cwd, lines, jsonl_path)
-  if nvim_cwd then
-    local cwd = M.extract_cwd(lines) or M.read_header_cwd(jsonl_path)
-    if cwd and cwd ~= nvim_cwd then
-      return "mismatch"
-    end
-    if cwd == nvim_cwd then
-      return "match"
-    end
+  if not nvim_cwd then
+    return "unknown"
   end
-  return "unknown"
+  local cwd = M.extract_cwd(lines) or M.read_header_cwd(jsonl_path)
+  return utils.ownership_from_cwd(nvim_cwd, cwd)
 end
 
 ---True when a reset command keeps the SAME jsonl file (only history is wiped).

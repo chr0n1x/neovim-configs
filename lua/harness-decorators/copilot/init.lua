@@ -88,16 +88,11 @@ function M.extract_cwd(lines)
 end
 
 function M.session_ownership(nvim_cwd, lines, jsonl_path)
-  if nvim_cwd then
-    local cwd = M.extract_cwd(lines) or read_session_start_cwd(jsonl_path)
-    if cwd and cwd ~= nvim_cwd then
-      return "mismatch"
-    end
-    if cwd == nvim_cwd then
-      return "match"
-    end
+  if not nvim_cwd then
+    return "unknown"
   end
-  return "unknown"
+  local cwd = M.extract_cwd(lines) or read_session_start_cwd(jsonl_path)
+  return utils.ownership_from_cwd(nvim_cwd, cwd)
 end
 
 function M.is_same_file_reset(_cmd)
