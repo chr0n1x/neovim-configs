@@ -48,10 +48,22 @@ describe("focus: capture / jump_to_saved / restore mechanics", function()
   local focus = require("harness-decorators.focus")
   local origin_buf, origin_win
 
+  -- Collapse to a single window so the vnew splits below never hit E36 "Not enough room".
+  -- Prior specs (e.g. add_current opening a cat terminal in a vsplit) may leave the buffer
+  -- split; go_back_spec and go_back_after_add_spec use this same guard for the same reason.
+  local function single_window()
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if w ~= vim.api.nvim_get_current_win() then
+        pcall(vim.api.nvim_win_close, w, true)
+      end
+    end
+  end
+
   setup(function()
     -- Reset focus module state so a prior spec (e.g. command_selection switching
     -- harnesses) can't leave a guard like _suppress stuck and turn capture into a no-op.
     focus.reset()
+    single_window()
 
     -- A real non-terminal buffer in its own window: the "origin" we must be able to
     -- return to.
