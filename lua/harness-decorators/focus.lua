@@ -16,8 +16,16 @@ local _skip_restore_buf = nil -- buffer last left; restore() bails if we're stil
 
 ---Capture the current window as the restore target. Called from WinLeave; skips
 -- terminal windows and any transition the guards mark as ours to ignore.
+--
+-- _suppress is a one-shot "skip the NEXT leave" flag (see suppress_next_leave). It is set by
+-- jump_to_saved / go_back / <leader>c to ignore the WinLeave their own window move triggers,
+-- but nothing else clears it - so capture() must consume it here. Without that, a <C-h>
+-- (jump_to_saved) latches _suppress true and every later capture bails, leaving last_win
+-- stale: <leader>ca from a file buffer then <C-h> would return to the old window instead of
+-- the file buffer we just left.
 function M.capture()
   if _restoring or _suppress then
+    _suppress = false -- consume the one-shot suppress so it doesn't poison later captures
     return
   end
   local win = vim.api.nvim_get_current_win()
