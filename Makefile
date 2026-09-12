@@ -3,26 +3,10 @@ PODMAN ?= $(shell (command -v podman >/dev/null 2>&1 && podman info >/dev/null 2
 DOCKERFILE ?= Dockerfile.test
 IMAGE_TAG ?= nvim-test
 
-# Load each lua file to catch syntax and require errors.
-# Uses -u NONE to skip full config (no plugin sync). Manually prepends lua/
-# to package.path so our own modules can require each other.
-# Skips files that depend on lazy-loaded plugins.
-SKIP_CHECK := lua/util/task_notifications.lua \
-              lua/config/lazy.lua
-
-# Combined test target: static analysis + integration tests. Runs in-container via
-# Dockerfile.test (CMD bash tests/ci.sh). Kept for running the full pass manually inside a
-# dev container; `make ci` below is the normal entry point and does not use this.
-test: lint style check test-runtime
-
-# Integration specs only (docs/testing-prd.md): sync plugins into the host-mounted cache,
-# then run busted in-process against a headless nvim that has loaded the full real config.
-# Everything runs in-container; only the config source and plugin cache come from the host
-# mount. The plugin cache dir must exist before the container starts so podman can bind-mount it.
-test-runtime:
-	@test -d .test-plugins || mkdir -p .test-plugins
-	@echo "==> integration tests (full real config, in-container)"
-	@bash tests/run.sh
+# Full CI is defined in-container by tests/ci.sh (lint + style + load check + integration
+# specs). `make ci` below is the single entry point: it mounts the codebase + plugin cache and
+# runs the image, which executes ci.sh. There is deliberately no host-side lint/test target -
+# everything runs in the container so the host stays clean (docs/testing-prd.md).
 
 # Static analysis with luacheck (lints for unused vars, redefined globals, etc.)
 lint:
@@ -39,18 +23,6 @@ style:
 fix:
 	@stylua lua/
 
-# Load each lua file to catch syntax and require errors.
-check:
-	@for f in $$(find lua/ -name '*.lua'); do \
-		if echo "$(SKIP_CHECK)" | grep -qF "$$f"; then continue; fi; \
-		echo "check $$f ..."; \
-		NVIM_LOG_FILE=/dev/null $(NVIM) --headless -u NONE \
-			-c "set noswapfile" \
-			-c "lua package.path = package.path .. ';' .. vim.fn.expand('$$(pwd)/lua/?.lua')" \
-			-c "lua dofile(vim.fn.expand('$$f'))" \
-			-c "qa!" 2>/dev/null || { echo "FAIL: $$f"; exit 1; }; \
-	done
-
 # Full CI: build the image if needed, then run it once with the codebase + plugin cache
 # mounted. The container runs tests/ci.sh (lint + style + load check + integration specs) -
 # a single in-container definition of CI. No nested make; the host only mounts and invokes.
@@ -60,7 +32,7 @@ ci:
 		$(PODMAN) build --file $(DOCKERFILE) --tag "$(IMAGE_TAG)" -q .
 	@# kill any stuck container from a prior run
 	@$(PODMAN) ps -a --filter "ancestor=$(IMAGE_TAG)" --format '{{.ID}}' | xargs -r $(PODMAN) stop 2>/dev/null || true
-	@# plugin cache dir must exist on the host before bind-mount (see test-runtime)
+	@# plugin cache dir must exist on the host before bind-mount (ci.sh mounts it)
 	@test -d .test-plugins || mkdir -p .test-plugins
 	@$(PODMAN) run --rm \
 		-e CLAUDE_MODEL \

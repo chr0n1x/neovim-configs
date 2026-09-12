@@ -1,4 +1,4 @@
--- Entry point invoked by tests/run.sh via `nvim --headless -c "luafile tests/runner.lua"`.
+-- Entry point invoked by tests/ci.sh via `nvim --headless -c "luafile tests/runner.lua"`.
 --
 -- The config loads normally (this file is sourced after startup, so all plugins are
 -- already set up). We wait until the harness layer is loaded, then run busted IN-PROCESS

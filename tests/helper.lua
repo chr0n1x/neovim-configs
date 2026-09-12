@@ -1,7 +1,7 @@
 -- Shared helpers for the integration specs.
 --
 -- The specs run INSIDE a headless nvim that has already loaded the full real config
--- (option A): `tests/run.sh` starts `nvim --headless -c "luafile tests/runner.lua"`,
+-- (option A): `tests/ci.sh` starts `nvim --headless -c "luafile tests/runner.lua"`,
 -- and runner.lua waits for LazyDone before handing control to busted. By the time any
 -- spec body runs, every plugin is loaded and the harness layer has executed its real
 -- startup path. Specs therefore drive the live in-process nvim directly (vim.keymap,
