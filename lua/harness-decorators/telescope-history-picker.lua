@@ -88,8 +88,9 @@ local function make_previewer()
 
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
 
-      -- Line 0: header. Date part gets dim highlight, path part gets bright.
-      -- Split at " - " for selective highlighting.
+      -- Line 0: header. Date part gets dim highlight, path part gets bright. The header is
+      -- built as "<date> <path>" (single space), so the date occupies the first #date chars
+      -- and the path starts right after.
       local sep = e.time_str
       local date_len = #sep
       vim.api.nvim_buf_add_highlight(bufnr, 0, SIDECAR_DATE_HL, 0, 0, date_len)

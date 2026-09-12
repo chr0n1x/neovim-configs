@@ -2,7 +2,9 @@
 -- Colors match tmux/scripts/tmux-agent-pick.sh (agent_color).
 local M = {}
 
-M.colors = {
+-- Per-harness title colors (private; only used by the helpers below). Match
+-- tmux/scripts/tmux-agent-pick.sh (agent_color).
+local colors = {
   claude = "#f0965f", -- light rust
   maki = "#6eb9f0", -- light cerulean
   copilot = "#aa78ff", -- purple
@@ -14,7 +16,7 @@ M.colors = {
 ---later ColorScheme change can still override it, while a plain link would be
 ---clobbered by any scheme that links its own groups to Normal.
 function M.define(name)
-  local color = M.colors[name]
+  local color = colors[name]
   if not color then
     return nil
   end
@@ -35,7 +37,7 @@ end
 
 ---Define groups for all known harnesses (used at LazyDone and on ColorScheme).
 function M.define_all()
-  for name in pairs(M.colors) do
+  for name in pairs(colors) do
     M.define(name)
   end
   -- Dim the telescope selected-row highlight: nord's TelescopeSelection has a

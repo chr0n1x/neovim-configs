@@ -57,7 +57,7 @@ return {
     function()
       require("harness-decorators.telescope-history-picker").pick()
     end,
-    desc = " view list of changes claude made.",
+    desc = "view list of changes claude made.",
     mode = { "n" },
   },
   { "<leader>ca", "<cmd>ClaudeCodeAdd %<cr>", desc = "Add current buffer" },
