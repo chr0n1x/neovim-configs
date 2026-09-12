@@ -24,12 +24,13 @@ function M.setup_auto_follow()
     callback = on_vim_leave,
   })
 
-  -- Reset state.
+  -- Reset state. The pin-state trio goes through watcher's single definition so a field
+  -- added there is covered here too; jsonl_positions and pending_notifications are
+  -- deliberately NOT cleared at startup (a re-pin keeps byte offsets to avoid a missed
+  -- write-batch). dedup + log caches are cleared fresh each startup.
   utils.reset_dedup()
   utils.reset_log()
-  watcher.pinned_jsonl_path = nil
-  watcher.ignored_jsonl_paths = {}
-  watcher.pin_notified = false
+  watcher.reset_pin_state()
 
   watcher.start()
 end

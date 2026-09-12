@@ -29,6 +29,46 @@ local function append_sidecar(raw_line)
   sidecar.append(sp, raw_line)
 end
 
+---Dispatch a single parsed change: append it to the sidecar, gate on the dedup key, and -
+---when not already seen - mark it seen and fire the User HarnessEdit autocmd with the
+---9-field data table consumed by edit-jump.lua and the history picker. This is the one
+---place that builds that data table, so its shape changes in exactly one spot.
+---@param change_info table The result of parser.parse_tool_result (non-nil).
+---@param line string The raw JSONL line, appended to the sidecar.
+---@param before_fire? fun(change_info: table) Optional hook run after the dedup key is
+---  marked seen but before the autocmd fires - process_jsonl_write uses it for its
+---  early/complete tool-result notification logic.
+---@return boolean fired True if the autocmd was fired (i.e. not a duplicate), false if
+---  suppressed by the dedup key. Callers use this to decide whether to log a suppression.
+local function dispatch_change(change_info, line, before_fire)
+  append_sidecar(line)
+  local dedup_key = change_info.dedup_key
+  if dedup_key and utils.key_seen(dedup_key) then
+    return false
+  end
+  if dedup_key then
+    utils.mark_key_seen(dedup_key)
+  end
+  if before_fire then
+    before_fire(change_info)
+  end
+  vim.api.nvim_exec_autocmds("User", {
+    pattern = "HarnessEdit",
+    data = {
+      file_path = change_info.file_path,
+      operation = change_info.operation,
+      starting_line = change_info.starting_line,
+      delta = change_info.delta,
+      source_line = change_info.source_line,
+      jsonl_path = M.pinned_jsonl_path,
+      event_uuid = change_info.event_uuid,
+      event_timestamp = change_info.event_timestamp,
+      event_id = change_info.event_id,
+    },
+  })
+  return true
+end
+
 ---Watcher state. Backend is "inotifywait" or "fswatch", whichever was found.
 M.watcher_handle = nil
 M.watcher_pid = nil
@@ -58,18 +98,48 @@ local function session_ownership(lines, jsonl_path)
   return adapter.session_ownership(M.nvim_cwd, lines, jsonl_path)
 end
 
----Clear all per-session state and fire the reset for the given session ID.
----Call on a session-switching reset command or re-pin so the history picker
----starts fresh. jsonl_positions is intentionally NOT cleared: keeping byte
----offsets avoids a missed-write-batch immediately after re-pin.
+---Clear the pin-state trio shared by every reset site: which session is pinned, which paths
+---are confirmed foreign, and whether the pin notification has fired. The other two fields in
+---the full set (jsonl_positions, pending_notifications) are NOT part of this - they are only
+---cleared where a full re-scan is wanted (see M.reset_all). Exposed so init.setup_auto_follow
+---can reset the same trio without reaching into watcher's internals.
+function M.reset_pin_state()
+  M.pinned_jsonl_path = nil
+  M.ignored_jsonl_paths = {}
+  M.pin_notified = false
+end
+
+---The full set of per-session state fields, each with its "cleared" value. This is the
+---single definition of what "all session state" means; the three reset sites below pick
+---the subset they need so a field added here is easy to audit for coverage. jsonl_positions
+---and pending_notifications are module-local (not on M) but are part of session state.
+local function clear_all_session_state()
+  M.reset_pin_state()
+  jsonl_positions = {}
+  pending_notifications = {}
+end
+
+---Clear ALL per-session state: every field in the set above, plus the edit-jump history for
+---every session and the utils dedup cache. Used by set_harness, where nothing from the
+---previous harness may leak into the new one. (reset_log is NOT part of this: the logger's
+---cooldown cache is keyed by message text and is not per-session state; init.setup_auto_follow
+---clears it separately at startup.)
+function M.reset_all()
+  clear_all_session_state()
+  edit_jump.edit_sources = {}
+  utils.reset_dedup()
+end
+
+---Clear per-session state on a session switch (re-pin or a reset command detected in the
+---pinned session), so the history picker starts fresh. Unlike M.reset_all this clears only
+---the OLD session's edit history (not every session's) and deliberately does NOT clear
+---jsonl_positions: keeping byte offsets avoids a missed-write-batch immediately after re-pin.
 local function reset_session_state(old_session_id)
   if old_session_id then
     edit_jump.edit_sources[old_session_id] = nil
   end
-  M.pinned_jsonl_path = nil
-  M.ignored_jsonl_paths = {}
+  M.reset_pin_state()
   pending_notifications = {}
-  M.pin_notified = false
 end
 
 ---Pin to a JSONL session.
@@ -95,6 +165,25 @@ local function try_pin_session(jsonl_path)
   return true
 end
 
+---Shared path filters for both watcher backends. Returns the jsonl path if it should be
+---processed, or nil if it must be ignored. Only root-session .jsonl files count: subagent
+---paths (one level deeper than the project hash dir) and maki's pre-compaction archives
+---(sessions/archive/<id>/N.jsonl) are skipped.
+---@param path string A full jsonl candidate path.
+---@return string|nil The path if it passes the filters, else nil.
+local function filter_jsonl_path(path)
+  if not path:match("%.jsonl$") then
+    return nil
+  end
+  if path:find("/subagents/") then
+    return nil
+  end
+  if path:find("/archive/") then
+    return nil
+  end
+  return path
+end
+
 ---Parse an inotifywait log line: "<dir> <events> <filename>".
 ---Returns the full jsonl path, or nil if the line should be ignored.
 local function parse_watcher_line(raw_line)
@@ -108,25 +197,9 @@ local function parse_watcher_line(raw_line)
     return nil
   end
 
-  -- Only process .jsonl files.
-  if not filename:match("%.jsonl$") then
-    return nil
-  end
-
-  -- Skip subagent directories — we only care about root session JSONLs.
-  -- Subagent paths are one level deeper than the project hash dir.
-  if dir:find("/subagents/") then
-    return nil
-  end
-
-  -- Skip maki's pre-compaction archives (sessions/archive/<id>/N.jsonl).
-  if dir:find("/archive/") then
-    return nil
-  end
-
-  -- Strip trailing slash from dir.
+  -- Strip trailing slash from dir, then apply the shared path filters.
   dir = dir:gsub("/+$", "")
-  return dir .. "/" .. filename
+  return filter_jsonl_path(dir .. "/" .. filename)
 end
 
 ---Parse an fswatch log line: a bare absolute path, one per line (fswatch's
@@ -138,17 +211,7 @@ local function parse_fswatch_line(raw_line)
   end
 
   local jsonl_path = raw_line:match("^%s*(.-)%s*$")
-  if not jsonl_path:match("%.jsonl$") then
-    return nil
-  end
-  if jsonl_path:find("/subagents/") then
-    return nil
-  end
-  if jsonl_path:find("/archive/") then
-    return nil
-  end
-
-  return jsonl_path
+  return filter_jsonl_path(jsonl_path)
 end
 
 ---Process a set of recovered JSONL lines (e.g. from a pin-time tail scan) through
@@ -163,27 +226,7 @@ function M.process_recovered_lines(lines, line_offset)
   for i, line in ipairs(lines) do
     local change_info = parser.parse_tool_result(line, (line_offset or 0) + i)
     if change_info then
-      append_sidecar(line)
-      local dedup_key = change_info.dedup_key
-      if not (dedup_key and utils.key_seen(dedup_key)) then
-        if dedup_key then
-          utils.mark_key_seen(dedup_key)
-        end
-        vim.api.nvim_exec_autocmds("User", {
-          pattern = "HarnessEdit",
-          data = {
-            file_path = change_info.file_path,
-            operation = change_info.operation,
-            starting_line = change_info.starting_line,
-            delta = change_info.delta,
-            source_line = change_info.source_line,
-            jsonl_path = M.pinned_jsonl_path,
-            event_uuid = change_info.event_uuid,
-            event_timestamp = change_info.event_timestamp,
-            event_id = change_info.event_id,
-          },
-        })
-      end
+      dispatch_change(change_info, line)
     end
   end
 end
@@ -316,21 +359,15 @@ local function process_jsonl_write(jsonl_path)
   for i, line in ipairs(lines) do
     local change_info = parser.parse_tool_result(line, chunk_start_line + i - 1)
     if change_info then
-      append_sidecar(line)
-
-      -- Suppress duplicate autocmds for the same logical edit.
+      -- Suppress duplicate autocmds for the same logical edit. The notification logic
+      -- (early vs complete tool result) runs as a before_fire hook so it fires only when
+      -- the autocmd actually fires, and in the same order as before.
       local dedup_key = change_info.dedup_key
-      if dedup_key and utils.key_seen(dedup_key) then
-        utils.log("NOT firing autocmd; SEEN " .. dedup_key:sub(1, 8), vim.log.levels.DEBUG)
-      else
-        if dedup_key then
-          utils.mark_key_seen(dedup_key)
-        end
+      local fired = dispatch_change(change_info, line, function(ci)
+        local fp = ci.file_path
+        local line_str = ci.starting_line and ":" .. ci.starting_line or ""
 
-        local fp = change_info.file_path
-        local line_str = change_info.starting_line and ":" .. change_info.starting_line or ""
-
-        if change_info.starting_line then
+        if ci.starting_line then
           -- The complete tool result arrived: replace the early (line-less)
           -- notification for this file, if any.
           if pending_notifications[fp] then
@@ -347,21 +384,9 @@ local function process_jsonl_write(jsonl_path)
           pending_notifications[fp] = handle
           utils.log("early tool_use @ " .. fp, vim.log.levels.DEBUG)
         end
-
-        vim.api.nvim_exec_autocmds("User", {
-          pattern = "HarnessEdit",
-          data = {
-            file_path = change_info.file_path,
-            operation = change_info.operation,
-            starting_line = change_info.starting_line,
-            delta = change_info.delta,
-            source_line = change_info.source_line,
-            jsonl_path = M.pinned_jsonl_path,
-            event_uuid = change_info.event_uuid,
-            event_timestamp = change_info.event_timestamp,
-            event_id = change_info.event_id,
-          },
-        })
+      end)
+      if not fired and dedup_key then
+        utils.log("NOT firing autocmd; SEEN " .. dedup_key:sub(1, 8), vim.log.levels.DEBUG)
       end
     end
   end
@@ -698,16 +723,10 @@ function M.set_harness(name)
   package.loaded["harness-decorators." .. name] = nil
   adapter = require("harness-decorators." .. name)
 
-  -- Drop every session's edit history so edit-jump can't follow old-harness files.
-  edit_jump.edit_sources = {}
-
-  -- Clear pin, ownership and scan state so the new harness re-pins from scratch.
-  M.pinned_jsonl_path = nil
-  M.ignored_jsonl_paths = {}
-  M.pin_notified = false
-  jsonl_positions = {}
-  pending_notifications = {}
-  utils.reset_dedup()
+  -- Wipe ALL per-session state (pin, ownership, scan offsets, pending notifications,
+  -- every session's edit history, and the dedup cache) so nothing from the previous harness
+  -- can leak into the new one. See M.reset_all for the single definition of that set.
+  M.reset_all()
 end
 
 ---Stop the watcher process.
