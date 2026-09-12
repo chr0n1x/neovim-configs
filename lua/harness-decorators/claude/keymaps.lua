@@ -156,13 +156,8 @@ end
 ---tree detection, but formats paths locally so a cwd-equal directory never collapses to a
 ---bare "@".
 vim.api.nvim_create_user_command("ClaudeTreeAdd", function()
-  local ok, integrations = pcall(require, "claudecode.integrations")
-  if not ok then
-    vim.notify("claude: claudecode.integrations not available", vim.log.levels.WARN)
-    return
-  end
-  local files, err = integrations.get_selected_files_from_tree()
-  if err or not files or #files == 0 then
+  local files, err = require("harness-decorators.utils").get_tree_selection()
+  if not files or #files == 0 then
     vim.notify("claude: no file selected in tree" .. (err and (" (" .. err .. ")") or ""), vim.log.levels.WARN)
     return
   end

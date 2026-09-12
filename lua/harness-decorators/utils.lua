@@ -88,6 +88,30 @@ function M.reset_dedup()
 end
 
 -- ==========================================================================
+-- TREE SELECTION
+-- ==========================================================================
+
+---Get the file(s) selected in the current tree plugin, safely.
+---
+---Wraps claudecode.nvim's get_selected_files_from_tree in a pcall: that function
+---can throw when the tree window has been closed or recreated (it calls
+---nvim_win_get_cursor on a stale win id -> E5108). Returning an error string keeps
+---every harness's <C-t>/tree-add handler from crashing.
+---@return table files List of file paths (empty on failure)
+---@return string|nil err Error message if no selection or the lookup threw
+function M.get_tree_selection()
+  local ok, integrations = pcall(require, "claudecode.integrations")
+  if not ok then
+    return {}, "claudecode.integrations not available"
+  end
+  local ok2, files, err = pcall(integrations.get_selected_files_from_tree)
+  if not ok2 then
+    return {}, tostring(files)
+  end
+  return files or {}, err
+end
+
+-- ==========================================================================
 -- PATH AND SESSION HELPERS
 -- ==========================================================================
 

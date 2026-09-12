@@ -253,6 +253,13 @@ function M.on_edit(args)
   store_edit_source(args.data)
 
   vim.defer_fn(function()
+    -- The edit jump lands focus in the terminal; first point the work window at
+    -- the last normal-mode buffer so it stays visible underneath.
+    local fok, focus = pcall(require, "harness-decorators.focus")
+    if fok then
+      focus.suppress_next_leave()
+      focus.restore()
+    end
     jump_to_edit(args.data, file_path)
   end, 500)
 end

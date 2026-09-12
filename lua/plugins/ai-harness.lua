@@ -28,46 +28,19 @@ if not vim.tbl_contains(keymaps.list_harnesses(), harness) then
 end
 
 -- Per-harness terminal command (CLI + model flags); each harness sets its own env.
+-- Requiring the env module here (not referencing an undefined global) is what makes
+-- terminal_cmd correct at startup - without it, claudecode falls back to "claude" and a
+-- fresh NVIM_LLM_HARNESS=maki silently runs claude (the A1 desync).
 local command = require("harness-decorators." .. harness .. ".env")
 
--- save current window before alt-tab so we can restore focus on return
-local _last_win = vim.api.nvim_get_current_win()
-vim.api.nvim_create_autocmd("FocusLost", {
+-- Remember the last normal-mode buffer so focus-gaining actions can restore it.
+-- WinLeave fires the instant a window loses focus, so this always holds the
+-- window we came from before the terminal took over. The restore lives in
+-- focus.lua and is invoked from every path that moves focus into the terminal.
+local focus = require("harness-decorators.focus")
+vim.api.nvim_create_autocmd("WinLeave", {
   pattern = "*",
-  callback = function()
-    _last_win = vim.api.nvim_get_current_win()
-  end,
-})
-
-vim.api.nvim_create_autocmd("FocusGained", {
-  pattern = "*",
-  callback = function()
-    -- after alt-tab, snacks/tmux loses cursor focus on the floating
-    -- terminal; restore to whatever window had it before we left
-    vim.cmd.redraw()
-    if vim.api.nvim_win_is_valid(_last_win) then
-      vim.api.nvim_set_current_win(_last_win)
-      local buf = vim.api.nvim_win_get_buf(_last_win)
-      if vim.api.nvim_buf_get_option(buf, "buftype") == "terminal" then
-        vim.cmd.startinsert()
-      end
-    end
-  end,
-})
-
-vim.api.nvim_create_autocmd("ExitPre", {
-  pattern = "*",
-  callback = function()
-    if switch.current() == "claude" then
-      vim.cmd("silent! ClaudeCodeClose")
-      vim.cmd("silent! ClaudeCodeStop")
-    end
-    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-      if vim.api.nvim_buf_get_option(buf, "buftype") == "terminal" then
-        vim.api.nvim_buf_delete(buf, { force = true })
-      end
-    end
-  end,
+  callback = focus.capture,
 })
 
 local function animate_collapse(self)
@@ -98,18 +71,8 @@ local function valid_buf(win_id)
   return not config.z and win_id ~= terminal_win and vim.uv.fs_stat(buf_name) ~= nil
 end
 
-local function find_base_window(reverse)
+local function find_base_window()
   local wins = vim.api.nvim_tabpage_list_wins(0)
-
-  if reverse then
-    for _, win_id in ipairs(wins) do
-      if valid_buf(win_id) then
-        vim.api.nvim_set_current_win(win_id)
-        return
-      end
-    end
-    return
-  end
 
   for ix = #wins, 1, -1 do
     local win_id = wins[ix]
@@ -121,11 +84,28 @@ local function find_base_window(reverse)
 end
 
 local set_prev_win = function()
-  find_base_window(false)
+  find_base_window()
 end
 
-local set_next_win = function()
-  find_base_window(true)
+---Jump back to the window we came from while the terminal stays open (the "jump
+---back" key). Goes to focus.last_win (the actual previous window), falling back to
+---the positional set_prev_win if that window is gone. The terminal is config-hidden
+---(not closed) first: closing it with self:hide() while a work buffer is showing in
+---its window makes Snacks' fixbuf swap the buffer into another window, which
+---duplicates buffers. With the float hidden there is nothing to react to; the
+---terminal reappears via <leader>c (ClaudeCodeFocus -> cc_show un-hides it).
+local function go_back(self)
+  focus.suppress_next_leave()
+  animate_collapse(self)
+  local term = require("claudecode").state and require("claudecode").state.terminal
+  if term and term.win and vim.api.nvim_win_is_valid(term.win) then
+    pcall(vim.api.nvim_win_set_config, term.win, { hide = true })
+  end
+  if not focus.jump_to_saved() then
+    set_prev_win()
+  end
+  vim.cmd.redraw()
+  vim.cmd("noh")
 end
 
 -- Per-harness opts differences (everything else in `opts` is shared). auto_start
@@ -178,7 +158,13 @@ return {
             vim.api.nvim_set_option_value("winhighlight", "FloatFooter:SnacksFooter", { win = self.win })
           end,
           footer_keys = true,
-          fix_buf = true,
+          -- Disabled: fixbuf registers a BufWinEnter autocmd that swaps the float's
+          -- buffer into a "main" window whenever a non-terminal buffer lands in the
+          -- float. During the float's destroy/recreate (cc_show -> Snacks open_win)
+          -- or any concurrent focus change, that swap duplicates buffers. Every keymap
+          -- here manages focus explicitly and cc_show always sets the terminal buffer
+          -- back, so nothing relies on fixbuf - dropping it removes the duplication.
+          fix_buf = false,
           resize = true,
           stack = true,
           start_insert = true,
@@ -187,6 +173,10 @@ return {
             {
               "<Esc>",
               function(self)
+                -- Suppress capture for hide's WinLeave (we already moved to a base
+                -- window via set_prev_win); no restore needed - the buffer was never
+                -- changed and set_prev_win put us back where we came from.
+                focus.suppress_next_leave()
                 set_prev_win()
                 self:hide()
                 vim.cmd.redraw()
@@ -208,24 +198,10 @@ return {
             {
               "<C-h>",
               function(self)
-                animate_collapse(self)
-                set_prev_win()
-                vim.cmd.redraw()
-                vim.cmd("noh")
+                go_back(self)
               end,
               mode = "t",
-              desc = "←",
-            },
-            {
-              "<C-l>",
-              function(self)
-                animate_collapse(self)
-                set_next_win()
-                vim.cmd.redraw()
-                vim.cmd("noh")
-              end,
-              mode = "t",
-              desc = "→",
+              desc = "↩",
             },
             {
               "<C-f>",

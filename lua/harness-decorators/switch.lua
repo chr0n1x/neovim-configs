@@ -89,6 +89,12 @@ function M.switch(new_harness)
   end
 
   ensure_plugin_loaded()
+  -- kill_terminal force-deletes the terminal buffer; if focus is in it, nvim
+  -- re-parents the window to the next visible buffer and WinLeave fires - capture
+  -- would record that random window as the restore target. Suppress for the tick.
+  pcall(function()
+    require("harness-decorators.focus").suppress_next_leave()
+  end)
   kill_terminal()
 
   -- maki disables auto_start (no @ mention server); everything else wants it.

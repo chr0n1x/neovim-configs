@@ -49,6 +49,10 @@ describe("focus: capture / jump_to_saved / restore mechanics", function()
   local origin_buf, origin_win
 
   setup(function()
+    -- Reset focus module state so a prior spec (e.g. command_selection switching
+    -- harnesses) can't leave a guard like _suppress stuck and turn capture into a no-op.
+    focus.reset()
+
     -- A real non-terminal buffer in its own window: the "origin" we must be able to
     -- return to.
     origin_buf = helper.open_scratch("-focus-origin.txt")
