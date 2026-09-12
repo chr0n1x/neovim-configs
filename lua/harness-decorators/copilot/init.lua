@@ -1,4 +1,5 @@
 local utils = require("harness-decorators.utils")
+local diff = require("harness-decorators.diff")
 
 local M = {}
 
@@ -161,65 +162,6 @@ function M.score_event(ev)
   return 0
 end
 
-local function find_starting_line(before, after)
-  local before_lines = vim.split(before, "\n", { plain = true })
-  local after_lines = vim.split(after, "\n", { plain = true })
-  local max_len = math.min(#before_lines, #after_lines)
-  for i = 1, max_len do
-    if before_lines[i] ~= after_lines[i] then
-      return i
-    end
-  end
-  if #before_lines ~= #after_lines then
-    return max_len + 1
-  end
-  return nil
-end
-
-local function diff_full_files(before, after)
-  local before_lines = vim.split(before, "\n", { plain = true })
-  local after_lines = vim.split(after, "\n", { plain = true })
-
-  local prefix_len = 0
-  local max_prefix = math.min(#before_lines, #after_lines)
-  for i = 1, max_prefix do
-    if before_lines[i] == after_lines[i] then
-      prefix_len = i
-    else
-      break
-    end
-  end
-
-  local suffix_len = 0
-  local max_suffix = math.min(#before_lines, #after_lines) - prefix_len
-  for i = 1, max_suffix do
-    if before_lines[#before_lines - i + 1] == after_lines[#after_lines - i + 1] then
-      suffix_len = i
-    else
-      break
-    end
-  end
-
-  local numbered = {}
-  local ctx_start = math.max(1, prefix_len - 2)
-  for i = ctx_start, prefix_len do
-    table.insert(numbered, string.format("%5d  %s", i, " " .. after_lines[i]))
-  end
-  for i = prefix_len + 1, #before_lines - suffix_len do
-    table.insert(numbered, string.format("%5d  %s", i, "-" .. before_lines[i]))
-  end
-  for i = prefix_len + 1, #after_lines - suffix_len do
-    table.insert(numbered, string.format("%5d  %s", i, "+" .. after_lines[i]))
-  end
-  local ctx_end = math.min(3, suffix_len)
-  for i = 1, ctx_end do
-    local new_idx = #after_lines - suffix_len + i
-    table.insert(numbered, string.format("%5d  %s", new_idx, " " .. after_lines[new_idx]))
-  end
-
-  return numbered
-end
-
 function M.extract_diff(ev)
   if not ev then
     return "(no diff data available)"
@@ -229,7 +171,7 @@ function M.extract_diff(ev)
     local old_lines = vim.split(d.arguments.old_str, "\n", { plain = true })
     local new_lines = vim.split(d.arguments.new_str, "\n", { plain = true })
     local parts = { string.format("%d -> %d lines", #old_lines, #new_lines), "" }
-    local numbered = diff_full_files(d.arguments.old_str, d.arguments.new_str)
+    local numbered = diff.diff_full_files(d.arguments.old_str, d.arguments.new_str)
     if #numbered > 0 then
       table.insert(parts, table.concat(numbered, "\n"))
     end
@@ -283,7 +225,7 @@ function M.parse_tool_result(line, line_number)
   local delta = ""
 
   if args.old_str and args.new_str then
-    starting_line = find_starting_line(args.old_str, args.new_str)
+    starting_line = diff.find_starting_line(args.old_str, args.new_str)
     delta = args.new_str:gsub("\n", "\\n"):sub(1, 60)
   elseif args.new_str then
     delta = args.new_str:gsub("\n", "\\n"):sub(1, 60)

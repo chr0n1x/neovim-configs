@@ -7,6 +7,7 @@
 -- not implemented yet, so no notifications or jumps fire for maki edits. The
 -- setup warning in harness-decorators.init tells the user this.
 local utils = require("harness-decorators.utils")
+local diff = require("harness-decorators.diff")
 
 local M = {}
 
@@ -82,65 +83,6 @@ function M.score_event(ev)
   return 0
 end
 
----Compute a unified-style diff from two full-file text blobs. Returns lines
----in the same "%5d  <prefix><content>" format used by the previewer.
----@param before string Full file content before edit
----@param after string Full file content after edit
----@return string[] numbered diff lines
-local function diff_full_files(before, after)
-  local before_lines = vim.split(before, "\n", { plain = true })
-  local after_lines = vim.split(after, "\n", { plain = true })
-
-  -- Find common prefix.
-  local prefix_len = 0
-  local max_prefix = math.min(#before_lines, #after_lines)
-  for i = 1, max_prefix do
-    if before_lines[i] == after_lines[i] then
-      prefix_len = i
-    else
-      break
-    end
-  end
-
-  -- Find common suffix (not overlapping with prefix).
-  local suffix_len = 0
-  local max_suffix = math.min(#before_lines, #after_lines) - prefix_len
-  for i = 1, max_suffix do
-    if before_lines[#before_lines - i + 1] == after_lines[#after_lines - i + 1] then
-      suffix_len = i
-    else
-      break
-    end
-  end
-
-  -- Build the numbered diff.
-  local numbered = {}
-  -- Context: common prefix (show up to 3 lines before the change).
-  local ctx_start = math.max(1, prefix_len - 2)
-  for i = ctx_start, prefix_len do
-    table.insert(numbered, string.format("%5d  %s", i, " " .. after_lines[i]))
-  end
-
-  -- Deletions (old lines between prefix and suffix).
-  for i = prefix_len + 1, #before_lines - suffix_len do
-    table.insert(numbered, string.format("%5d  %s", i, "-" .. before_lines[i]))
-  end
-
-  -- Additions (new lines between prefix and suffix).
-  for i = prefix_len + 1, #after_lines - suffix_len do
-    table.insert(numbered, string.format("%5d  %s", i, "+" .. after_lines[i]))
-  end
-
-  -- Context: common suffix (show up to 3 lines after the change).
-  local ctx_end = math.min(3, suffix_len)
-  for i = 1, ctx_end do
-    local new_idx = #after_lines - suffix_len + i
-    table.insert(numbered, string.format("%5d  %s", new_idx, " " .. after_lines[new_idx]))
-  end
-
-  return numbered
-end
-
 ---Extract diff text from a matched sidecar event (maki dialect).
 ---@param ev table|nil Decoded JSONL line
 ---@return string
@@ -157,7 +99,7 @@ function M.extract_diff(ev)
     local parts = {}
     table.insert(parts, string.format("%d -> %d lines", #before_lines, #after_lines))
     table.insert(parts, "") -- blank separator before diff
-    local numbered = diff_full_files(maki_diff.before, maki_diff.after)
+    local numbered = diff.diff_full_files(maki_diff.before, maki_diff.after)
     if #numbered > 0 then
       table.insert(parts, table.concat(numbered, "\n"))
     end
@@ -334,26 +276,6 @@ end
 -- TOOL RESULT PARSING
 -- ==========================================================================
 
----Find the first divergent line between two full-file text blobs (1-indexed).
----@param before string Full file content before edit
----@param after string Full file content after edit
----@return integer? starting_line 1-based line number of first change, or nil
-local function find_starting_line(before, after)
-  local before_lines = vim.split(before, "\n", { plain = true })
-  local after_lines = vim.split(after, "\n", { plain = true })
-  local max_len = math.min(#before_lines, #after_lines)
-  for i = 1, max_len do
-    if before_lines[i] ~= after_lines[i] then
-      return i
-    end
-  end
-  -- All common lines match; change is at the boundary (insertion or deletion).
-  if #before_lines ~= #after_lines then
-    return max_len + 1
-  end
-  return nil
-end
-
 ---Extract change_info from a Diff out record.
 ---@param entry table The decoded JSON object
 ---@param line_number? integer The 1-based line number in the JSONL file
@@ -362,15 +284,15 @@ local function parse_diff_out(entry, line_number)
   if not d or not d.Diff then
     return nil
   end
-  local diff = d.Diff
-  local fp = diff.path
+  local maki_diff = d.Diff
+  local fp = maki_diff.path
   if not fp or utils.is_noise(fp) then
     return nil
   end
 
-  local starting_line = find_starting_line(diff.before, diff.after)
-  local before_count = #vim.split(diff.before, "\n", { plain = true })
-  local after_count = #vim.split(diff.after, "\n", { plain = true })
+  local starting_line = diff.find_starting_line(maki_diff.before, maki_diff.after)
+  local before_count = #vim.split(maki_diff.before, "\n", { plain = true })
+  local after_count = #vim.split(maki_diff.after, "\n", { plain = true })
   local delta = string.format("%d -> %d lines", before_count, after_count)
 
   return {
