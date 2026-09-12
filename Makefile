@@ -10,9 +10,19 @@ IMAGE_TAG ?= nvim-test
 SKIP_CHECK := lua/util/task_notifications.lua \
               lua/config/lazy.lua
 
-# Combined test target: static analysis + runtime tests.
+# Combined test target: static analysis + integration tests.
 # Used as the CMD entrypoint in Dockerfile.test.
-test: lint style check
+test: lint style check test-runtime
+
+# Integration tests (docs/testing-prd.md): sync plugins into the host-mounted cache,
+# then run busted in-process against a headless nvim that has loaded the full real
+# config. Everything runs in-container; only the config source and plugin cache come
+# from the host mount. The plugin cache dir must exist before the container starts (the
+# Makefile's ci target creates it) so podman can bind-mount it.
+test-runtime:
+	@test -d .test-plugins || mkdir -p .test-plugins
+	@echo "==> integration tests (full real config, in-container)"
+	@bash tests/run.sh
 
 # Static analysis with luacheck (lints for unused vars, redefined globals, etc.)
 lint:
@@ -47,10 +57,13 @@ ci:
 		$(PODMAN) build --file $(DOCKERFILE) --tag "$(IMAGE_TAG)" -q .
 	@# kill any stuck container from a prior run
 	@$(PODMAN) ps -a --filter "ancestor=$(IMAGE_TAG)" --format '{{.ID}}' | xargs -r $(PODMAN) stop 2>/dev/null || true
+	@# plugin cache dir must exist on the host before bind-mount (see test-runtime)
+	@test -d .test-plugins || mkdir -p .test-plugins
 	@$(PODMAN) run --rm \
 		-e CLAUDE_MODEL \
 		-e ANTHROPIC_BASE_URL \
-		-v $$(pwd):/nvim-config/nvim "$(IMAGE_TAG)"
+		-v $$(pwd):/nvim-config/nvim \
+		-v $$(pwd)/.test-plugins:/root/.local/share/nvim "$(IMAGE_TAG)"
 
 dev:
 	@$(PODMAN) run --rm \

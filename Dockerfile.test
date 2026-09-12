@@ -2,14 +2,26 @@ FROM alpine:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Neovim, static analysis tools, and build essentials
+# Install Neovim, static analysis tools, and build essentials. lua5.1 + luarocks
+# provide the busted test runner (installed below) as a standalone binary so specs
+# run without depending on plenary's vendored copy or on plugin sync succeeding first.
 RUN apk add --no-cache \
     bash \
     neovim \
     git \
     make \
     luacheck \
-    stylua
+    stylua \
+    lua5.1 \
+    luarocks
+
+# busted is the standalone test runner for tests/. Installed at build time so the
+# image is self-contained; specs are plain Lua + nvim API, no plenary dependency.
+# Its luasystem dep compiles C, so gcc/musl-dev and the lua5.1 headers are needed.
+# Alpine names the binary luarocks-5.1 (no unversioned symlink), so call it directly.
+RUN apk add --no-cache gcc musl-dev lua5.1-dev && \
+    luarocks-5.1 install busted && \
+    apk del --no-network gcc musl-dev lua5.1-dev
 
 # Config is volume-mounted at $XDG_CONFIG_HOME/nvim/ = /nvim-config/nvim/
 ENV XDG_CONFIG_HOME=/nvim-config

@@ -1,4 +1,5 @@
 nvim/plugin/
+.test-plugins/
 .nvimlog
 *.swp
 plugin/
