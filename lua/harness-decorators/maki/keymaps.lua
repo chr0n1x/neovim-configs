@@ -63,7 +63,7 @@ return {
     function()
       require("harness-decorators.telescope-history-picker").pick()
     end,
-    desc = "view list of changes maki made.",
+    desc = "View changes made by maki",
     mode = { "n" },
   },
   { "<leader>ca", "<cmd>MakiAdd %<cr>", desc = "Add current buffer" },

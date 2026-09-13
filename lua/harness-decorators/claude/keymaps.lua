@@ -57,7 +57,7 @@ return {
     function()
       require("harness-decorators.telescope-history-picker").pick()
     end,
-    desc = "view list of changes claude made.",
+    desc = "View changes made by claude",
     mode = { "n" },
   },
   { "<leader>ca", "<cmd>ClaudeCodeAdd %<cr>", desc = "Add current buffer" },
@@ -66,7 +66,7 @@ return {
   {
     "<C-t>",
     "<cmd>ClaudeTreeAdd<cr>",
-    desc = "Add file",
+    desc = "Add file to Claude",
     ft = { "NvimTree", "neo-tree", "oil", "minifiles", "netrw" },
   },
   -- Diff management - I barely use these but wanted to give some defaults

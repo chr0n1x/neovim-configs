@@ -64,7 +64,7 @@ return {
     function()
       require("harness-decorators.telescope-history-picker").pick()
     end,
-    desc = "view list of changes copilot made.",
+    desc = "View changes made by copilot",
     mode = { "n" },
   },
   { "<leader>ca", "<cmd>CopilotAdd %<cr>", desc = "Add current buffer" },
