@@ -183,12 +183,15 @@ end
 ---@param bufs table<string, number> harness -> live terminal buffer map (from collect_terminal_bufs)
 ---@return table entry { value, ordinal, display }
 function M.make_entry(name, active, bufs)
-  -- State glyph: a filled circle for the active harness, a hollow one for a backgrounded harness that
-  -- still has a live process, two spaces for a never-opened/stopped one. Each colored state uses its
-  -- own picker group (title.picker_glyphs); the idle state is blank so no group is needed.
-  local parked = bufs[name] ~= nil and name ~= active
+  -- State glyph: a filled circle for the active harness (only if it has a live buffer), a hollow one
+  -- for a backgrounded harness that still has a live process, two spaces for a never-opened/stopped
+  -- one. An active-but-never-initialized harness shows no glyph - it's not actually running yet.
+  -- Each colored state uses its own picker group (title.picker_glyphs); the idle state is blank so
+  -- no group is needed.
+  local has_live = bufs[name] ~= nil
+  local parked = has_live and name ~= active
   local glyph, glyph_group
-  if name == active then
+  if has_live and name == active then
     glyph, glyph_group = "● ", title.picker_glyphs.active.group
   elseif parked then
     glyph, glyph_group = "○ ", title.picker_glyphs.parked.group
@@ -212,6 +215,24 @@ function M.make_entry(name, active, bufs)
       return text, ranges
     end,
   }
+end
+
+---Build the two-line header for a preview pane: a label line (`name  (status)`) padded to `width`
+---columns, and a separator line of `─` repeated `width` times. If the label is longer than `width`,
+---it is truncated. Falls back to a default width of 40 when `width` is nil or non-positive.
+---Exposed on M so tests/picker_spec.lua can drive it without opening telescope UI.
+---@param name string harness name
+---@param status string "active" | "backgrounded" | "uninitialized"
+---@param width? number preview pane width in columns
+---@return string header_line
+---@return string separator_line
+function M.preview_header(name, status, width)
+  local label = name .. "  (" .. status .. ")"
+  local w = (type(width) == "number" and width > 0) and math.floor(width) or 40
+  if #label >= w then
+    return label:sub(1, w), string.rep("─", w)
+  end
+  return label .. string.rep(" ", w - #label), string.rep("─", w)
 end
 
 ---Telescope buffer previewer for the harness picker: renders a header plus the raw terminal
@@ -263,11 +284,24 @@ local function make_harness_previewer(bufs)
     end
     local name = entry.value
     local lines = {}
-    local status = name == current_harness and "active" or "backgrounded"
-    table.insert(lines, name .. "  (" .. status .. ")")
-    table.insert(lines, string.rep("─", 40))
     local term_buf = bufs[name]
-    if term_buf and vim.api.nvim_buf_is_valid(term_buf) then
+    local has_live = term_buf ~= nil and vim.api.nvim_buf_is_valid(term_buf)
+    local status
+    if not has_live then
+      status = "uninitialized"
+    elseif name == current_harness then
+      status = "active"
+    else
+      status = "backgrounded"
+    end
+    local win_width = 0
+    if vim.api.nvim_win_is_valid(winid) then
+      win_width = pcall(vim.api.nvim_win_get_width, winid) and vim.api.nvim_win_get_width(winid) or 0
+    end
+    local header_line, separator_line = M.preview_header(name, status, win_width)
+    table.insert(lines, header_line)
+    table.insert(lines, separator_line)
+    if has_live then
       vim.list_extend(lines, vim.api.nvim_buf_get_lines(term_buf, 0, -1, false))
     else
       table.insert(lines, "(not started)")
@@ -334,8 +368,12 @@ function M.pick()
       -- strategy (preview_height belongs to vertical and errors here).
       layout_strategy = "horizontal",
       layout_config = {
-        prompt_position = "top",
-        preview_width = 0.5,
+        prompt_position = "bottom",
+        -- preview_width is a fraction of the TOTAL layout width; the left column (prompt+results) gets
+        -- the rest (layout_strategies.lua: results.width = width - preview.width - spacing). The harness
+        -- list is short (a handful of short names), so give most of the width to the preview and keep the
+        -- left column thin. 0.5 was an even split, which wasted space on a tiny list.
+        preview_width = 0.85,
         preview_cutoff = 12,
         width = 0.8,
         height = 0.8,

@@ -123,13 +123,21 @@ describe("picker: make_entry renders a colored state glyph + harness name (Task 
     return out
   end
 
-  it("marks the active harness with a filled circle in HarnessPickerActive", function()
-    local g = groups_of("claude", "claude", {})
+  it("marks an active harness WITH a live buffer with a filled circle in HarnessPickerActive", function()
+    local g = groups_of("claude", "claude", { claude = 42 })
     assert.is_not_nil(g.HarnessPickerActive, "active glyph group missing")
     -- The glyph is "● " (a 4-byte UTF-8 circle + space); the name starts right after it.
     assert.are.equal(0, g.HarnessPickerActive.start)
     assert.are.equal(#("● "), g.HarnessPickerActive.stop)
     assert.is_not_nil(g.HarnessTitleClaude, "active name must still be colored")
+  end)
+
+  it("marks an active harness WITHOUT a live buffer (never initialized) with no glyph", function()
+    local g = groups_of("claude", "claude", {})
+    assert.is_nil(g.HarnessPickerActive, "uninitialized active harness must not show the active glyph")
+    assert.is_nil(g.HarnessPickerParked, "uninitialized active harness must not show the parked glyph")
+    -- Only the name is highlighted (no glyph group).
+    assert.is_not_nil(g.HarnessTitleClaude, "name must still be colored")
   end)
 
   it("marks a parked harness (live buffer, not active) with a hollow circle in HarnessPickerParked", function()
@@ -149,7 +157,7 @@ describe("picker: make_entry renders a colored state glyph + harness name (Task 
   end)
 
   it("highlights the name starting right after the glyph", function()
-    local g = groups_of("claude", "claude", {})
+    local g = groups_of("claude", "claude", { claude = 42 })
     -- The active glyph is "● " (4 bytes); 'claude' is 6 bytes, so the name spans [4, 10).
     assert.are.equal(#("● "), g.HarnessTitleClaude.start, "name should start right after the glyph")
     assert.are.equal(#("● ") + #("claude"), g.HarnessTitleClaude.stop)
@@ -189,11 +197,11 @@ describe("picker: M.pick uses a horizontal layout with the expected titles (Task
     package.loaded["telescope.pickers"] = nil
   end)
 
-  it("uses the horizontal layout strategy with the prompt on top", function()
+  it("uses the horizontal layout strategy with the prompt on the bottom", function()
     sw.pick()
     assert.is_not_nil(captured, "M.pick did not reach telescope.pickers.new")
     assert.are.equal("horizontal", captured.layout_strategy)
-    assert.are.equal("top", captured.layout_config.prompt_position)
+    assert.are.equal("bottom", captured.layout_config.prompt_position)
   end)
 
   it("titles the prompt 'search' and the results 'Harnesses'", function()
@@ -207,5 +215,61 @@ describe("picker: M.pick uses a horizontal layout with the expected titles (Task
     -- The dynamic per-harness name is already rendered as the first line of the preview buffer, so a
     -- static "Preview" title is the pragmatic choice (telescope titles are set once at creation).
     assert.are.equal("Preview", captured.preview_title)
+  end)
+end)
+
+describe("picker: preview_header sizes the header/separator to the pane width", function()
+  -- Count UTF-8 characters in a string. `─` is 3 bytes (0xE2 0x94 0x80), so #str overcounts for
+  -- strings containing it. This helper walks the string and counts each multi-byte sequence as one
+  -- character.
+  local function char_len(s)
+    local count = 0
+    local i = 1
+    while i <= #s do
+      local byte = s:byte(i)
+      if byte < 0x80 then
+        i = i + 1
+      elseif byte < 0xE0 then
+        i = i + 2
+      elseif byte < 0xF0 then
+        i = i + 3
+      else
+        i = i + 4
+      end
+      count = count + 1
+    end
+    return count
+  end
+
+  it("separator spans the full given width", function()
+    local _, sep = sw.preview_header("claude", "active", 120)
+    assert.are.equal(120, char_len(sep), "separator must be exactly as wide as the preview pane")
+    -- Lua patterns don't handle multi-byte UTF-8 well, so verify by checking every 3-byte chunk
+    -- is the box-drawing char E2 94 80.
+    for i = 1, #sep, 3 do
+      assert.are.equal(0xE2, sep:byte(i), "separator byte " .. i .. " must be 0xE2")
+      assert.are.equal(0x94, sep:byte(i + 1), "separator byte " .. (i + 1) .. " must be 0x94")
+      assert.are.equal(0x80, sep:byte(i + 2), "separator byte " .. (i + 2) .. " must be 0x80")
+    end
+  end)
+
+  it("header label is padded to the full width", function()
+    local header = sw.preview_header("claude", "active", 120)
+    assert.are.equal(120, #header, "header row must span the full pane width (padded)")
+    -- The header starts with "claude  (active)" followed by spaces; check the prefix using find.
+    assert.is_not_nil(header:find("^claude  %(%a+%)%s*$"), "header must start with the name + status label")
+  end)
+
+  it("falls back to a default width when width is nil or non-positive", function()
+    local _, sep_nil = sw.preview_header("maki", "backgrounded", nil)
+    local _, sep_zero = sw.preview_header("maki", "backgrounded", 0)
+    assert.are.equal(char_len(sep_nil), char_len(sep_zero), "nil and 0 widths must fall back to the same default")
+    assert.is_true(char_len(sep_nil) > 0, "fallback separator must be non-empty")
+  end)
+
+  it("truncates an over-long label instead of overflowing the width", function()
+    local header, sep = sw.preview_header(string.rep("x", 200), "active", 40)
+    assert.are.equal(40, #header, "an over-long label must be truncated to the pane width")
+    assert.are.equal(40, char_len(sep), "separator stays at the pane width regardless of label length")
   end)
 end)
