@@ -52,9 +52,17 @@ local function kill_terminal()
   pcall(function()
     require("claudecode.terminal").close()
   end)
-  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].buftype == "terminal" then
-      vim.api.nvim_buf_delete(buf, { force = true })
+
+  -- Close only claudecode's OWN terminal buffer, not every buftype=="terminal" buffer in the
+  -- nvim instance. The previous loop force-deleted all of them, which killed any unrelated
+  -- :terminal shell the user had open on a harness switch with no feedback. get_active_bufnr
+  -- is claudecode's own handle to its float; if it reports none (already closed by close()
+  -- above or never opened) there is nothing left to delete.
+  local ok_term, term = pcall(require, "claudecode.terminal")
+  if ok_term and term.get_active_terminal_bufnr then
+    local bufnr = term.get_active_terminal_bufnr()
+    if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+      vim.api.nvim_buf_delete(bufnr, { force = true })
     end
   end
 
@@ -123,8 +131,22 @@ function M.switch(new_harness)
     end
   end
   -- nil user_term_config leaves previously configured terminal opts (snacks
-  -- window layout, keymaps, etc.) untouched; only terminal_cmd/env change.
-  require("claudecode.terminal").setup(nil, command, {})
+  -- window layout, keymaps, etc.) untouched; only terminal_cmd/env change. Every other
+  -- claudecode poke in this function is pcalled, so this one is too: a failure here must not
+  -- abort the switch mid-way and leave the config half-applied (terminal already killed,
+  -- keymaps not rebound, current_harness stale) with no error surfaced. On failure we surface
+  -- an explicit ERROR naming the step and bail before touching keymaps/current_harness, so the
+  -- old harness's bindings stay consistent.
+  local ok_setup, setup_err = pcall(function()
+    require("claudecode.terminal").setup(nil, command, {})
+  end)
+  if not ok_setup then
+    vim.notify(
+      "harness: switch to " .. new_harness .. " failed at terminal setup: " .. tostring(setup_err),
+      vim.log.levels.ERROR
+    )
+    return
+  end
 
   keymaps.clear()
   keymaps.apply(keymaps.build(new_harness))
