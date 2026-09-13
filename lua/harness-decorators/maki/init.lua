@@ -159,6 +159,24 @@ end
 -- SESSION IDENTIFICATION
 -- ==========================================================================
 
+---Extract the explicit session id from Maki JSONL lines. The header line carries a top-level
+---"id" field that is the session's identity (it also equals the filename stem). Used by the
+---watcher to pin by session id rather than inferring from cwd (Option B). Returns nil when no
+---line carries one so the caller can fall back to path-based inference.
+---@param lines string[]
+---@return string?
+function M.session_id_from_lines(lines)
+  for _, line in ipairs(lines) do
+    if line:find('"id"') then
+      local ok, entry = pcall(vim.json.decode, line)
+      if ok and entry and entry.t == "header" and type(entry.id) == "string" and #entry.id > 0 then
+        return entry.id
+      end
+    end
+  end
+  return nil
+end
+
 ---Read the cwd from the header line at the TOP of a maki session file.
 ---@param jsonl_path string?
 ---@return string?

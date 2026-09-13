@@ -171,6 +171,24 @@ function M.extract_cwd(lines)
   return nil
 end
 
+---Extract the explicit session id from Claude JSONL lines. The header (and many other
+---entries) carry a top-level "sessionId" field; this is the authoritative identity of the
+---session, used by the watcher to pin by session id rather than inferring from cwd (Option B).
+---Returns nil when no line carries one so the caller can fall back to path-based inference.
+---@param lines string[]
+---@return string?
+function M.session_id_from_lines(lines)
+  for _, line in ipairs(lines) do
+    if line:find('"sessionId"') then
+      local ok, entry = pcall(vim.json.decode, line)
+      if ok and entry and type(entry.sessionId) == "string" and #entry.sessionId > 0 then
+        return entry.sessionId
+      end
+    end
+  end
+  return nil
+end
+
 ---True if a typed message content is a session-resetting slash command.
 ---/resume and /new switch to a new JSONL; /clear keeps the same JSONL but wipes history.
 ---@param content string

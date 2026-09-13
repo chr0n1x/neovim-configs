@@ -98,13 +98,29 @@ local function session_ownership(lines, jsonl_path)
   return adapter.session_ownership(M.nvim_cwd, lines, jsonl_path)
 end
 
----Clear the pin-state trio shared by every reset site: which session is pinned, which paths
----are confirmed foreign, and whether the pin notification has fired. The other two fields in
----the full set (jsonl_positions, pending_notifications) are NOT part of this - they are only
----cleared where a full re-scan is wanted (see M.reset_all). Exposed so init.setup_auto_follow
----can reset the same trio without reaching into watcher's internals.
+---Extract the session id a set of JSONL lines declare for themselves (Option B pin key).
+---Delegates to the adapter's session_id_from_lines; returns nil when the dialect carries no
+---in-line id (copilot) so the caller falls back to path-based inference.
+---@param lines string[]
+---@return string?
+local function declared_session_id(lines)
+  if adapter.session_id_from_lines then
+    local ok, id = pcall(adapter.session_id_from_lines, lines)
+    if ok and type(id) == "string" and #id > 0 then
+      return id
+    end
+  end
+  return nil
+end
+
+---Clear the pin-state trio shared by every reset site: which session is pinned (by both path
+---and declared id), which paths are confirmed foreign, and whether the pin notification has
+---fired. The other two fields in the full set (jsonl_positions, pending_notifications) are NOT
+---part of this - they are only cleared where a full re-scan is wanted (see M.reset_all). Exposed
+---so init.setup_auto_follow can reset the same trio without reaching into watcher's internals.
 function M.reset_pin_state()
   M.pinned_jsonl_path = nil
+  M.pinned_session_id = nil
   M.ignored_jsonl_paths = {}
   M.pin_notified = false
 end
@@ -130,37 +146,49 @@ function M.reset_all()
   utils.reset_dedup()
 end
 
----Clear per-session state on a session switch (re-pin or a reset command detected in the
----pinned session), so the history picker starts fresh. Unlike M.reset_all this clears only
----the OLD session's edit history (not every session's) and deliberately does NOT clear
----jsonl_positions: keeping byte offsets avoids a missed-write-batch immediately after re-pin.
-local function reset_session_state(old_session_id)
-  if old_session_id then
-    edit_jump.edit_sources[old_session_id] = nil
-  end
+---Clear per-session RUNTIME state on a session switch (re-pin or a reset command detected in
+---the pinned session). Unlike M.reset_all this does NOT clear jsonl_positions: keeping byte
+---offsets avoids a missed-write-batch immediately after re-pin.
+---
+---It deliberately does NOT delete the old session's edit history (edit_sources[old_id]). A
+---mid-work switch (/resume to a new JSONL) should not make prior diffs disappear from
+---<leader>cu - the user explicitly chose "preserve old history" over wiping it. The picker
+---shows only the CURRENTLY pinned session's records, so preserved history stays reachable by
+---re-pinning the old session and never pollutes the current view. (M.reset_all still wipes all
+---history on a harness switch, where nothing from the previous harness should leak.)
+local function reset_session_state(_old_session_id)
   M.reset_pin_state()
   pending_notifications = {}
 end
 
----Pin to a JSONL session.
-local function try_pin_session(jsonl_path)
-  if M.pinned_jsonl_path == jsonl_path then
+---Pin to a JSONL session, recording both its path and its declared session id (Option B). The
+---declared id - extracted from the JSONL's own header via adapter.session_id_from_lines, with a
+---path-based fallback for dialects that carry no in-line id (copilot) - is what the pin locks
+---on. Cwd was only ever the initial candidate filter; once a session declares an id we key on
+---that id so a stale same-cwd session cannot hijack the pin.
+---@param jsonl_path string The JSONL to pin to.
+---@param declared_id string? The session id declared in the JSONL lines, if any.
+local function try_pin_session(jsonl_path, declared_id)
+  -- Same path AND same (or no new) id: nothing to do. But the SAME path declaring a NEW id is
+  -- a genuine mid-work switch (/resume continuing in one JSONL) and must still re-pin below.
+  local new_name = declared_id or utils.extract_session_id(jsonl_path) or jsonl_path:match("[^/]+$")
+  if M.pinned_jsonl_path == jsonl_path and (not declared_id or M.pinned_session_id == declared_id) then
     return true
   end
-  -- If re-pinning to a different session, clear the old session's history.
-  local old_session_id = utils.extract_session_id(M.pinned_jsonl_path)
+  local old_session_id = M.pinned_session_id or utils.extract_session_id(M.pinned_jsonl_path)
   if old_session_id then
-    utils.log("re-pin: clearing history for old session " .. old_session_id:sub(1, 8), vim.log.levels.DEBUG)
+    utils.log("re-pin: moving off session " .. old_session_id:sub(1, 8), vim.log.levels.DEBUG)
   end
   reset_session_state(old_session_id)
 
   M.pinned_jsonl_path = jsonl_path
-  local name = utils.extract_session_id(jsonl_path) or jsonl_path:match("[^/]+$")
+  -- Prefer the declared id; fall back to path inference for dialects without an in-line id.
+  M.pinned_session_id = new_name
   if not M.pin_notified then
-    utils.log("session detected " .. name, vim.log.levels.INFO)
+    utils.log("session detected " .. new_name, vim.log.levels.INFO)
     M.pin_notified = true
   else
-    utils.log("session detected " .. name, vim.log.levels.DEBUG)
+    utils.log("session detected " .. new_name, vim.log.levels.DEBUG)
   end
   return true
 end
@@ -231,8 +259,10 @@ function M.process_recovered_lines(lines, line_offset)
   end
 end
 
----Handle a confirmed JSONL write: identify session ownership, then scan new lines.
-local function process_jsonl_write(jsonl_path)
+---Handle a confirmed JSONL write: identify session ownership, then scan new lines. Exposed as
+---M.process_jsonl_write so tests/ownership_spec.lua can drive the real pin path (pin-by-session-
+---id, switch-on-declared-id, preserve-history) without spawning an inotifywait backend.
+function M.process_jsonl_write(jsonl_path)
   local filename = jsonl_path:match("[^/]+$")
 
   -- Fast reject: path confirmed to belong to a different session.
@@ -268,7 +298,10 @@ local function process_jsonl_write(jsonl_path)
     local ownership = session_ownership({}, jsonl_path)
     if ownership == "match" then
       utils.log("initial pin to " .. filename, vim.log.levels.DEBUG)
-      try_pin_session(jsonl_path)
+      -- Pin on the id the file declares (Option B); cwd was only the initial filter. The
+      -- first-encounter path has no parsed lines yet, so fall back to path inference here -
+      -- the incremental path below upgrades to the declared id once lines arrive.
+      try_pin_session(jsonl_path, declared_session_id({}))
 
       local base = file_size
       if adapter.on_pin then
@@ -283,8 +316,12 @@ local function process_jsonl_write(jsonl_path)
       utils.log("ignoring non-matching session " .. filename, vim.log.levels.DEBUG)
       M.ignored_jsonl_paths[jsonl_path] = true
       jsonl_positions[jsonl_path] = { byte_pos = file_size, line_count = 0 }
+    else
+      -- "unknown": no cwd evidence yet. Record the position so the NEXT write takes the
+      -- incremental path and can read real lines to decide ownership + pin. Without this the
+      -- file would re-enter first-encounter forever (empty lines => always unknown).
+      jsonl_positions[jsonl_path] = { byte_pos = file_size, line_count = 0 }
     end
-    -- "unknown": no evidence yet, leave as candidate and retry on the next write.
     return
   end
 
@@ -316,22 +353,43 @@ local function process_jsonl_write(jsonl_path)
     line_count = prev_line_count + #lines,
   }
 
-  --- Session pin logic -------------------------------------------------------
+  --- Session pin logic (Option B: key on the declared session id, not cwd) ----------
+  local this_id = declared_session_id(lines)
+
   if not M.pinned_jsonl_path then
+    -- No pin yet. Cwd is only the initial candidate filter; once this file declares a session
+    -- id we lock onto THAT id, so a stale same-cwd session cannot win the pin first. We require
+    -- BOTH a cwd match AND a declared id: a cwd-matching file with no id yet stays a candidate
+    -- (retry next write) rather than claiming the pin on cwd alone.
     local ownership = session_ownership(lines, jsonl_path)
-    if ownership == "match" then
+    if ownership == "match" and this_id then
       utils.log("no active pin, pinning " .. filename, vim.log.levels.DEBUG)
-      try_pin_session(jsonl_path)
+      try_pin_session(jsonl_path, this_id)
     elseif ownership == "mismatch" then
       utils.log("ignoring non-matching session " .. filename, vim.log.levels.DEBUG)
       M.ignored_jsonl_paths[jsonl_path] = true
       return
     else
-      -- "unknown": keep as candidate and retry on the next write.
+      -- "unknown", or a cwd match with no declared id yet: keep as candidate, retry next write.
       return
     end
+  elseif this_id and M.pinned_session_id and this_id ~= M.pinned_session_id then
+    if jsonl_path == M.pinned_jsonl_path then
+      -- The PINNED file itself now declares a different id: a genuine mid-work switch
+      -- (/resume, /new continuing in the same JSONL). Re-pin to it. The old session's history
+      -- is preserved (see reset_session_state), not wiped.
+      local msg = "session switched " .. M.pinned_session_id:sub(1, 8) .. " -> " .. this_id:sub(1, 8)
+      utils.log(msg, vim.log.levels.INFO)
+      try_pin_session(jsonl_path, this_id)
+    else
+      -- A DIFFERENT file declares a different id: a stale/foreign same-cwd session. The pin is
+      -- locked to its session; ignore it (a reset command in the pinned session re-opens the switch).
+      utils.log("ignoring foreign session " .. this_id:sub(1, 8) .. " from " .. filename, vim.log.levels.DEBUG)
+    end
+    return
   elseif jsonl_path ~= M.pinned_jsonl_path then
-    -- Pin is locked; ignore writes from any other session.
+    -- Same (or no) declared id but a different file: the pin is locked to its session; ignore
+    -- writes from any other path until a reset command re-opens the switch.
     return
   end
 
@@ -434,7 +492,7 @@ local function process_watcher_log()
   for line in chunk:gmatch("([^\r\n]+)") do
     local ok, jsonl_path = pcall(parse_line, line)
     if ok and jsonl_path then
-      pcall(process_jsonl_write, jsonl_path)
+      pcall(M.process_jsonl_write, jsonl_path)
     end
   end
 end

@@ -27,6 +27,16 @@ function M.session_id(jsonl_path)
   return jsonl_path:match("([^/]+)/events%.jsonl$")
 end
 
+---Copilot's session id is the parent dir of events.jsonl, which is a property of the PATH,
+---not of any line's content - so there is nothing to extract from lines. Return nil so the
+---watcher falls back to M.session_id(jsonl_path) (the path-based rule), keeping the Option B
+---pin-by-session-id contract uniform across adapters.
+---@param _lines string[]
+---@return string?
+function M.session_id_from_lines(_lines)
+  return nil
+end
+
 ---Session JSONLs are NOT at the top level (they sit one dir down in
 ---<session-state>/<id>/events.jsonl), but on macOS fswatch's FSEvents backend
 ---reports writes for the whole subtree of a watched path, so watching the
