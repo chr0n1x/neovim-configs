@@ -9,12 +9,24 @@ local function on_vim_leave()
   watcher.stop()
 end
 
----Start the JSONL watcher (and only it) if it isn't running yet. Called from the
----first <leader>c press, i.e. when claudecode.nvim creates the floating terminal
----buffer for the first time: no terminal means no session, so there is nothing to
----watch until then. Idempotent - watcher.start() returns early while a handle
----exists, and the VimLeavePre group's clear=true keeps this re-entrant safe.
+---True once the jump autocmds and VimLeavePre handler have been registered for this nvim
+---session. Guards setup_auto_follow so a second <leader>c press (e.g. after closing and
+---reopening the terminal) does not re-register the autocmds or re-run the startup resets.
+local initialized = false
+
+---Register the jump/leave autocmds exactly once per nvim session. Called from the first
+---<leader>c press, i.e. when claudecode.nvim creates the floating terminal buffer for the
+---first time: no terminal means no session, so there is nothing to watch until then. The
+---`initialized` flag makes a later call (close + reopen the terminal in the same session) a
+---no-op, so dedup/pin state established by the first session is NOT wiped - previously every
+---first-<leader>c press re-ran the resets below and re-pinned, causing duplicate
+---notifications/jumps. See tests/init_spec.lua.
 function M.setup_auto_follow()
+  if initialized then
+    return
+  end
+  initialized = true
+
   local group = vim.api.nvim_create_augroup("HarnessAutoFollow", { clear = true })
 
   edit_jump.create_jump_autocmds(group)
