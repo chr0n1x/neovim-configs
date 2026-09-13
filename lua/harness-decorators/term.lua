@@ -297,28 +297,16 @@ local function focus_instance(inst)
   end
 end
 
----Drop the focused terminal into INSERT mode. Selecting a harness (via <leader>c OR the <leader>cl
--- picker) should land you typing, not staring at a normal-mode prompt. We do this ourselves rather than
--- relying on Snacks: its start_insert only fires in on_win on a FRESH open, and its auto-insert BufEnter
--- autocmd only fires when the buffer is re-entered - so a pure re-focus (:focus()) leaves you in normal
--- mode, and even a fresh open can miss insert if focus is already on the terminal window (the picker
--- path has no focus.restore() to move it away first). Idempotent, so it is safe to also run after :show()
--- (which Snacks may have started insert in already). Guarded so a headless non-terminal context (tests
--- with windowless fakes) never errors.
----@param inst table the Snacks terminal instance (has .buf)
-local function enter_insert(inst)
-  pcall(function()
-    if inst.buf and vim.api.nvim_buf_is_valid(inst.buf) then
-      vim.cmd.startinsert()
-    end
-  end)
-end
-
----Like enter_insert, but deferred to the next tick. Needed on a FRESH open: snacks.open returns before
--- the terminal job is fully attached, and focus is already on the terminal window (unlike a re-focus,
--- where it was elsewhere), so a synchronous startinsert right after open does not reliably stick - the
--- <leader>cl picker's "switch to maki" case landed in normal mode. Deferring past the open lets the
--- buffer settle first. Idempotent, so it is harmless if Snacks' own on_win already entered insert.
+---Drop the focused terminal into INSERT mode, deferred to the next tick. Selecting a harness (via
+-- <leader>c OR the <leader>cl picker) - whether a fresh open or a re-show of an already-running
+-- terminal - should land you typing, not staring at a normal-mode prompt. We do this ourselves rather
+-- than relying on Snacks: its start_insert only fires in on_win on a FRESH open, and its auto-insert
+-- BufEnter autocmd only fires when the buffer is re-entered - so a pure re-focus (:focus()) leaves you
+-- in normal mode. Deferring to the next tick is what makes it STICK: snacks.open (and a re-focus) return
+-- before the window/buffer has settled, so a synchronous startinsert does not reliably take effect -
+-- the swap-between-terminals case landed in "-- (terminal) --" instead of "-- TERMINAL --". Idempotent,
+-- so it is harmless if Snacks' own on_win already entered insert. Guarded so a headless non-terminal
+-- context (tests with windowless fakes) never errors.
 ---@param inst table the Snacks terminal instance (has .buf)
 local function enter_insert_scheduled(inst)
   vim.schedule(function()
@@ -333,7 +321,7 @@ end
 ---Open (or focus, if already open) the given harness's floating terminal. If the harness has a live
 ---instance (valid buffer) it is re-shown - the SAME running process resumes. Otherwise a fresh one
 ---is spawned with the harness's command (+ optional extra args, e.g. `--continue`). Either way it ends
----in terminal INSERT mode (enter_insert), so <leader>c / picker selection always lands you typing.
+---in terminal INSERT mode (enter_insert_scheduled), so <leader>c / picker selection always lands you typing.
 ---Returns the snacks.terminal instance.
 ---@param harness string
 ---@param opts? { args?: string } Extra CLI args appended to the spawn command (e.g. "--continue").
@@ -342,7 +330,11 @@ function M.open(harness, opts)
   local existing = entry(harness).inst
   if is_live(existing) then
     focus_instance(existing)
-    enter_insert(existing)
+    -- Re-show (e.g. swapping between two already-running terminals): defer insert to the next tick,
+    -- same as a fresh open. A synchronous startinsert right after re-focusing does not reliably stick -
+    -- the window/buffer has not settled - leaving you in "-- (terminal) --" normal mode instead of
+    -- "-- TERMINAL --". See enter_insert_scheduled.
+    enter_insert_scheduled(existing)
     return existing
   end
 
@@ -386,7 +378,8 @@ function M.show(harness)
   local inst = entry(harness).inst
   if is_live(inst) then
     focus_instance(inst)
-    enter_insert(inst)
+    -- Same re-show as term.open's live branch: defer insert so it sticks (see enter_insert_scheduled).
+    enter_insert_scheduled(inst)
   end
 end
 

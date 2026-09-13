@@ -164,6 +164,10 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     end
 
     term.show("claude")
+    -- Insert is deferred to the next tick (see enter_insert_scheduled) so it sticks; flush before asserting.
+    vim.wait(200, function()
+      return insert_calls > 0
+    end, 10)
     assert.is_true(insert_calls > 0, "show(claude) must enter terminal insert mode (startinsert not called)")
 
     vim.cmd.startinsert = orig_startinsert
@@ -257,6 +261,66 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     assert.are.equal(count_after_first, #calls, "reopening an open harness must not call Snacks.open again")
     assert.is_true(focused, "open(claude) with an open window must re-focus via :focus()")
     pcall(vim.api.nvim_win_close, win, true)
+  end)
+
+  it("open(already-live harness) enters terminal INSERT mode on a re-show (swap between terminals)", function()
+    -- The bug: swapping between two already-running terminals (claude -> maki -> claude) is a RE-SHOW of
+    -- an existing live instance, which goes through term.open's is_live branch. That branch called
+    -- enter_insert SYNCHRONOUSLY right after focus_instance - the same unreliable pattern the fresh-open
+    -- path already fixed by deferring to the next tick (a synchronous startinsert before the window/buffer
+    -- settle does not stick, leaving you in "-- (terminal) --" normal mode instead of "-- TERMINAL --").
+    -- The re-show path must use the SAME deferred insert as fresh open. We assert the distinguishing
+    -- property: immediately after term.open returns, startinsert has NOT yet run synchronously - it is
+    -- scheduled for the next tick (then we flush and confirm it did run).
+    local term = require("harness-decorators.term")
+    term._reset()
+
+    -- Stand in for the float with a real terminal window (the reliable headless path).
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if w ~= vim.api.nvim_get_current_win() then
+        pcall(vim.api.nvim_win_close, w, true)
+      end
+    end
+    vim.cmd("vsplit")
+    local ok = pcall(vim.cmd, "terminal cat")
+    assert.is_true(ok, "could not open a terminal window (cat)")
+    local win = vim.api.nvim_get_current_win()
+    vim.wait(100, function() return false end, 25)
+    local term_buf = vim.api.nvim_win_get_buf(win)
+
+    -- First open: make the stored instance back onto this real terminal buffer so it reads as live.
+    local inst = term.open("claude")
+    inst.buf = term_buf
+    inst.win = win
+    inst.focus = function()
+      vim.api.nvim_set_current_win(win)
+    end
+
+    -- Drop out of insert so the re-show has to put us back in (mirrors a parked/normal-mode panel).
+    pcall(vim.cmd.stopinsert)
+
+    -- Spy on startinsert: the second open (a re-show) must schedule it, not run it synchronously.
+    local orig_startinsert = vim.cmd.startinsert
+    local insert_calls = 0
+    vim.cmd.startinsert = function(...)
+      insert_calls = insert_calls + 1
+      return orig_startinsert(...)
+    end
+
+    -- Second open of the same live harness: this is the swap-between-terminals re-show path.
+    term.open("claude")
+    assert.are.equal(0, insert_calls, "re-show must NOT enter insert synchronously (it would not stick)")
+    -- The deferred (scheduled) insert lands on the next tick; flush it and confirm it ran.
+    vim.wait(200, function()
+      return insert_calls > 0
+    end, 10)
+    assert.is_true(insert_calls > 0, "re-showing an already-live harness must enter terminal insert mode (deferred)")
+
+    vim.cmd.startinsert = orig_startinsert
+    pcall(vim.cmd.stopinsert)
+    term._reset()
+    pcall(vim.api.nvim_win_close, win, true)
+    pcall(vim.api.nvim_buf_delete, term_buf, { force = true })
   end)
 
   it("hide(harness) routes to that harness's own instance", function()
