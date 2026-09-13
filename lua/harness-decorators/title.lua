@@ -35,11 +35,28 @@ function M.title(name)
   return { { text, group } }
 end
 
+---The picker's state-glyph colors (Task 9): a filled circle for the active harness, a hollow one
+-- for a parked (backgrounded, still-running) harness. Defined with `default` so a later ColorScheme
+-- can override them; distinct from the per-harness title groups because they describe STATE, not
+-- which CLI is running. Exposed on M so tests/picker_spec.lua can assert the group names.
+M.picker_glyphs = {
+  active = { group = "HarnessPickerActive", fg = "#a3be8c" }, -- green: this one is in front
+  parked = { group = "HarnessPickerParked", fg = "#81a1c1" }, -- blue: running in the background
+}
+
+---Define the picker state-glyph groups (active / parked). Called from M.define_all.
+function M.define_picker_glyphs()
+  for _, spec in pairs(M.picker_glyphs) do
+    vim.api.nvim_set_hl(0, spec.group, { default = true, fg = spec.fg })
+  end
+end
+
 ---Define groups for all known harnesses (used at LazyDone and on ColorScheme).
 function M.define_all()
   for name in pairs(colors) do
     M.define(name)
   end
+  M.define_picker_glyphs()
   -- Dim the telescope selected-row highlight: nord's TelescopeSelection has a
   -- bright bg and an fg that overrides the per-entry harness color on the
   -- selected row (its extmark priority 4096 beats our entry highlights at 200).

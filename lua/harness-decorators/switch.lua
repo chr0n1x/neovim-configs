@@ -174,6 +174,46 @@ function M.collect_terminal_bufs()
   return map
 end
 
+---Build a telescope entry for one harness row: a colored state glyph (active / parked / idle) plus
+---the harness name in its HarnessTitle<Name> group. The glyph and the name are highlighted
+---independently so the selected-row dimming (TelescopeSelection -> Visual, no fg) leaves BOTH
+---colored. Exposed on M so tests/picker_spec.lua can drive it headless without opening telescope UI.
+---@param name string harness name
+---@param active? string the active harness name (nil if none set yet)
+---@param bufs table<string, number> harness -> live terminal buffer map (from collect_terminal_bufs)
+---@return table entry { value, ordinal, display }
+function M.make_entry(name, active, bufs)
+  -- State glyph: a filled circle for the active harness, a hollow one for a backgrounded harness that
+  -- still has a live process, two spaces for a never-opened/stopped one. Each colored state uses its
+  -- own picker group (title.picker_glyphs); the idle state is blank so no group is needed.
+  local parked = bufs[name] ~= nil and name ~= active
+  local glyph, glyph_group
+  if name == active then
+    glyph, glyph_group = "● ", title.picker_glyphs.active.group
+  elseif parked then
+    glyph, glyph_group = "○ ", title.picker_glyphs.parked.group
+  else
+    glyph, glyph_group = "  ", nil
+  end
+  local text = glyph .. name
+  local name_group = title.define(name)
+  return {
+    value = name,
+    ordinal = name,
+    display = function()
+      -- No name group (unknown harness): plain text, no highlight ranges.
+      if not name_group then
+        return text
+      end
+      local ranges = { { { #glyph, #glyph + #name }, name_group } }
+      if glyph_group then
+        table.insert(ranges, 1, { { 0, #glyph }, glyph_group })
+      end
+      return text, ranges
+    end,
+  }
+end
+
 ---Telescope buffer previewer for the harness picker: renders a header plus the raw terminal
 ---output of the selected harness, colorizing error/warn/success tokens and auto-refreshing on a
 ---~500ms timer while it runs. Adapted from util/procs.lua's make_previewer (same render shape,
@@ -204,10 +244,10 @@ local function make_harness_previewer(bufs)
     end
     match_ids = {}
     local patterns = {
-      { "ErrorMsg", [[\c\<\(error\|fatal\|fail\(ed\)\?\|panic\)\>]] },
+      { "ErrorMsg", [[\c\<\(error\|fatal\|fail\(ed\)\?\|panic\|denied\|refused\|exception\)\>]] },
       { "WarningMsg", [[\c\<warn\(ing\)\?\>]] },
-      { "DiagnosticOk", [[\c\<\(ok\|pass\(ed\)\?\|success\(ful\)\?\)\>]] },
-      { "Comment", [[\c\<debug\>]] },
+      { "DiagnosticOk", [[\c\<\(ok\|pass\(ed\)\?\|success\(ful\)\?\|done\|complete\(d\)\?\|ready\)\>]] },
+      { "Comment", [[\c\<\(debug\|info\|trace\)\>]] },
     }
     for _, p in ipairs(patterns) do
       local ok, id = pcall(vim.fn.matchadd, p[1], p[2], 10, -1, { window = winid })
@@ -279,17 +319,23 @@ function M.pick()
 
   pickers
     .new({}, {
-      prompt_title = "AI Harness (current: " .. (current_harness or "?") .. ")",
-      -- Vertical layout with a preview pane (D2): the list on top, each harness's raw terminal
-      -- output below it. Sized larger than the old fixed 40-wide box so the preview is readable.
-      -- The vertical strategy stacks full-width and uses preview_height (not preview_width) to
-      -- control how much of the height the preview takes; preview_cutoff disables it on short
-      -- windows. Both are valid keys here - preview_width belongs to the horizontal/flex
-      -- strategies and errors out on vertical (telescope layout_strategies.lua validate).
-      layout_strategy = "vertical",
+      -- Titles (Task 9): the prompt is a plain "search", the results list is "Harnesses", and the
+      -- preview pane is "Preview". The per-harness name already appears as the first line INSIDE the
+      -- preview buffer (render below), so a static title is enough - telescope titles are set once at
+      -- picker creation, not per entry.
+      prompt_title = "search",
+      results_title = "Harnesses",
+      preview_title = "Preview",
+      -- Horizontal layout (Task 9): the prompt + results list stacked in one column on the LEFT, the
+      -- colored preview pane on the RIGHT. The vertical strategy can't put the preview beside the
+      -- list, and telescope has no multi-column results grid - horizontal is the only strategy that
+      -- splits left (prompt+results) vs right (preview). prompt_position="top" keeps the prompt above
+      -- the list in that left column; preview_width/preview_cutoff are the valid keys for this
+      -- strategy (preview_height belongs to vertical and errors here).
+      layout_strategy = "horizontal",
       layout_config = {
         prompt_position = "top",
-        preview_height = 0.5,
+        preview_width = 0.5,
         preview_cutoff = 12,
         width = 0.8,
         height = 0.8,
@@ -297,24 +343,9 @@ function M.pick()
       finder = finders.new_table({
         results = harnesses,
         entry_maker = function(name)
-          -- Marker: "*" for the active harness, "·" (parked dot) for a backgrounded one with a
-          -- live process, two spaces for a never-opened/stopped harness. The name is colored with
-          -- its shared HarnessTitle<Name> group; highlight columns are 0-indexed byte offsets into
-          -- `text`, so the name starts right after the 2-char marker.
-          local parked = bufs[name] ~= nil and name ~= current_harness
-          local marker = name == current_harness and "* " or (parked and ". " or "  ")
-          local text = marker .. name
-          local group = title.define(name)
-          return {
-            value = name,
-            ordinal = name,
-            display = function()
-              if not group then
-                return text
-              end
-              return text, { { { #marker, #marker + #name }, group } }
-            end,
-          }
+          -- See M.make_entry: a colored state glyph (active / parked / idle) plus the name in its
+          -- HarnessTitle<Name> group. `bufs` and `current_harness` are captured from the picker scope.
+          return M.make_entry(name, current_harness, bufs)
         end,
       }),
       sorter = conf.generic_sorter({}),
