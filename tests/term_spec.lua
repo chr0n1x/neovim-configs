@@ -272,6 +272,52 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     assert.is_true(hidden, "hide(maki) must call maki's own instance :hide()")
   end)
 
+  it("list() does NOT delete a selected-but-never-opened harness entry (regression: <leader>c dead after opening the picker)", function()
+    -- The bug: in a fresh instance switch.init seeds state.table["claude"] = {inst=nil, selected=true}.
+    -- Opening the <leader>cl picker calls park.list -> term.list, which treated ANY entry without a live
+    -- instance as "dead" and DELETED it - wiping claude's selected bit. After that, picking claude (which
+    -- early-returns in switch because it is already current) left nothing selected, so <leader>c /
+    -- show_selected bailed before term.open and no terminal appeared. list() must only drop entries whose
+    -- instance actually EXITED (had a buffer that died), never a harness that was merely selected but not
+    -- yet opened (inst=nil).
+    local term = require("harness-decorators.term")
+    local park = require("harness-decorators.park")
+    term._reset()
+
+    -- Seed the fresh-instance state: claude is selected but has never been opened (no instance).
+    park.set_selected("claude")
+    assert.is_not_nil(require("harness-decorators.state").table["claude"], "precondition: claude record exists")
+
+    -- Opening the picker drives park.list -> term.list. This must NOT delete claude's record.
+    local entries = term.list()
+    assert.are.equal(0, #entries, "a never-opened harness has no live terminal to list")
+    assert.is_not_nil(require("harness-decorators.state").table["claude"], "list() must not delete a selected-but-never-opened entry")
+    assert.are.equal("claude", park.selected_harness(), "selection must survive the picker's list() call")
+
+    -- The downstream effect: show_selected can still open claude (it is still selected).
+    local shown = park.show_selected()
+    assert.are.equal("claude", shown, "show_selected must still open claude after the picker ran list()")
+    term._reset()
+  end)
+
+  it("list() DOES drop a harness whose instance exited (dead buffer)", function()
+    -- The other half of the contract: a harness that WAS opened and whose process has now exited
+    -- (buffer wiped) is genuinely dead and must be removed so the picker never offers it. This keeps
+    -- the original cleanup behavior intact - we only stopped culling the never-opened case above.
+    local term = require("harness-decorators.term")
+    term._reset()
+
+    local inst = term.open("claude")
+    assert.is_not_nil(require("harness-decorators.state").table["claude"], "precondition: claude record exists after open")
+
+    -- Simulate the process exiting: wipe the buffer so buf_valid() is false.
+    pcall(vim.api.nvim_buf_delete, inst.buf, { force = true })
+    local entries = term.list()
+    assert.are.equal(0, #entries, "an exited harness must not be listed")
+    assert.is_nil(require("harness-decorators.state").table["claude"], "list() must drop an entry whose instance exited")
+    term._reset()
+  end)
+
   it("list() calls buf_valid with method syntax (regression: E5108 on plain-function call)", function()
     -- The fake's buf_valid indexes self (like real Snacks). If term.list called inst.buf_valid() as a
     -- plain function, self would be nil and this would raise E5108 - the exact <leader>cl crash. This

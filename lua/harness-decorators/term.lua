@@ -412,7 +412,11 @@ function M.is_open(harness)
 end
 
 ---List of { harness, bufnr } for every harness with a live instance, sorted by name. Used by the
----picker previewer (via park.list) to show "what each one is doing". Dead instances are dropped.
+---picker previewer (via park.list) to show "what each one is doing". Entries whose instance has
+---EXITED (had a buffer that died) are dropped so the picker never offers a dead process. A harness
+---that was merely SELECTED but never opened (inst == nil) is NOT dropped: deleting it would wipe its
+---selection bit, and then <leader>c / show_selected bails before term.open - the "<leader>c does
+---nothing after opening the picker" regression. Only a genuinely-exited instance is garbage.
 ---@return { harness: string, bufnr: number }[]
 function M.list()
   local out = {}
@@ -420,7 +424,9 @@ function M.list()
   for harness, e in pairs(state.table) do
     if is_live(e.inst) then
       table.insert(out, { harness = harness, bufnr = e.inst.buf })
-    else
+    elseif e.inst ~= nil then
+      -- Had an instance that is no longer live: the process exited. Drop it. (inst == nil means
+      -- never opened - keep the record so its selection bit survives.)
       table.insert(dead, harness) -- collect; removing during pairs() is undefined
     end
   end
