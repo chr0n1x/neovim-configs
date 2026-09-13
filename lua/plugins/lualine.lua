@@ -68,23 +68,16 @@ return {
       )
     end
 
-    -- Custom component: show pinned Claude session slug or spinner.
+    -- Custom component: show pinned Claude session slug or spinner. The display logic lives in
+    -- harness-decorators.session_component (a plain module function) so it is unit-testable
+    -- without a live statusline - see tests/lualine_spec.lua.
     table.insert(opts.sections.lualine_x, {
       function()
         local ok, decorators = pcall(require, "harness-decorators")
         if not ok then
           return ""
         end
-        local path = decorators.get_pinned_path()
-        if not path then
-          -- No pin yet — show spinner.
-          return "🤖 " .. spinner_frame
-        end
-        local name = path:match("([^/]+)%.jsonl$")
-        if not name then
-          return ""
-        end
-        return "🤖 " .. name
+        return decorators.session_component(spinner_frame)
       end,
       padding = { left = 1, right = 1 },
     })
