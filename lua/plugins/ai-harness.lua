@@ -43,70 +43,10 @@ vim.api.nvim_create_autocmd("WinLeave", {
   callback = focus.capture,
 })
 
-local function animate_collapse(self)
-  if not (self._wide and self._saved_config) then
-    return
-  end
-  self._wide = false
-  local sc = self._saved_config
-  local anim = require("terminal-animations")
-  anim.animate_resize(self, {
-    row = sc.row or 0,
-    col = sc.col or 0,
-    width = sc.width or vim.o.columns,
-    height = sc.height or vim.o.lines,
-  }, self._saved_config)
-end
-
--- Find the window beside the floating terminal - no cleaner way exists (still).
--- Specifically written to go back to the previous window BECAUSE
--- we're using a floating terminal
-
-local function valid_buf(win_id)
-  local config = vim.api.nvim_win_get_config(win_id)
-  local buf_info = vim.api.nvim_win_get_buf(win_id)
-  local buf_name = vim.api.nvim_buf_get_name(buf_info)
-  local terminal_win = vim.api.nvim_get_current_win()
-
-  return not config.z and win_id ~= terminal_win and vim.uv.fs_stat(buf_name) ~= nil
-end
-
-local function find_base_window()
-  local wins = vim.api.nvim_tabpage_list_wins(0)
-
-  for ix = #wins, 1, -1 do
-    local win_id = wins[ix]
-    if valid_buf(win_id) then
-      vim.api.nvim_set_current_win(win_id)
-      return
-    end
-  end
-end
-
-local set_prev_win = function()
-  find_base_window()
-end
-
----Jump back to the window we came from while the terminal stays open (the "jump
----back" key). Goes to focus.last_win (the actual previous window), falling back to
----the positional set_prev_win if that window is gone. The terminal is config-hidden
----(not closed) first: closing it with self:hide() while a work buffer is showing in
----its window makes Snacks' fixbuf swap the buffer into another window, which
----duplicates buffers. With the float hidden there is nothing to react to; the
----terminal reappears via <leader>c (ClaudeCodeFocus -> cc_show un-hides it).
-local function go_back(self)
-  focus.suppress_next_leave()
-  animate_collapse(self)
-  local term = require("claudecode").state and require("claudecode").state.terminal
-  if term and term.win and vim.api.nvim_win_is_valid(term.win) then
-    pcall(vim.api.nvim_win_set_config, term.win, { hide = true })
-  end
-  if not focus.jump_to_saved() then
-    set_prev_win()
-  end
-  vim.cmd.redraw()
-  vim.cmd("noh")
-end
+-- NOTE (Task 7): the floating terminal is now owned by harness-decorators/term.lua - one Snacks
+-- float per harness, no claudecode handle. The float's keys, resize animation, and go-back that used
+-- to live here moved into term.win_opts. This file keeps only what claudecode still provides: its
+-- websocket server (@ mention queue, model selection) and diff accept/deny.
 
 -- Per-harness opts differences (everything else in `opts` is shared). auto_start
 -- controls the websocket server only - it has no effect on the floating terminal,
@@ -143,108 +83,14 @@ return {
       terminal_cmd = command,
       log_level = "info",
 
+      -- The floating terminal is owned by harness-decorators/term.lua (one Snacks float per
+      -- harness), NOT claudecode's snacks provider - so no snacks_win_opts here. claudecode still
+      -- runs its websocket server (for @ mention queue + model selection) and diff accept/deny, but
+      -- we never show ITS window. auto_close is off: term.lua owns open/hide, and Snacks'
+      -- auto-close would kill a backgrounded harness's PTY on an unrelated event.
       terminal = {
         provider = "auto",
-        auto_close = true,
-
-        snacks_win_opts = {
-          position = "float",
-          border = "rounded",
-          title = title.title(harness),
-          -- Snacks' style default maps FloatTitle:SnacksTitle, which overrides
-          -- the per-segment groups in `title`. Set winhighlight after all merging
-          -- is done so our override sticks.
-          on_win = function(self)
-            vim.api.nvim_set_option_value("winhighlight", "FloatFooter:SnacksFooter", { win = self.win })
-          end,
-          footer_keys = true,
-          -- Disabled: fixbuf registers a BufWinEnter autocmd that swaps the float's
-          -- buffer into a "main" window whenever a non-terminal buffer lands in the
-          -- float. During the float's destroy/recreate (cc_show -> Snacks open_win)
-          -- or any concurrent focus change, that swap duplicates buffers. Every keymap
-          -- here manages focus explicitly and cc_show always sets the terminal buffer
-          -- back, so nothing relies on fixbuf - dropping it removes the duplication.
-          fix_buf = false,
-          resize = true,
-          stack = true,
-          start_insert = true,
-
-          keys = {
-            {
-              "<Esc>",
-              function(self)
-                -- Suppress capture for hide's WinLeave (we already moved to a base
-                -- window via set_prev_win); no restore needed - the buffer was never
-                -- changed and set_prev_win put us back where we came from.
-                focus.suppress_next_leave()
-                set_prev_win()
-                self:hide()
-                vim.cmd.redraw()
-                vim.cmd("noh")
-              end,
-              mode = "t",
-              desc = "⊘",
-            },
-
-            {
-              "<C-n>",
-              function()
-                vim.cmd.stopinsert()
-                vim.cmd("noautocmd stopinsert")
-              end,
-              mode = "t",
-              desc = "✥",
-            },
-            {
-              "<C-h>",
-              function(self)
-                go_back(self)
-              end,
-              mode = "t",
-              desc = "↩",
-            },
-            {
-              "<C-f>",
-              function(self)
-                local win = self.win
-                if not win or not vim.api.nvim_win_is_valid(win) then
-                  return
-                end
-
-                -- Save original config only once so we don't drift on each toggle
-                if not self._saved_config then
-                  self._saved_config = vim.api.nvim_win_get_config(win)
-                end
-
-                local lines = vim.o.lines
-                local cols = vim.o.columns
-                local wide_row_pad = 0.05
-                local wide_col_pad = 0.1
-
-                if not self._wide then
-                  self._wide = true
-                  local anim = require("terminal-animations")
-                  anim.animate_resize(self, {
-                    row = wide_row_pad * lines,
-                    col = wide_col_pad * cols,
-                    width = (1 - 2 * wide_col_pad) * cols,
-                    height = (1 - 2 * wide_row_pad) * lines,
-                  })
-                else
-                  animate_collapse(self)
-                end
-              end,
-              mode = "t",
-              desc = "⛶",
-            },
-          },
-
-          -- TODO: make these...more relative
-          row = 0.01,
-          col = 0.58,
-          width = 0.35,
-          height = 0.9,
-        },
+        auto_close = false,
       },
     }, opts_overrides),
   },

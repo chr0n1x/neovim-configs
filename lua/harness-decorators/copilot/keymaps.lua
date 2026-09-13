@@ -58,7 +58,14 @@ local send_selection = ci.send_visual_selection(type_into_terminal, build_contex
 
 return {
   { "<leader>c", "<cmd>ClaudeCodeFocus<cr>", desc = "Copilot", mode = { "n", "x" } },
-  { "<leader>cc", "<cmd>ClaudeCode --continue<cr>", desc = "Continue Copilot" },
+  -- <leader>cc: continue the last session via OUR per-harness float (term.lua), not a claudecode cmd.
+  {
+    "<leader>cc",
+    function()
+      require("harness-decorators.term").open("copilot", { args = "--continue" })
+    end,
+    desc = "Continue Copilot",
+  },
   {
     "<leader>cu",
     function()

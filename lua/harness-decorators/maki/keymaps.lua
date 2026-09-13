@@ -55,8 +55,14 @@ local send_selection = ci.send_visual_selection(type_into_terminal, build_contex
 
 return {
   { "<leader>c", "<cmd>ClaudeCodeFocus<cr>", desc = "Maki", mode = { "n", "x" } },
-  { "<leader>cr", "<cmd>ClaudeCode --resume<cr>", desc = "Resume Maki" },
-  { "<leader>cc", "<cmd>ClaudeCode --continue<cr>", desc = "Continue Maki" },
+  -- <leader>cc: continue the last session via OUR per-harness float (term.lua), not a claudecode cmd.
+  {
+    "<leader>cc",
+    function()
+      require("harness-decorators.term").open("maki", { args = "--continue" })
+    end,
+    desc = "Continue Maki",
+  },
   { "<leader>cm", "<cmd>ClaudeCodeSelectModel<cr>", desc = "Select Maki model" },
   {
     "<leader>cu",

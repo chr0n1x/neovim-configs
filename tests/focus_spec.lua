@@ -16,31 +16,77 @@
 local helper = require("tests.helper")
 
 describe("focus: harness float opens", function()
+  local term_mod
+  local snacks
+  local orig_open
+
+  ---A fake Snacks instance backed by a real (windowless) buffer, so the open path runs end to
+  -- end without spawning the real AI CLI (not installed in the container).
   setup(function()
-    -- Point the harness at a stub (the real AI CLI is not installed in the container) so
-    -- the float can spawn. We restore to helper.pristine_terminal_cmd in teardown (not a
-    -- locally-captured value) so this spec leaves no trace for later specs.
-    local term = require("claudecode.terminal")
-    term.setup(nil, "cat", {})
+    assert.is_not_nil(helper.active_harness(), "no active harness")
+    term_mod = require("harness-decorators.term")
+    snacks = require("snacks.terminal")
+    orig_open = snacks.open
+    -- Collapse to a single window first: prior specs (add_current, go_back, command_selection) may
+    -- leave splits open, and nvim_open_win for the float below E474s ("Invalid argument") when there
+    -- isn't room. A single full-size window guarantees the float fits. Same guard go_back_spec uses.
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if w ~= vim.api.nvim_get_current_win() then
+        pcall(vim.api.nvim_win_close, w, true)
+      end
+    end
+    -- Replace the real Snacks float with a lightweight terminal-buftype window so we can assert a
+    -- terminal window appears, without running the (absent) CLI. term.open calls snacks.open(cmd,
+    -- {win=...}); we honor the win opts just enough to make a visible terminal buffer+window.
+    snacks.open = function(_, opts)
+      -- Open a real terminal-buftype window the same way add_current_spec does (vsplit + :terminal),
+      -- which is the reliable headless path. nvim_open_win for a float E474s in this container, but a
+      -- plain split with a live `cat` PTY works and gives wait_for_terminal a real terminal window.
+      pcall(vim.cmd, "vsplit")
+      pcall(vim.cmd, "terminal cat")
+      local buf = vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win())
+      return {
+        buf = buf,
+        win = vim.api.nvim_get_current_win(),
+        hide = function() end,
+        show = function() end,
+        focus = function() end,
+        close = function() end,
+        buf_valid = function(self)
+          return self.buf ~= nil and vim.api.nvim_buf_is_valid(self.buf)
+        end,
+      }
+    end
   end)
 
   teardown(function()
-    pcall(function()
-      require("claudecode.terminal").close()
-    end)
-    -- Always restore to the pristine startup value, even when it is nil (the broken-tree
-    -- case). term.setup(nil, nil, {}) sets defaults.terminal_cmd back to nil.
-    local term = require("claudecode.terminal")
-    pcall(term.setup, nil, helper.pristine_terminal_cmd, {})
+    if snacks and orig_open then
+      snacks.open = orig_open
+    end
+    require("harness-decorators.state")._reset()
+    -- Close any terminal window/buffer the test opened.
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if vim.api.nvim_win_is_valid(w) then
+        local b = vim.api.nvim_win_get_buf(w)
+        if vim.api.nvim_buf_is_valid(b) and vim.bo[b].buftype == "terminal" then
+          pcall(vim.api.nvim_win_close, w, true)
+          pcall(vim.api.nvim_buf_delete, b, { force = true })
+        end
+      end
+    end
   end)
 
-  it("opens a terminal-buftype window", function()
-    assert.is_not_nil(helper.active_harness(), "no active harness")
-    local ok, err = pcall(vim.cmd, "silent! ClaudeCodeFocus")
-    assert.is_true(ok, "ClaudeCodeFocus raised: " .. tostring(err))
-    local term_win = helper.wait_for_terminal(15000)
-    assert.is_not_nil(term_win,
-      "harness terminal float did not appear after <leader>c/ClaudeCodeFocus")
+  it("opens a terminal-buftype window via <leader>c (the real focus path)", function()
+    -- Drive the actual keymap callback: <leader>c now routes through park.show_selected -> term.open
+    -- (Task 7), NOT ClaudeCodeFocus. Selecting the active harness and showing it must produce a
+    -- terminal-buftype window.
+    local park = require("harness-decorators.park")
+    park.set_selected(helper.active_harness())
+    local shown = park.show_selected()
+    local shown = park.show_selected()
+    assert.is_not_nil(shown, "show_selected returned nil (no float opened)")
+    local term_win = helper.wait_for_terminal(5000)
+    assert.is_not_nil(term_win, "harness terminal float did not appear after <leader>c")
   end)
 end)
 

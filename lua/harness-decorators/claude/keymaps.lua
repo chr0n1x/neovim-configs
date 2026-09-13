@@ -47,10 +47,27 @@ end
 ---bare "@".
 ci.make_tree_add_command("ClaudeTreeAdd", "claude", type_into_terminal, build_context_text)
 
+---Normal-mode <leader>ca: add the whole current buffer as an @<path> mention. Routed through
+-- context-inject (types into our per-harness float), not claudecode's stock ClaudeCodeAdd - see the
+-- keymap entry below for why.
+local function type_into_terminal_buffer()
+  type_into_terminal(build_context_text(vim.fn.expand("%:p")))
+end
+
+---Visual-mode <leader>ca: send the selected lines (path + #L range) to the claude terminal.
+local send_selection = ci.send_visual_selection(type_into_terminal, build_context_text)
+
 return {
   { "<leader>c", "<cmd>ClaudeCodeFocus<cr>", desc = "Claude Code", mode = { "n", "x" } },
-  { "<leader>cr", "<cmd>ClaudeCode --resume<cr>", desc = "Resume Claude" },
-  { "<leader>cc", "<cmd>ClaudeCode --continue<cr>", desc = "Continue Claude" },
+  -- <leader>cc: continue the last session. Drives OUR per-harness float (term.lua), not a
+  -- claudecode command, so it opens/continues THIS harness's terminal with `--continue`.
+  {
+    "<leader>cc",
+    function()
+      require("harness-decorators.term").open("claude", { args = "--continue" })
+    end,
+    desc = "Continue Claude",
+  },
   { "<leader>cm", "<cmd>ClaudeCodeSelectModel<cr>", desc = "Select Claude model" },
   {
     "<leader>cu",
@@ -60,9 +77,12 @@ return {
     desc = "View changes made by claude",
     mode = { "n" },
   },
-  { "<leader>ca", "<cmd>ClaudeCodeAdd %<cr>", desc = "Add current buffer" },
-  -- esc required to exit visual mode after going into terminal
-  { "<leader>ca", "<cmd>ClaudeCodeSend<cr>; <esc>", mode = "v", desc = "Send to Claude" },
+  -- <leader>ca: type the buffer's @path into OUR per-harness float (context-inject), NOT via
+  -- claudecode's stock ClaudeCodeAdd/ClaudeCodeSend. Those route through claudecode's own terminal
+  -- handle, which has no float of its own under Task 7 - so a second claude window would flash up in
+  -- a separate pane instead of typing into the one we already have open. Same approach as copilot/maki.
+  { "<leader>ca", type_into_terminal_buffer, desc = "Add current buffer" },
+  { "<leader>ca", send_selection, mode = "v", desc = "Send to Claude" },
   {
     "<C-t>",
     "<cmd>ClaudeTreeAdd<cr>",

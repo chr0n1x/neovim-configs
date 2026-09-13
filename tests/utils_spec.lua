@@ -124,3 +124,154 @@ describe("shorten_path (3-tier display rule, shared across callers)", function()
     end
   end)
 end)
+
+describe("context-inject.type_into_terminal: no visible terminal opens OUR float, not claudecode's", function()
+  local term_mod
+  local orig_open
+  local snacks
+  local orig_snacks_open
+  local opened_harnesses
+
+  ---A fake Snacks instance backed by a real terminal window (so find_terminal_win succeeds after open).
+  local function make_fake(win)
+    local buf = vim.api.nvim_win_get_buf(win)
+    -- Give the buffer a channel so type_into_terminal's send path finds one (chansend is stubbed, so the
+    -- value is never actually used - it just has to be non-zero to pass the "no channel" guard).
+    vim.b[buf].terminal_job_id = 1234
+    return {
+      buf = buf,
+      win = win,
+      hide = function() end,
+      show = function() end,
+      focus = function() end,
+      close = function() end,
+      buf_valid = function(self)
+        return self.buf ~= nil and vim.api.nvim_buf_is_valid(self.buf)
+      end,
+    }
+  end
+
+  setup(function()
+    term_mod = require("harness-decorators.term")
+    snacks = require("snacks.terminal")
+    opened_harnesses = {}
+    -- Stub Snacks.open so term.open's fresh-open path records the harness and hands back a fake backed
+    -- by a real terminal window (vsplit + :terminal cat - the reliable headless path).
+    orig_snacks_open = snacks.open
+    snacks.open = function()
+      for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if w ~= vim.api.nvim_get_current_win() then
+          pcall(vim.api.nvim_win_close, w, true)
+        end
+      end
+      vim.cmd("vsplit")
+      local ok = pcall(vim.cmd, "terminal cat")
+      assert.is_true(ok, "could not open a terminal window (cat)")
+      local win = vim.api.nvim_get_current_win()
+      vim.wait(100, function() return false end, 25)
+      return make_fake(win)
+    end
+    -- Record which harness term.open is asked to open.
+    orig_open = term_mod.open
+    term_mod.open = function(harness, opts)
+      table.insert(opened_harnesses, harness)
+      return orig_open(harness, opts)
+    end
+  end)
+
+  teardown(function()
+    if term_mod and orig_open then
+      term_mod.open = orig_open
+    end
+    if snacks and orig_snacks_open then
+      snacks.open = orig_snacks_open
+    end
+    -- Close any terminal window/buffer the test opened so it does not leak into later specs.
+    for _, b in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_valid(b) and vim.bo[b].buftype == "terminal" then
+        pcall(vim.api.nvim_buf_delete, b, { force = true })
+      end
+    end
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if w ~= vim.api.nvim_get_current_win() then
+        pcall(vim.api.nvim_win_close, w, true)
+      end
+    end
+  end)
+
+  it("with no visible terminal, opens the harness's OWN float via term.open (not ClaudeCodeOpen)", function()
+    -- Ensure no terminal window is currently visible so find_terminal_win returns nil and the fallback
+    -- runs. The whole point: the fallback must route through OUR term.open (per-harness Snacks float),
+    -- NOT claudecode's stock ClaudeCodeOpen - which would spawn a second, claudecode-owned split pane.
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if vim.api.nvim_win_is_valid(w) then
+        local b = vim.api.nvim_win_get_buf(w)
+        if vim.api.nvim_buf_is_valid(b) and vim.bo[b].buftype == "terminal" then
+          pcall(vim.api.nvim_win_close, w, true)
+          pcall(vim.api.nvim_buf_delete, b, { force = true })
+        end
+      end
+    end
+    assert.is_nil(ci.find_terminal_win(), "precondition: no visible terminal window")
+
+    -- Clear any per-harness instance a prior spec left behind, so term.open spawns FRESH (via our
+    -- stubbed snacks.open) rather than re-showing a stale instance whose buffer has no channel.
+    require("harness-decorators.state")._reset()
+
+    -- Stub chansend so the (now-open) terminal's send path succeeds without a real PTY write.
+    local orig_chansend = vim.fn.chansend
+    vim.fn.chansend = function(_chan, _data) return 1 end
+
+    -- Capture any notify so a failure surfaces the reason (e.g. "no terminal channel").
+    local orig_notify = vim.notify
+    local notes = {}
+    vim.notify = function(msg) table.insert(notes, tostring(msg)) end
+
+    local result = ci.type_into_terminal("@/tmp/somefile", nil, "claude")
+
+    vim.fn.chansend = orig_chansend
+    vim.notify = orig_notify
+
+    assert.is_not_nil(result, "type_into_terminal must succeed after opening our float (notifies: "
+      .. table.concat(notes, " | ") .. ")")
+    assert.are.equal(1, #opened_harnesses, "the fallback must open a terminal exactly once")
+    assert.are.equal("claude", opened_harnesses[1], "the fallback must open the HARNESS's own float (claude)")
+  end)
+
+  it("<C-t> tree-add with no visible terminal opens OUR float, not claudecode's", function()
+    -- Same regression as <leader>ca but through the tree-add path: <C-t> in a tree buffer runs the
+    -- harness's *TreeAdd command (e.g. ClaudeTreeAdd), which calls make_tree_add_command's handler ->
+    -- type_into_terminal. With no terminal open, that fallback must open OUR per-harness float via
+    -- term.open, NOT claudecode's stock ClaudeCodeOpen (which would spawn a second split pane). We stub
+    -- get_tree_selection to return a real path and drive the user command directly.
+    opened_harnesses = {} -- reset: shared across tests in this describe block
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if vim.api.nvim_win_is_valid(w) then
+        local b = vim.api.nvim_win_get_buf(w)
+        if vim.api.nvim_buf_is_valid(b) and vim.bo[b].buftype == "terminal" then
+          pcall(vim.api.nvim_win_close, w, true)
+          pcall(vim.api.nvim_buf_delete, b, { force = true })
+        end
+      end
+    end
+    assert.is_nil(ci.find_terminal_win(), "precondition: no visible terminal window")
+
+    require("harness-decorators.state")._reset()
+
+    -- Stub the tree selection so the command has a path to send without a real tree buffer.
+    local utils = require("harness-decorators.utils")
+    local orig_gts = utils.get_tree_selection
+    utils.get_tree_selection = function() return { "/tmp/somefile.txt" } end
+
+    local orig_chansend = vim.fn.chansend
+    vim.fn.chansend = function(_chan, _data) return 1 end
+
+    local ok, err = pcall(vim.cmd, "ClaudeTreeAdd")
+    utils.get_tree_selection = orig_gts
+    vim.fn.chansend = orig_chansend
+
+    assert.is_true(ok, "ClaudeTreeAdd errored: " .. tostring(err))
+    assert.are.equal(1, #opened_harnesses, "tree-add fallback must open a terminal exactly once")
+    assert.are.equal("claude", opened_harnesses[1], "tree-add fallback must open the HARNESS's own float")
+  end)
+end)

@@ -135,6 +135,20 @@ describe("harness keymap contract (all harnesses)", function()
           ("%s: <C-t> declared but not mapped on a neo-tree buffer"):format(harness))
         pcall(vim.api.nvim_buf_delete, buf, { force = true })
       end)
+
+      -- Regression (claude): normal-mode <leader>ca must type into OUR per-harness float via
+      -- context-inject, NOT run claudecode's stock ClaudeCodeAdd. That command routes through
+      -- claudecode's own terminal handle, which has no float under Task 7 - so it opened a SECOND
+      -- claude window in a separate pane instead of adding to the one already open. The action must
+      -- be a Lua function (the context-inject path), not a "<cmd>ClaudeCodeAdd..." string.
+      if harness == "claude" then
+        it("claude <leader>ca is a Lua callback, not the stock ClaudeCodeAdd command", function()
+          local ca = find_spec(specs, "<leader>ca")
+          assert.is_not_nil(ca, "claude must declare a normal-mode <leader>ca")
+          assert.is_function(ca[2],
+            "claude <leader>ca must be a Lua callback (context-inject), not a command string - got: " .. type(ca[2]))
+        end)
+      end
     end)
   end
 end)

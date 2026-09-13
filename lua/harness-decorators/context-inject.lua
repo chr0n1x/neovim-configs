@@ -49,7 +49,14 @@ function M.type_into_terminal(text, opts, harness)
 
   local win = M.find_terminal_win()
   if not win then
-    vim.cmd("ClaudeCodeOpen")
+    -- No visible terminal: open OUR per-harness float (term.open), NOT claudecode's stock
+    -- ClaudeCodeOpen - that would spawn a second, claudecode-owned window in a separate pane
+    -- instead of typing into the one we own. term.open re-shows the same live process if the
+    -- harness was already running (just hidden), or spawns fresh otherwise.
+    local ok_term, term = pcall(require, "harness-decorators.term")
+    if ok_term then
+      term.open(harness)
+    end
     win = M.find_terminal_win()
     if not win then
       vim.notify(harness .. ": terminal did not open", vim.log.levels.WARN)

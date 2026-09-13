@@ -140,6 +140,28 @@ function M.terminal_cmd()
   return term.defaults.terminal_cmd
 end
 
+---The command our per-harness terminal owner (term.lua) will spawn for `harness`, resolved at call
+-- time from its env module (+ optional args). This is the Task 7 contract: there is no global
+-- terminal_cmd to re-point; each harness's float resolves its own command when it opens. Returns
+-- nil if the harness has no env command.
+---@param harness string
+---@param opts? { args?: string }
+---@return string? cmd
+function M.term_spawn_cmd(harness, opts)
+  local ok, term = pcall(require, "harness-decorators.term")
+  if not ok then
+    return nil
+  end
+  local ok_env, env = pcall(require, "harness-decorators." .. harness .. ".env")
+  if not ok_env or type(env) ~= "string" then
+    return nil
+  end
+  if opts and opts.args then
+    env = env .. " " .. opts.args
+  end
+  return env
+end
+
 ---Collect any Lua errors logged during the session so a red spec can surface them.
 -- Reads the message history and filters for lines that look like Lua tracebacks.
 ---@return string

@@ -23,7 +23,7 @@ describe("swap: switch() re-points terminal_cmd", function()
     end
   end)
 
-  it("switches to a different harness and re-points terminal_cmd", function()
+  it("switches to a different harness and its float resolves its own command (Task 7)", function()
     local sw = require("harness-decorators.switch")
     -- Pick a harness that is not the current one (deterministic: first in the list).
     local target = nil
@@ -41,10 +41,13 @@ describe("swap: switch() re-points terminal_cmd", function()
       ("switcher did not record new harness: expected %s, got %s"):format(
         target, tostring(helper.active_harness())))
 
+    -- Task 7 contract: there is no global terminal_cmd to re-point. The active harness's float
+    -- resolves its OWN env command at open time. After switching, that must be target's command -
+    -- never the outgoing harness's (the original A1 bug was maki starting claude).
     local expected = helper.env_command(target)
-    local actual = helper.terminal_cmd()
+    local actual = helper.term_spawn_cmd(target)
     assert.are.equal(expected, actual,
-      ("after switch to %s, terminal_cmd desync: expected %q, got %q"):format(
+      ("after switch to %s, its float must resolve its own command: expected %q, got %q"):format(
         target, tostring(expected), tostring(actual)))
   end)
 

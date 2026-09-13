@@ -4,18 +4,20 @@
 -- env.lua (terminal command) and a keymaps.lua (per-harness <leader>c* keys) -
 -- exactly the shape used by lua/harness-decorators/<harness>/.
 --
--- Switching does three things:
---   1. Kills the running floating terminal (and, for harnesses that use it,
---      the claudecode websocket server) so the next open spawns a fresh
---      process instead of reusing the old one.
+-- Switching does four things:
+--   1. Backgrounds the outgoing harness's floating terminal (config-hides it, keeping its
+--      PTY alive so it keeps executing) and records the buffer for later resume - Option A.
 --   2. Points claudecode.nvim's terminal module at the new harness's command.
---   3. Rebinds the consolidated <leader>c* keymaps to the new harness's
---      keymaps.lua so bindings like <leader>cr/<leader>cm (which differ, or
---      don't exist, per harness) match whatever is now active.
+--   3. Foregrounds the incoming harness: if it was previously backgrounded, re-shows its
+--      SAME live process; otherwise leaves it closed until the first <leader>c press opens it.
+--   4. Rebinds the consolidated <leader>c* keymaps to the new harness's keymaps.lua so
+--      bindings like <leader>cr/<leader>cm (which differ, or don't exist, per harness) match
+--      whatever is now active.
 local M = {}
 
 local keymaps = require("harness-decorators.keymaps")
 local title = require("harness-decorators.title")
+local park = require("harness-decorators.park")
 
 local current_harness = nil
 
@@ -42,49 +44,27 @@ end
 ---a scary "Claude exited with code -1" error - expected and harmless here since
 ---we're the ones killing it, so silence claudecode's logger.error for the
 ---duration of the kill (restored on the next tick, after TermClose has fired).
-local function kill_terminal()
-  local ok_logger, logger = pcall(require, "claudecode.logger")
-  local original_error = ok_logger and logger.error or nil
-  if ok_logger then
-    logger.error = function() end
-  end
-
-  pcall(function()
-    require("claudecode.terminal").close()
-  end)
-
-  -- Close only claudecode's OWN terminal buffer, not every buftype=="terminal" buffer in the
-  -- nvim instance. The previous loop force-deleted all of them, which killed any unrelated
-  -- :terminal shell the user had open on a harness switch with no feedback. get_active_bufnr
-  -- is claudecode's own handle to its float; if it reports none (already closed by close()
-  -- above or never opened) there is nothing left to delete.
-  local ok_term, term = pcall(require, "claudecode.terminal")
-  if ok_term and term.get_active_terminal_bufnr then
-    local bufnr = term.get_active_terminal_bufnr()
-    if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
-      vim.api.nvim_buf_delete(bufnr, { force = true })
-    end
-  end
-
-  if ok_logger then
-    vim.schedule(function()
-      logger.error = original_error
-    end)
-  end
-end
+-- REMOVED (Option A): switch.lua no longer kills the terminal on a harness swap.
+-- The old process is backgrounded instead - park.park() config-hides its float
+-- (keeping the PTY alive so it keeps executing) and records the buffer for later
+-- resume. See docs/multi-agent-prd.md. Kept as a comment block so the reason the
+-- "Claude exited with code -1" logger suppression below no longer exists is clear.
 
 ---Record initial state for the harness ai-harness.lua starts with. The keymaps
 ---for this first harness are registered by ai-harness.lua's config (via
----harness-decorators.keymaps), so this just remembers what's active for later
----switches/teardown.
+---harness-decorators.keymaps), so this remembers what's active for later switches/teardown AND
+---seeds the unified park table: the startup harness is selected=true (buff_nr=nil until its first
+---<leader>c opens it). Without this, a fresh nvim would have no selected entry and <leader>c would
+---do nothing.
 ---@param harness string
 function M.init(harness)
   current_harness = harness
+  park.set_selected(harness)
 end
 
----Swap the backing CLI: kill the current floating terminal, point
----claudecode.nvim's terminal command at the new harness's CLI, and rebind
----<leader>c* to the new harness's keymaps.
+---Swap the backing CLI: background the current floating terminal (Option A), point
+---claudecode.nvim's terminal command at the new harness's CLI, foreground any parked terminal for
+---the new harness, and rebind <leader>c* to the new harness's keymaps.
 ---@param new_harness string
 function M.switch(new_harness)
   if new_harness == current_harness then
@@ -96,16 +76,22 @@ function M.switch(new_harness)
     return
   end
 
+  -- Remember the outgoing harness before we overwrite current_harness; the background/foreground
+  -- notify at the end reports it by name.
+  local previous_harness = current_harness
+
   ensure_plugin_loaded()
-  -- kill_terminal force-deletes the terminal buffer; if focus is in it, nvim
-  -- re-parents the window to the next visible buffer and WinLeave fires - capture
-  -- would record that random window as the restore target. Suppress for the tick.
+  -- Background the outgoing harness instead of killing it: hide ITS OWN float (PTY stays alive, so
+  -- it keeps executing) and record it for resume. If focus is in the terminal window, hiding it makes
+  -- nvim re-parent focus to another window and WinLeave fires - capture would record that random
+  -- window as the restore target, so suppress for the tick (same reason the old kill path needed it).
   pcall(function()
     require("harness-decorators.focus").suppress_next_leave()
   end)
-  kill_terminal()
+  local backgrounded = current_harness ~= nil and park.park(current_harness)
 
-  -- maki disables auto_start (no @ mention server); everything else wants it.
+  -- maki disables auto_start (no @ mention server); everything else wants it. This only toggles the
+  -- websocket server - it has no effect on the floating terminal, which term.lua now owns directly.
   pcall(function()
     require("claudecode").stop()
   end)
@@ -115,49 +101,34 @@ function M.switch(new_harness)
     end)
   end
 
+  -- Re-point the harness identity. The spawn command is NOT re-pointed on any global anymore: term.lua
+  -- resolves each harness's command from its env module at open time, so there is no claudecode
+  -- terminal_cmd / snacks_win_opts.title to update here (that was the shared-handle path). We only
+  -- refresh the env cache and the NVIM_LLM_HARNESS var the watcher/adapter layer reads.
   package.loaded["harness-decorators." .. new_harness .. ".env"] = nil
   local command = require("harness-decorators." .. new_harness .. ".env")
   vim.fn.setenv("NVIM_LLM_HARNESS", new_harness)
 
-  local ok_cc, claudecode = pcall(require, "claudecode")
-  if ok_cc then
-    claudecode.state.config.terminal_cmd = command
-    -- snacks_win_opts.title was built from the harness at config-load time;
-    -- re-point it so the next terminal open shows the new harness's name and color.
-    local win_opts = claudecode.state.config.snacks_win_opts
-      or claudecode.state.config.terminal and claudecode.state.config.terminal.snacks_win_opts
-    if type(win_opts) == "table" then
-      win_opts.title = title.title(new_harness)
-    end
-  end
-  -- nil user_term_config leaves previously configured terminal opts (snacks
-  -- window layout, keymaps, etc.) untouched; only terminal_cmd/env change. Every other
-  -- claudecode poke in this function is pcalled, so this one is too: a failure here must not
-  -- abort the switch mid-way and leave the config half-applied (terminal already killed,
-  -- keymaps not rebound, current_harness stale) with no error surfaced. On failure we surface
-  -- an explicit ERROR naming the step and bail before touching keymaps/current_harness, so the
-  -- old harness's bindings stay consistent.
-  local ok_setup, setup_err = pcall(function()
-    require("claudecode.terminal").setup(nil, command, {})
-  end)
-  if not ok_setup then
-    vim.notify(
-      "harness: switch to " .. new_harness .. " failed at terminal setup: " .. tostring(setup_err),
-      vim.log.levels.ERROR
-    )
-    return
-  end
+  -- Mark the incoming harness selected in the unified table now that it is active. This makes it the
+  -- target of the next <leader>c (park.show_selected). If it was previously backgrounded, its float is
+  -- already recorded so show_selected will resume the SAME live process; if not, its entry has no
+  -- instance yet and the first <leader>c spawns it fresh. We do NOT auto-open here: opening on every
+  -- switch surprised the user and corrupted window state, so a fresh terminal is still opened by the
+  -- first <leader>c press (pre-Option-A behavior).
+  park.set_selected(new_harness)
 
   keymaps.clear()
   keymaps.apply(keymaps.build(new_harness))
   current_harness = new_harness
 
-  -- Re-point the JSONL watcher at the new harness: stop the old backend (it's
-  -- still subscribed to the OLD harness's sessions dir), clear all pinned/session
-  -- state (so edit-jump can't keep following the previous harness's files), then
-  -- restart against the new harness's sessions dir. If no terminal has opened yet
-  -- there is no watcher running; start() spawns it, which is fine - the first
-  -- <leader>c press will find it already up and skip its own start.
+  -- Re-point the JSONL watcher at the new (now-active) harness: stop the old backend (it's
+  -- still subscribed to the OLD harness's sessions dir), clear all pinned/session state (so
+  -- edit-jump can't keep following the previous harness's files), then restart against the new
+  -- harness's sessions dir. This is what makes the watcher follow ONLY the active harness under
+  -- Option A: a backgrounded (parked) harness is intentionally NOT followed - its process keeps
+  -- running but produces no edit-jumps/notifications until it is foregrounded again, at which
+  -- point this same re-point runs for it. If no terminal has opened yet there is no watcher
+  -- running; start() spawns it, which is fine - the first <leader>c press finds it already up.
   pcall(function()
     local watcher = require("harness-decorators.watcher")
     watcher.stop()
@@ -165,10 +136,131 @@ function M.switch(new_harness)
     watcher.start()
   end)
 
-  vim.notify("harness: switched to " .. new_harness .. " (" .. command .. ")", vim.log.levels.INFO)
+  -- Report background/foreground accurately: if the outgoing harness had a live terminal we
+  -- backgrounded it (its process keeps running); otherwise there was nothing to park, so this is
+  -- just a plain switch. `backgrounded` was captured at park time above.
+  if backgrounded then
+    vim.notify(
+      "harness: backgrounded " .. previous_harness .. ", foregrounded " .. new_harness .. " (" .. command .. ")",
+      vim.log.levels.INFO
+    )
+  else
+    vim.notify("harness: switched to " .. new_harness .. " (" .. command .. ")", vim.log.levels.INFO)
+  end
+end
+
+---Run after a harness is picked from the <leader>cl picker: open the newly-selected harness's
+---terminal so picking is a one-keystroke "switch AND show" (previously it only switched and left
+---you to press <leader>c). Delegates to park.show_selected, which re-shows the SAME live process if
+---the harness was already running, or spawns fresh otherwise. Exposed on M so tests/switch_spec.lua
+---can drive it without opening a telescope picker.
+function M.after_pick()
+  park.show_selected()
 end
 
 ---Telescope picker over available harness dirs; selecting one calls M.switch.
+---Map each harness to the buffer number holding its terminal output, for the picker preview.
+---Built entirely from the unified park table (Task 6), which now tracks BOTH the selected (active)
+---and backgrounded (parked) terminals - so no separate claudecode-handle branch is needed. A
+---harness that was never opened (no buffer) or whose process already exited is absent. This is what
+---lets the preview pane show "what each one is doing". Exposed on M so tests/picker_spec.lua can
+---drive it without opening a telescope picker.
+---@return table<string, number> harness_to_bufnr
+function M.collect_terminal_bufs()
+  local map = {}
+  for _, e in ipairs(park.list()) do
+    map[e.harness] = e.buff_nr
+  end
+  return map
+end
+
+---Telescope buffer previewer for the harness picker: renders a header plus the raw terminal
+---output of the selected harness, colorizing error/warn/success tokens and auto-refreshing on a
+---~500ms timer while it runs. Adapted from util/procs.lua's make_previewer (same render shape,
+---colorize patterns, and refresh cadence) but resolves the buffer by harness name via
+---collect_terminal_bufs() instead of a procs-registered process name.
+---@return table previewer
+local function make_harness_previewer(bufs)
+  local previewers = require("telescope.previewers")
+  local active_timer = nil
+
+  local function stop_timer()
+    if active_timer then
+      pcall(function()
+        active_timer:stop()
+        active_timer:close()
+      end)
+      active_timer = nil
+    end
+  end
+
+  local match_ids = {}
+  local function colorize(winid)
+    if not vim.api.nvim_win_is_valid(winid) then
+      return
+    end
+    for _, id in ipairs(match_ids) do
+      pcall(vim.fn.matchdelete, id, winid)
+    end
+    match_ids = {}
+    local patterns = {
+      { "ErrorMsg", [[\c\<\(error\|fatal\|fail\(ed\)\?\|panic\)\>]] },
+      { "WarningMsg", [[\c\<warn\(ing\)\?\>]] },
+      { "DiagnosticOk", [[\c\<\(ok\|pass\(ed\)\?\|success\(ful\)\?\)\>]] },
+      { "Comment", [[\c\<debug\>]] },
+    }
+    for _, p in ipairs(patterns) do
+      local ok, id = pcall(vim.fn.matchadd, p[1], p[2], 10, -1, { window = winid })
+      if ok then
+        match_ids[#match_ids + 1] = id
+      end
+    end
+  end
+
+  local function render(bufnr, winid, entry)
+    if type(bufnr) ~= "number" or not vim.api.nvim_buf_is_valid(bufnr) then
+      return
+    end
+    local name = entry.value
+    local lines = {}
+    local status = name == current_harness and "active" or "backgrounded"
+    table.insert(lines, name .. "  (" .. status .. ")")
+    table.insert(lines, string.rep("─", 40))
+    local term_buf = bufs[name]
+    if term_buf and vim.api.nvim_buf_is_valid(term_buf) then
+      vim.list_extend(lines, vim.api.nvim_buf_get_lines(term_buf, 0, -1, false))
+    else
+      table.insert(lines, "(not started)")
+    end
+    vim.api.nvim_buf_set_option(bufnr, "modifiable", true)
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+    vim.api.nvim_buf_set_option(bufnr, "modifiable", false)
+    if vim.api.nvim_win_is_valid(winid) then
+      pcall(vim.api.nvim_win_set_cursor, winid, { #lines, 0 })
+      colorize(winid)
+    end
+  end
+
+  return previewers.new_buffer_previewer({
+    title = "output",
+    define_preview = function(self, entry)
+      stop_timer()
+      render(self.state.bufnr, self.state.winid, entry)
+      active_timer = vim.uv.new_timer()
+      active_timer:start(
+        500,
+        500,
+        vim.schedule_wrap(function()
+          render(self.state.bufnr, self.state.winid, entry)
+        end)
+      )
+    end,
+    teardown = function()
+      stop_timer()
+    end,
+  })
+end
+
 function M.pick()
   local ok_pickers, pickers = pcall(require, "telescope.pickers")
   if not ok_pickers then
@@ -181,37 +273,37 @@ function M.pick()
   local action_state = require("telescope.actions.state")
 
   local harnesses = keymaps.list_harnesses()
-  -- Size the window to the list so nothing scrolls off, capped so a large set
-  -- doesn't fill the screen (past the cap it scrolls). In telescope's horizontal
-  -- layout with no previewer and prompt at top, the visible result rows are
-  -- (height - 5): 1 prompt line + 4 border/spacing lines of chrome (verified in
-  -- telescope/pickers/layout_strategies.lua). So height = <rows to show> + 5.
-  local visible_rows = math.max(1, math.min(#harnesses, 10))
-  local height = visible_rows + 5
+  -- Terminal buffers to preview (active + parked). Captured once at picker-open; the previewer's
+  -- refresh timer re-reads these buffers live, so a running harness's output updates in place.
+  local bufs = M.collect_terminal_bufs()
 
   pickers
     .new({}, {
       prompt_title = "AI Harness (current: " .. (current_harness or "?") .. ")",
-      -- small fixed-size window; the harness list is short, no need for the
-      -- default near-fullscreen layout. The horizontal strategy's valid keys
-      -- are height/width (fractions of the window) and prompt_position -
-      -- results_height only exists on the vertical strategy.
-      layout_strategy = "horizontal",
+      -- Vertical layout with a preview pane (D2): the list on top, each harness's raw terminal
+      -- output below it. Sized larger than the old fixed 40-wide box so the preview is readable.
+      -- The vertical strategy stacks full-width and uses preview_height (not preview_width) to
+      -- control how much of the height the preview takes; preview_cutoff disables it on short
+      -- windows. Both are valid keys here - preview_width belongs to the horizontal/flex
+      -- strategies and errors out on vertical (telescope layout_strategies.lua validate).
+      layout_strategy = "vertical",
       layout_config = {
         prompt_position = "top",
-        preview_width = 0,
-        height = height,
-        width = 40,
+        preview_height = 0.5,
+        preview_cutoff = 12,
+        width = 0.8,
+        height = 0.8,
       },
       finder = finders.new_table({
         results = harnesses,
         entry_maker = function(name)
-          local marker = name == current_harness and "* " or "  "
+          -- Marker: "*" for the active harness, "·" (parked dot) for a backgrounded one with a
+          -- live process, two spaces for a never-opened/stopped harness. The name is colored with
+          -- its shared HarnessTitle<Name> group; highlight columns are 0-indexed byte offsets into
+          -- `text`, so the name starts right after the 2-char marker.
+          local parked = bufs[name] ~= nil and name ~= current_harness
+          local marker = name == current_harness and "* " or (parked and ". " or "  ")
           local text = marker .. name
-          -- Color the harness name with its shared HarnessTitle<Name> group (the
-          -- same color used for the floating-terminal title). A function display
-          -- returns (text, highlights); highlight columns are 0-indexed byte
-          -- offsets into `text`, so the name starts right after the 2-char marker.
           local group = title.define(name)
           return {
             value = name,
@@ -226,12 +318,17 @@ function M.pick()
         end,
       }),
       sorter = conf.generic_sorter({}),
+      previewer = make_harness_previewer(bufs),
       attach_mappings = function(prompt_bufnr)
         actions.select_default:replace(function()
           local selection = action_state.get_selected_entry()
           actions.close(prompt_bufnr)
           if selection and selection.value then
             M.switch(selection.value)
+            -- After switching, open the newly-selected harness's terminal so the picker is a one-keystroke
+            -- "switch AND show" - previously it only switched and left you to press <leader>c. Re-shows the
+            -- SAME live process if the harness was already running (park.show_selected -> term.open).
+            M.after_pick()
           end
         end)
         return true

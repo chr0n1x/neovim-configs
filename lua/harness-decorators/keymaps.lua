@@ -44,7 +44,7 @@ local function focus_spec(harness)
         end)
       end
       -- Suppress capture for the WinLeave this press triggers, restore the last
-      -- normal-mode buffer first (ClaudeCodeFocus then focuses the terminal window
+      -- normal-mode buffer first (the show below then focuses the terminal window
       -- over it, so the work buffer stays visible underneath), and clear the
       -- suppression once the restore has run.
       local fok, focus = pcall(require, "harness-decorators.focus")
@@ -52,7 +52,15 @@ local function focus_spec(harness)
         focus.suppress_next_leave()
         focus.restore()
       end
-      vim.cmd("silent! ClaudeCodeFocus")
+      -- Table-driven show (Task 6): instead of ClaudeCodeFocus - which routes through
+      -- claudecode's single terminal handle and could re-show a parked buffer from a
+      -- DIFFERENT harness ("maki shows claude") - ask the unified park table for the
+      -- selected harness and show ITS buffer. The table is the source of truth for which
+      -- harness is active; claudecode still does the actual window show/hide.
+      local pok, park = pcall(require, "harness-decorators.park")
+      if pok then
+        park.show_selected()
+      end
     end,
     desc = harness,
     mode = { "n", "x" },

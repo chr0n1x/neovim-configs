@@ -1,11 +1,12 @@
--- Per-harness command selection. The strongest form of the A1 assertion: for EVERY
--- harness, when it is active its terminal_cmd must equal that harness's own env command -
--- never another harness's (the original A1 bug was NVIM_LLM_HARNESS=maki starting claude).
+-- Per-harness command selection (Task 7). The strongest form of the A1 assertion: for EVERY
+-- harness, when it is active its float must resolve to that harness's OWN env command - never
+-- another harness's (the original A1 bug was NVIM_LLM_HARNESS=maki starting claude).
 --
--- We exercise this by switching to each harness in turn (switch().switch is the same code
--- path <leader>cl drives) and asserting terminal_cmd re-points correctly. This catches a
--- regression where, say, maki's env module returns "maki" but the switch path still leaves
--- claudecode pointed at "claude".
+-- Under Task 7 there is no global terminal_cmd to re-point: term.lua resolves each harness's
+-- command from its env module at open time. We switch to each harness in turn (switch().switch is
+-- the same code path <leader>cl drives) and assert the active harness's float would spawn ITS OWN
+-- command - catching a regression where, say, maki's env returns "maki" but the open path still
+-- resolves claude's command.
 
 local helper = require("tests.helper")
 local keymaps = require("harness-decorators.keymaps")
@@ -37,11 +38,11 @@ describe("command selection: every harness runs its own CLI", function()
           harness, tostring(helper.active_harness())))
 
       local expected = helper.env_command(harness)
-      local actual = helper.terminal_cmd()
+      local actual = helper.term_spawn_cmd(harness)
       assert.is_string(expected,
         ("%s env module returned non-string: %s"):format(harness, tostring(expected)))
       assert.are.equal(expected, actual,
-        ("%s desync: expected %q, got %q (wrong CLI would run)"):format(
+        ("%s desync: its float must resolve %q, got %q (wrong CLI would run)"):format(
           harness, tostring(expected), tostring(actual)))
 
       -- Guard against the specific A1 failure mode: a non-claude harness must never end up
