@@ -27,13 +27,17 @@ local function ensure_hl()
   end
 end
 
----Strip the CWD prefix from a path if it's under CWD.
+---Display form for a picker row: the shared cwd-relative/~ shortener (utils.shorten_path) with
+-- a "./" prefix on the cwd-relative tier so it reads as relative to the project root. The other
+-- tiers (~ and absolute) are left as-is, matching how a user would read them in the list.
 local function shorten_path(fp)
-  local cwd = vim.fn.getcwd()
-  if fp:sub(1, #cwd + 1) == cwd .. "/" then
-    return "./" .. fp:sub(#cwd + 2)
+  local cwd = vim.uv.cwd()
+  local short = utils.shorten_path(fp)
+  -- Only add "./" when we actually produced a cwd-relative path (no ~ and not absolute).
+  if cwd and short ~= fp and not short:match("^~") and not short:match("^/") then
+    return "./" .. short
   end
-  return fp
+  return short
 end
 
 ---Build a Telescope previewer that renders diffs from the sidecar file.

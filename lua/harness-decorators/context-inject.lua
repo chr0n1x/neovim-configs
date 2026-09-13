@@ -23,53 +23,13 @@ function M.find_terminal_win()
   end
 end
 
----Shorten a path for display. The harness CLI reads files itself, so the reference just
----needs to be unambiguous and short. Preference order:
----  1. cwd-relative (e.g. "lua/harness-decorators/claude/keymaps.lua") when the file is
----     under the current working dir - shortest and matches how you'd type it.
----  2. ~ collapse (e.g. "~/Code/kran/...") when under $HOME but not under cwd.
----  3. the full path otherwise.
----A directory that IS the cwd has no non-empty remainder in either step, so it falls
----through to the full absolute path - never the empty/"./" form that yields a bare "@".
+---Shorten a path for display in the harness terminal. Delegates to the shared definition in
+---utils.shorten_path (cwd-relative, then ~ collapse, then full). The per-harness @/range/decor
+---is applied by each keymaps file on top of this result.
 ---@param file_path string
 ---@return string
 function M.shorten_path(file_path)
-  -- 1. cwd-relative. Strip the cwd prefix when the file lives under it, yielding a short
-  --    relative path. Only accept when there's actually a remainder (a bare filename under
-  --    cwd is fine too).
-  local cwd = vim.uv.cwd()
-  if cwd and cwd ~= "" then
-    local bare_cwd = cwd:gsub("/+$", "")
-    if bare_cwd ~= "" then
-      local prefix = bare_cwd .. "/"
-      if file_path:sub(1, #prefix) == prefix then
-        local rel = file_path:sub(#prefix + 1)
-        if rel ~= "" then
-          return rel
-        end
-      end
-    end
-  end
-
-  -- 2. ~ collapse for anything under $HOME.
-  local home = vim.env.HOME
-  if home and home ~= "" then
-    local bare_home = home:gsub("/+$", "")
-    if bare_home ~= "" then
-      if file_path == bare_home then
-        return "~"
-      end
-      -- Only shorten when the path is home + "/" + more, so /home/kran2/foo is NOT
-      -- shortened when HOME=/home/kran (the char right after home must be a slash).
-      local prefix = bare_home .. "/"
-      if file_path:sub(1, #prefix) == prefix then
-        return "~/" .. file_path:sub(#prefix + 1)
-      end
-    end
-  end
-
-  -- 3. Full path.
-  return file_path
+  return require("harness-decorators.utils").shorten_path(file_path)
 end
 
 ---Write text into the harness terminal's PTY via chansend (same mechanism as

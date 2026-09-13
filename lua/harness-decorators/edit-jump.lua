@@ -265,11 +265,21 @@ function M.on_edit(args)
 end
 
 ---Callback for ClaudeCodeDiffClosed autocmd (fired by coder/claudecode.nvim).
+---
+---We only want to jump when a diff was ACCEPTED (its change is now on disk), not when it
+---was rejected or the view was merely closed. The plugin's accept path resolves the diff as
+---"saved" and then closes the tab, firing this event with reason "diff tab closed after save".
+---Every other close reason ("...after reject", "close all diffs", "client disconnected",
+---"shutdown") must be ignored - jumping on a rejected diff would point you at a file that
+---was not actually changed. See tests/edit_jump_spec.lua for the pinned reason mapping.
 function M.on_diff_closed(args)
   if not args.data or not args.data.reason then
     return
   end
-  if not args.data.reason:find("save") then
+  -- The accept path is the only close reason containing "save". A bare substring match would
+  -- also be correct today, but anchor to the full reason so a future plugin change that adds
+  -- another "save"-bearing reject reason cannot silently re-enable jumping on rejects.
+  if args.data.reason ~= "diff tab closed after save" then
     return
   end
   M.on_edit(args)
