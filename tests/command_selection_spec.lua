@@ -9,7 +9,7 @@
 -- resolves claude's command.
 
 local helper = require("tests.helper")
-local keymaps = require("harness-decorators.keymaps")
+local utils = require("harness-decorators.utils")
 
 describe("command selection: every harness runs its own CLI", function()
   local original_harness
@@ -26,9 +26,9 @@ describe("command selection: every harness runs its own CLI", function()
   end)
 
   -- One test per discovered harness so a failure names the offending harness. The list is
-  -- captured at file-load time (keymaps.list_harnesses just scans the directory), which is
+  -- captured at file-load time (utils.list_harnesses just scans the directory), which is
   -- safe - it does not depend on nvim runtime state.
-  for _, harness in ipairs(keymaps.list_harnesses()) do
+  for _, harness in ipairs(utils.list_harnesses()) do
     it(("resolves %s to its own env command"):format(harness), function()
       local sw = require("harness-decorators.switch")
       sw.switch(harness)

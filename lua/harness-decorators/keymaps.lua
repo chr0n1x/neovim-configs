@@ -6,7 +6,6 @@
 -- result with vim.keymap.set, so there is exactly one keys table for the plugin.
 local M = {}
 
-local this_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h")
 local FT_AUGROUP = "AiHarnessFtKeys"
 
 ---Buffer-local ft-mappings written by M.apply (bufnr -> list of {mode, lhs}).
@@ -24,6 +23,22 @@ local function switch_spec()
       require("harness-decorators.switch").pick()
     end,
     desc = "Switch AI harness",
+    mode = { "n" },
+  }
+end
+
+---Toggle the statusline agent overview on/off. Harness-agnostic, like the switcher: it shows
+--every live harness terminal with its work status + label, so it must survive a harness switch.
+local function agent_overview_spec()
+  return {
+    "<leader>co",
+    function()
+      local ok = pcall(require, "harness-decorators.agent-display")
+      if ok then
+        require("harness-decorators.agent-display").toggle()
+      end
+    end,
+    desc = "Toggle agent overview",
     mode = { "n" },
   }
 end
@@ -141,30 +156,8 @@ function M.build(harness)
     end
   end
   table.insert(specs, switch_spec())
+  table.insert(specs, agent_overview_spec())
   return specs
-end
-
----List sibling directories that look like a harness (env.lua + keymaps.lua).
----@return string[]
-function M.list_harnesses()
-  local found = {}
-  local fd = vim.uv.fs_scandir(this_dir)
-  if fd then
-    while true do
-      local name, ftype = vim.uv.fs_scandir_next(fd)
-      if not name then
-        break
-      end
-      if ftype == "directory" then
-        local dir = this_dir .. "/" .. name
-        if vim.uv.fs_stat(dir .. "/env.lua") and vim.uv.fs_stat(dir .. "/keymaps.lua") then
-          table.insert(found, name)
-        end
-      end
-    end
-  end
-  table.sort(found)
-  return found
 end
 
 return M

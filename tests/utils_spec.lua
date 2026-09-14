@@ -85,6 +85,25 @@ describe("utils.ownership_from_cwd (tri-state contract)", function()
   end)
 end)
 
+describe("utils.command_executable", function()
+  it("returns true for a known executable (sh)", function()
+    assert.is_true(utils.command_executable("sh"))
+  end)
+
+  it("extracts the first token from a full command string", function()
+    assert.is_true(utils.command_executable("sh -c echo hello"))
+  end)
+
+  it("returns false for a nonexistent executable", function()
+    assert.is_false(utils.command_executable("definitely_not_a_real_cmd_xyz_12345"))
+  end)
+
+  it("returns false for nil or empty input", function()
+    assert.is_false(utils.command_executable(nil))
+    assert.is_false(utils.command_executable(""))
+  end)
+end)
+
 describe("shorten_path (3-tier display rule, shared across callers)", function()
   local cwd = vim.uv.cwd()
   local home = vim.env.HOME

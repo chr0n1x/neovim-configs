@@ -27,7 +27,7 @@ describe("swap: switch() re-points terminal_cmd", function()
     local sw = require("harness-decorators.switch")
     -- Pick a harness that is not the current one (deterministic: first in the list).
     local target = nil
-    for _, h in ipairs(require("harness-decorators.keymaps").list_harnesses()) do
+    for _, h in ipairs(require("harness-decorators.utils").list_harnesses()) do
       if h ~= original_harness then
         target = h
         break

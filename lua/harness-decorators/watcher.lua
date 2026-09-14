@@ -503,7 +503,8 @@ end
 ---lingering under a live nvim after stop().
 local function on_watcher_exit(code)
   if M.watcher_handle then
-    utils.log((M.watcher_backend or "watcher") .. " exited with code " .. tostring(code), vim.log.levels.WARN)
+    local level = (code == 0) and vim.log.levels.DEBUG or vim.log.levels.WARN
+    utils.log((M.watcher_backend or "watcher") .. " exited with code " .. tostring(code), level)
     pcall(function()
       M.watcher_handle:close()
     end)

@@ -15,6 +15,7 @@
 
 local helper = require("tests.helper")
 local keymaps = require("harness-decorators.keymaps")
+local utils = require("harness-decorators.utils")
 
 -- <leader> is " " (space) in this config, so nvim reports lhs like " c" / " ca", not the
 -- literal "<leader>c". Build the expected lhs from the real mapleader.
@@ -70,7 +71,7 @@ describe("harness keymap contract (all harnesses)", function()
     end
   end)
 
-  for _, harness in ipairs(keymaps.list_harnesses()) do
+  for _, harness in ipairs(utils.list_harnesses()) do
     describe(("harness: %s"):format(harness), function()
       local specs
 

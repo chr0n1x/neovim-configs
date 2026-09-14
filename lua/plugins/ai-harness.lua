@@ -15,15 +15,20 @@
 local switch = require("harness-decorators.switch")
 local title = require("harness-decorators.title")
 
--- Re-define title groups after colorscheme switches (nord does `hi clear`).
+-- Re-define title groups after colorscheme switches (nord does `hi clear`). The agent-overview
+-- status-dot groups are re-defined too so a theme switch doesn't leave them on the old palette.
 vim.api.nvim_create_autocmd("ColorScheme", {
   pattern = "*",
-  callback = title.define_all,
+  callback = function()
+    title.define_all()
+    pcall(require("harness-decorators.agent-display").setup_highlights)
+  end,
 })
 
 local harness = os.getenv("NVIM_LLM_HARNESS") or "claude"
 local keymaps = require("harness-decorators.keymaps")
-if not vim.tbl_contains(keymaps.list_harnesses(), harness) then
+local utils = require("harness-decorators.utils")
+if not vim.tbl_contains(utils.list_harnesses(), harness) then
   return {}
 end
 

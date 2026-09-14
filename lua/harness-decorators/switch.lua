@@ -16,10 +16,42 @@
 local M = {}
 
 local keymaps = require("harness-decorators.keymaps")
+local utils = require("harness-decorators.utils")
 local title = require("harness-decorators.title")
 local park = require("harness-decorators.park")
+local agent_display = require("harness-decorators.agent-display")
 
 local current_harness = nil
+
+-- Work-status dot glyphs for the picker rows. Every harness that has been initialized (has a live
+-- terminal buffer) shows one before its name, colored by its work status - the same three states and
+-- highlight groups the lualine agent overview uses (see agent-display). A never-opened harness shows
+-- no dot. These are plain {glyph, group} pairs (not hl markup) because telescope entry highlights use
+-- named groups via display() ranges, not %#...#%* sequences.
+local STATUS_DOTS = {
+  working = { glyph = "● ", group = agent_display.HL_WORKING }, -- blue, pulsing in the statusline
+  idle = { glyph = "✓ ", group = agent_display.HL_IDLE }, -- green checkmark (done/idle)
+  unknown = { glyph = "○ ", group = agent_display.HL_UNKNOWN }, -- hollow ring
+}
+
+---The work-status dot for a harness, or nil when it has no live terminal (never opened / stopped).
+---@param name string harness name
+---@param bufs table<string, number> harness -> live terminal buffer map
+---@return {glyph: string, group: string}?
+local function status_dot(name, bufs)
+  if bufs[name] == nil then
+    return nil
+  end
+  local ok, state = pcall(require, "harness-decorators.agent-state")
+  if not ok or type(state.poll) ~= "function" then
+    return nil
+  end
+  local r = state.poll(name)
+  if not r then
+    return nil
+  end
+  return STATUS_DOTS[r.status] or STATUS_DOTS.unknown
+end
 
 ---@return string? the currently active harness name
 function M.current()
@@ -68,10 +100,9 @@ end
 ---@param new_harness string
 function M.switch(new_harness)
   if new_harness == current_harness then
-    vim.notify("harness: already using " .. new_harness, vim.log.levels.INFO)
     return
   end
-  if not vim.tbl_contains(keymaps.list_harnesses(), new_harness) then
+  if not vim.tbl_contains(utils.list_harnesses(), new_harness) then
     vim.notify("harness: unknown harness " .. tostring(new_harness), vim.log.levels.ERROR)
     return
   end
@@ -174,31 +205,27 @@ function M.collect_terminal_bufs()
   return map
 end
 
----Build a telescope entry for one harness row: a colored state glyph (active / parked / idle) plus
----the harness name in its HarnessTitle<Name> group. The glyph and the name are highlighted
----independently so the selected-row dimming (TelescopeSelection -> Visual, no fg) leaves BOTH
----colored. Exposed on M so tests/picker_spec.lua can drive it headless without opening telescope UI.
+---Build a telescope entry for one harness row: an optional work-status dot (for initialized
+--harnesses) followed by the harness name in its HarnessTitle<Name> group. The dot and the name are
+--highlighted independently so the selected-row dimming (TelescopeSelection -> Visual, no fg) leaves
+--BOTH colored. Uninstalled harnesses render dimmed with a "(not installed)" suffix. Exposed on M so
+--tests/picker_spec.lua can drive it headless without opening telescope UI.
 ---@param name string harness name
----@param active? string the active harness name (nil if none set yet)
+---@param active? string kept for positional API compatibility; unused now that the status dot subsumes it
 ---@param bufs table<string, number> harness -> live terminal buffer map (from collect_terminal_bufs)
+---@param installed? boolean whether the harness CLI is on PATH (default true)
 ---@return table entry { value, ordinal, display }
-function M.make_entry(name, active, bufs)
-  -- State glyph: a filled circle for the active harness (only if it has a live buffer), a hollow one
-  -- for a backgrounded harness that still has a live process, two spaces for a never-opened/stopped
-  -- one. An active-but-never-initialized harness shows no glyph - it's not actually running yet.
-  -- Each colored state uses its own picker group (title.picker_glyphs); the idle state is blank so
-  -- no group is needed.
-  local has_live = bufs[name] ~= nil
-  local parked = has_live and name ~= active
-  local glyph, glyph_group
-  if has_live and name == active then
-    glyph, glyph_group = "● ", title.picker_glyphs.active.group
-  elseif parked then
-    glyph, glyph_group = "○ ", title.picker_glyphs.parked.group
-  else
-    glyph, glyph_group = "  ", nil
+function M.make_entry(name, _active, bufs, installed)
+  if installed == nil then
+    installed = true
   end
-  local text = glyph .. name
+  -- Work-status dot for initialized (live-buffer) harnesses: blue pulse / green / hollow ring before
+  -- the name. A never-opened or uninstalled harness shows no dot. The `active` arg is kept for API
+  -- compatibility but no longer drives a separate glyph - the status dot subsumes it.
+  local dot = (installed and bufs[name] ~= nil) and status_dot(name, bufs) or nil
+  local prefix = dot and dot.glyph or ""
+  local suffix = installed and "" or "  (not installed)"
+  local text = prefix .. name .. suffix
   local name_group = title.define(name)
   return {
     value = name,
@@ -208,9 +235,14 @@ function M.make_entry(name, active, bufs)
       if not name_group then
         return text
       end
-      local ranges = { { { #glyph, #glyph + #name }, name_group } }
-      if glyph_group then
-        table.insert(ranges, 1, { { 0, #glyph }, glyph_group })
+      local ranges = { { { #prefix, #prefix + #name }, name_group } }
+      if dot then
+        table.insert(ranges, 1, { { 0, #prefix }, dot.group })
+      end
+      -- Dim the "(not installed)" suffix with a dedicated group.
+      if not installed then
+        local suffix_start = #prefix + #name
+        table.insert(ranges, { { suffix_start, #text }, "HarnessPickerNotInstalled" })
       end
       return text, ranges
     end,
@@ -240,8 +272,10 @@ end
 ---~500ms timer while it runs. Adapted from util/procs.lua's make_previewer (same render shape,
 ---colorize patterns, and refresh cadence) but resolves the buffer by harness name via
 ---collect_terminal_bufs() instead of a procs-registered process name.
+---@param bufs table<string, number> harness -> live terminal buffer map (from collect_terminal_bufs)
+---@param installed_set? table<string, boolean> harness name -> true if CLI is on PATH
 ---@return table previewer
-local function make_harness_previewer(bufs)
+local function make_harness_previewer(bufs, installed_set)
   local previewers = require("telescope.previewers")
   local active_timer = nil
 
@@ -286,8 +320,11 @@ local function make_harness_previewer(bufs)
     local lines = {}
     local term_buf = bufs[name]
     local has_live = term_buf ~= nil and vim.api.nvim_buf_is_valid(term_buf)
+    local is_installed = installed_set == nil or installed_set[name] ~= false
     local status
-    if not has_live then
+    if not is_installed then
+      status = "not installed"
+    elseif not has_live then
       status = "uninitialized"
     elseif name == current_harness then
       status = "active"
@@ -301,7 +338,9 @@ local function make_harness_previewer(bufs)
     local header_line, separator_line = M.preview_header(name, status, win_width)
     table.insert(lines, header_line)
     table.insert(lines, separator_line)
-    if has_live then
+    if not is_installed then
+      table.insert(lines, "(not installed)")
+    elseif has_live then
       vim.list_extend(lines, vim.api.nvim_buf_get_lines(term_buf, 0, -1, false))
     else
       table.insert(lines, "(not started)")
@@ -346,10 +385,18 @@ function M.pick()
   local actions = require("telescope.actions")
   local action_state = require("telescope.actions.state")
 
-  local harnesses = keymaps.list_harnesses()
+  local agent_state = require("harness-decorators.agent-state")
+  local harnesses = agent_state.harnesses()
   -- Terminal buffers to preview (active + parked). Captured once at picker-open; the previewer's
   -- refresh timer re-reads these buffers live, so a running harness's output updates in place.
   local bufs = M.collect_terminal_bufs()
+  -- Set of installed harness names, used by both the previewer (status line) and the Enter guard.
+  local installed_set = {}
+  for _, h in ipairs(harnesses) do
+    if h.installed then
+      installed_set[h.name] = true
+    end
+  end
 
   pickers
     .new({}, {
@@ -380,25 +427,33 @@ function M.pick()
       },
       finder = finders.new_table({
         results = harnesses,
-        entry_maker = function(name)
+        entry_maker = function(h)
           -- See M.make_entry: a colored state glyph (active / parked / idle) plus the name in its
-          -- HarnessTitle<Name> group. `bufs` and `current_harness` are captured from the picker scope.
-          return M.make_entry(name, current_harness, bufs)
+          -- HarnessTitle<Name> group. Uninstalled harnesses render dimmed with a "(not installed)"
+          -- suffix so the user can see them but knows they're inert.
+          return M.make_entry(h.name, current_harness, bufs, h.installed)
         end,
       }),
       sorter = conf.generic_sorter({}),
-      previewer = make_harness_previewer(bufs),
+      previewer = make_harness_previewer(bufs, installed_set),
       attach_mappings = function(prompt_bufnr)
         actions.select_default:replace(function()
           local selection = action_state.get_selected_entry()
-          actions.close(prompt_bufnr)
-          if selection and selection.value then
-            M.switch(selection.value)
-            -- After switching, open the newly-selected harness's terminal so the picker is a one-keystroke
-            -- "switch AND show" - previously it only switched and left you to press <leader>c. Re-shows the
-            -- SAME live process if the harness was already running (park.show_selected -> term.open).
-            M.after_pick()
+          if not selection or not selection.value then
+            return
           end
+          -- Uninstalled harnesses are inert: no switch, no open. The row is dimmed and the
+          -- "(not installed)" suffix signals this; Enter shows a notification and does nothing.
+          if not installed_set[selection.value] then
+            vim.notify("harness " .. selection.value .. " is not installed", vim.log.levels.INFO)
+            return
+          end
+          actions.close(prompt_bufnr)
+          M.switch(selection.value)
+          -- After switching, open the newly-selected harness's terminal so the picker is a one-keystroke
+          -- "switch AND show" - previously it only switched and left you to press <leader>c. Re-shows the
+          -- SAME live process if the harness was already running (park.show_selected -> term.open).
+          M.after_pick()
         end)
         return true
       end,

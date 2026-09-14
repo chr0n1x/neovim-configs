@@ -69,7 +69,13 @@ function M.session_component(frame)
     if ok_a and adapter and not adapter.projects_dir() then
       return ""
     end
-    return "🤖 " .. frame
+    -- The robot emoji carries the SECTION's highlight group (see plugins/lualine.lua), so it is the
+    -- only part of this slot that shows the section fill. The waiting spinner uses the same blue as
+    -- the working-state dot (AgentDotWorking) so "waiting" and "working" read as one color family;
+    -- everything else reverts to the statusline default background.
+    local ok_d, display = pcall(require, "harness-decorators.agent-display")
+    local spin_hl = (ok_d and display.HL_WORKING) or ""
+    return "%#lualine_x_normal#🤖%*" .. " %#" .. spin_hl .. "#" .. frame .. "%*"
   end
   -- Harness-aware session id (copilot's is the parent dir, not the filename stem). A raw
   -- path:match("([^/]+)%.jsonl$") would show the wrong name for non-claude harnesses.
@@ -77,7 +83,26 @@ function M.session_component(frame)
   if not name then
     return ""
   end
-  return "🤖 " .. name
+  -- The active agent's OWN status dot, next to its session id. Only shown when we actually KNOW its
+  -- state (working/idle) - an unknown state renders nothing rather than a hollow ring of noise for
+  -- the agent you're actively looking at. Polls just this harness (no live terminal -> nil).
+  local dot = ""
+  local ok_d, display = pcall(require, "harness-decorators.agent-display")
+  if ok_d then
+    local ok_s, state = pcall(require, "harness-decorators.agent-state")
+    if ok_s then
+      local r = state.poll(utils.harness)
+      if r and type(display.dot_for) == "function" then
+        dot = display.dot_for(r.status) or ""
+      end
+    end
+  end
+  -- The dot sits right after the robot emoji (before the session id), not at the end. The emoji
+  -- carries the SECTION's highlight group (see plugins/lualine.lua) so it is the only part of this
+  -- slot that shows the section fill; everything after it reverts to the statusline default, keeping
+  -- the dot and session id on the normal background.
+  local prefix = "%#lualine_x_normal#🤖%*" .. (dot ~= "" and " " .. dot or "") .. " "
+  return prefix .. name
 end
 
 return M

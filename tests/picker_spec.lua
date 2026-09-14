@@ -68,7 +68,7 @@ describe("picker: collect_terminal_bufs maps harnesses to live buffers (Task 6/7
     -- Two harnesses with two distinct floats: both must appear, each mapped to its OWN buffer.
     local a = term_mod.open(original_harness)
     local other = nil
-    for _, h in ipairs(keymaps.list_harnesses()) do
+    for _, h in ipairs(utils.list_harnesses()) do
       if h ~= original_harness then
         other = h
         break
@@ -98,18 +98,29 @@ describe("picker: collect_terminal_bufs maps harnesses to live buffers (Task 6/7
   end)
 end)
 
--- The picker entry is a plain table (marker + colored name), built by switch.make_entry. It can be
--- driven headless: no telescope UI, just the display() closure that returns the text and highlight
--- ranges. This spec asserts the three states - active / parked / never-opened - each render the
--- right glyph in its own color group, and that the name is always colored with its HarnessTitle<Name>
--- group (the glyph and the name are highlighted independently).
-describe("picker: make_entry renders a colored state glyph + harness name (Task 9)", function()
-  local title_mod
+-- The picker entry is a plain table (optional work-status dot + colored name), built by
+-- switch.make_entry. It can be driven headless: no telescope UI, just the display() closure that
+-- returns the text and highlight ranges. This spec asserts that an initialized harness (live buffer)
+-- shows a leading work-status dot in its agent-display group before the name, that a never-opened
+-- harness shows no dot, and that the name is always colored with its HarnessTitle<Name> group (the
+-- dot and the name are highlighted independently).
+describe("picker: make_entry renders a work-status dot + harness name", function()
+  local display
+  local state
+  local orig_poll
 
   setup(function()
-    -- make_entry is pure (no state read/write), so no reset is needed here - and resetting would
-    -- clear the selected-harness bit that <leader>c depends on for the rest of the in-process run.
-    title_mod = require("harness-decorators.title")
+    -- Stub agent-state.poll so the status dot is deterministic without real terminals. make_entry
+    -- otherwise reads no shared state, so no reset of the selected-harness bit is needed here.
+    display = require("harness-decorators.agent-display")
+    state = require("harness-decorators.agent-state")
+    orig_poll = state.poll
+  end)
+
+  teardown(function()
+    if orig_poll then
+      state.poll = orig_poll
+    end
   end)
 
   ---Collect the highlight ranges display() returns, keyed by group name.
@@ -123,43 +134,56 @@ describe("picker: make_entry renders a colored state glyph + harness name (Task 
     return out
   end
 
-  it("marks an active harness WITH a live buffer with a filled circle in HarnessPickerActive", function()
+  it("shows a blue work-status dot before the name of a working initialized harness", function()
+    state.poll = function()
+      return { status = "working", label = nil, pid = 1 }
+    end
     local g = groups_of("claude", "claude", { claude = 42 })
-    assert.is_not_nil(g.HarnessPickerActive, "active glyph group missing")
-    -- The glyph is "● " (a 4-byte UTF-8 circle + space); the name starts right after it.
-    assert.are.equal(0, g.HarnessPickerActive.start)
-    assert.are.equal(#("● "), g.HarnessPickerActive.stop)
-    assert.is_not_nil(g.HarnessTitleClaude, "active name must still be colored")
-  end)
-
-  it("marks an active harness WITHOUT a live buffer (never initialized) with no glyph", function()
-    local g = groups_of("claude", "claude", {})
-    assert.is_nil(g.HarnessPickerActive, "uninitialized active harness must not show the active glyph")
-    assert.is_nil(g.HarnessPickerParked, "uninitialized active harness must not show the parked glyph")
-    -- Only the name is highlighted (no glyph group).
+    assert.is_not_nil(g[display.HL_WORKING], "working dot group missing")
+    -- The dot is "● " (a 4-byte UTF-8 circle + space); the name starts right after it.
+    assert.are.equal(0, g[display.HL_WORKING].start)
+    assert.are.equal(#("● "), g[display.HL_WORKING].stop)
     assert.is_not_nil(g.HarnessTitleClaude, "name must still be colored")
   end)
 
-  it("marks a parked harness (live buffer, not active) with a hollow circle in HarnessPickerParked", function()
+  it("shows a green dot before the name of an idle initialized harness", function()
+    state.poll = function()
+      return { status = "idle", label = nil, pid = 1 }
+    end
     local g = groups_of("maki", "claude", { maki = 42 })
-    assert.is_not_nil(g.HarnessPickerParked, "parked glyph group missing")
-    assert.are.equal(0, g.HarnessPickerParked.start)
-    assert.are.equal(#("○ "), g.HarnessPickerParked.stop)
-    assert.is_not_nil(g.HarnessTitleMaki, "parked name must still be colored")
+    assert.is_not_nil(g[display.HL_IDLE], "idle dot group missing")
+    assert.are.equal(0, g[display.HL_IDLE].start)
+    assert.is_not_nil(g.HarnessTitleMaki, "name must still be colored")
   end)
 
-  it("marks a never-opened harness with two spaces and no state group", function()
+  it("shows a hollow ring before the name of an unknown initialized harness", function()
+    state.poll = function()
+      return { status = "unknown", label = nil, pid = 1 }
+    end
+    local g = groups_of("maki", "claude", { maki = 42 })
+    assert.is_not_nil(g[display.HL_UNKNOWN], "unknown dot group missing")
+    -- The unknown glyph is a hollow ring "○ ".
+    assert.are.equal(#("○ "), g[display.HL_UNKNOWN].stop)
+  end)
+
+  it("shows no dot for a harness that was never opened (no live buffer)", function()
+    state.poll = function()
+      return { status = "working", label = nil, pid = 1 }
+    end
     local g = groups_of("pi", "claude", {})
-    assert.is_nil(g.HarnessPickerActive, "idle row must not use the active glyph")
-    assert.is_nil(g.HarnessPickerParked, "idle row must not use the parked glyph")
-    -- Only the name is highlighted.
-    assert.is_not_nil(g.HarnessTitlePi, "idle name must still be colored")
+    assert.is_nil(g[display.HL_WORKING], "never-opened harness must not show a working dot")
+    assert.is_nil(g[display.HL_IDLE], "never-opened harness must not show an idle dot")
+    -- Only the name is highlighted (no dot group).
+    assert.is_not_nil(g.HarnessTitlePi, "name must still be colored")
   end)
 
-  it("highlights the name starting right after the glyph", function()
+  it("highlights the name starting right after the dot", function()
+    state.poll = function()
+      return { status = "working", label = nil, pid = 1 }
+    end
     local g = groups_of("claude", "claude", { claude = 42 })
-    -- The active glyph is "● " (4 bytes); 'claude' is 6 bytes, so the name spans [4, 10).
-    assert.are.equal(#("● "), g.HarnessTitleClaude.start, "name should start right after the glyph")
+    -- The working dot is "● " (4 bytes); 'claude' is 6 bytes, so the name spans [4, 10).
+    assert.are.equal(#("● "), g.HarnessTitleClaude.start, "name should start right after the dot")
     assert.are.equal(#("● ") + #("claude"), g.HarnessTitleClaude.stop)
   end)
 
@@ -170,6 +194,35 @@ describe("picker: make_entry renders a colored state glyph + harness name (Task 
     local text, ranges = entry.display()
     assert.is_string(text)
     assert.is_nil(ranges)
+  end)
+
+  it("renders an uninstalled harness with a dimmed suffix and no dot", function()
+    state.poll = function()
+      return { status = "working", label = nil, pid = 1 }
+    end
+    local entry = sw.make_entry("claude", "claude", { claude = 42 }, false)
+    local text, ranges = entry.display()
+    assert.is_not_nil(text:find("(not installed)"), "display must include the not-installed suffix")
+    -- The suffix range uses the HarnessPickerNotInstalled group.
+    local found_suffix = false
+    for _, r in ipairs(ranges or {}) do
+      if r[2] == "HarnessPickerNotInstalled" then
+        found_suffix = true
+        break
+      end
+    end
+    assert.is_true(found_suffix, "suffix must be highlighted with HarnessPickerNotInstalled")
+    -- An uninstalled harness shows no work-status dot even if it has a buffer.
+    assert.is_nil(text:find("●"), "uninstalled row must not show a status dot")
+  end)
+
+  it("installed harnesses show no suffix when installed arg is omitted", function()
+    state.poll = function()
+      return { status = "idle", label = nil, pid = 1 }
+    end
+    local entry = sw.make_entry("claude", "claude", { claude = 42 })
+    local text = entry.display()
+    assert.is_nil(text:find("(not installed)"), "installed row must not show the suffix")
   end)
 end)
 

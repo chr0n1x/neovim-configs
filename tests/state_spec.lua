@@ -91,7 +91,7 @@ describe("state: single per-harness record (Task 8)", function()
     -- open, and both the selection query and the per-entry bits must agree with state.table.
     local a = term_mod.open(original_harness)
     local other = nil
-    for _, h in ipairs(keymaps.list_harnesses()) do
+    for _, h in ipairs(utils.list_harnesses()) do
       if h ~= original_harness then
         other = h
         break

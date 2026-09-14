@@ -28,6 +28,7 @@
 
 local helper = require("tests.helper")
 local keymaps = require("harness-decorators.keymaps")
+local utils = require("harness-decorators.utils")
 
 describe("<leader>ca action: resolves % to a real file and reaches the send stage", function()
   local original_harness
@@ -174,7 +175,7 @@ describe("<leader>ca action: resolves % to a real file and reaches the send stag
     return nil, nil
   end
 
-  for _, harness in ipairs(keymaps.list_harnesses()) do
+  for _, harness in ipairs(utils.list_harnesses()) do
     describe(("harness: %s"):format(harness), function()
       local cmd_name
 

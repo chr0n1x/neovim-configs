@@ -44,11 +44,16 @@ M.picker_glyphs = {
   parked = { group = "HarnessPickerParked", fg = "#81a1c1" }, -- blue: running in the background
 }
 
----Define the picker state-glyph groups (active / parked). Called from M.define_all.
+---The picker's "(not installed)" suffix group: dim so uninstalled harnesses recede visually.
+M.picker_not_installed_group = "HarnessPickerNotInstalled"
+
+---Define the picker state-glyph groups (active / parked) + the not-installed dim group. Called from
+--M.define_all.
 function M.define_picker_glyphs()
   for _, spec in pairs(M.picker_glyphs) do
     vim.api.nvim_set_hl(0, spec.group, { default = true, fg = spec.fg })
   end
+  vim.api.nvim_set_hl(0, M.picker_not_installed_group, { default = true, fg = "#5b6270" })
 end
 
 ---Define groups for all known harnesses (used at LazyDone and on ColorScheme).

@@ -45,7 +45,7 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
     orig_env = os.getenv("NVIM_LLM_HARNESS")
 
     target = nil
-    for _, h in ipairs(keymaps.list_harnesses()) do
+    for _, h in ipairs(utils.list_harnesses()) do
       if h ~= original_harness then
         target = h
         break

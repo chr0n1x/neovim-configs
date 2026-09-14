@@ -4,6 +4,48 @@ local M = {}
 ---Which LLM harness this Neovim session uses. Used for the notify prefix.
 M.harness = os.getenv("NVIM_LLM_HARNESS") or "claude"
 
+-- The harness-decorators dir (parent of this file). list_harnesses scans it for sibling harness dirs.
+local this_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h")
+
+---List sibling directories that look like a harness (env.lua + keymaps.lua). This is the single
+--source-of-truth roster for "which harnesses exist" - agent-state, switch, keymaps and the specs all
+--derive from it, so adding a new harness dir requires no edits elsewhere.
+---@return string[]
+function M.list_harnesses()
+  local found = {}
+  local fd = vim.uv.fs_scandir(this_dir)
+  if fd then
+    while true do
+      local name, ftype = vim.uv.fs_scandir_next(fd)
+      if not name then
+        break
+      end
+      if ftype == "directory" then
+        local dir = this_dir .. "/" .. name
+        if vim.uv.fs_stat(dir .. "/env.lua") and vim.uv.fs_stat(dir .. "/keymaps.lua") then
+          table.insert(found, name)
+        end
+      end
+    end
+  end
+  table.sort(found)
+  return found
+end
+
+---Check whether the first token of a command string is an executable on PATH.
+---@param cmd string The full command (e.g. "claude --model foo" or "maki -m bar")
+---@return boolean
+function M.command_executable(cmd)
+  if type(cmd) ~= "string" or cmd == "" then
+    return false
+  end
+  local exe = cmd:match("^%S+")
+  if not exe or exe == "" then
+    return false
+  end
+  return vim.fn.executable(exe) == 1
+end
+
 -- ==========================================================================
 -- RATE-LIMITED LOGGER
 -- ==========================================================================

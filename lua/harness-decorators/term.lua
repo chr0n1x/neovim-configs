@@ -353,10 +353,29 @@ function M.open(harness, opts)
   end
 
   local inst = snacks.open(cmd, { win = win_opts(harness) })
-  entry(harness).inst = inst
+  local e = entry(harness)
+  e.inst = inst
+  -- Wall-clock open time for THIS instance. The cwd-keyed label adapters (maki/pi) match the live
+  -- session to this timestamp instead of assuming "newest file = current session" - which is wrong
+  -- the moment you start a fresh session in a dir that already has older ones. A re-show (live
+  -- branch above) deliberately does NOT touch it: the process is the same, so its open time stands.
+  e.opened_at = os.time()
   -- Fresh open: defer insert to the next tick so it sticks (see enter_insert_scheduled).
   enter_insert_scheduled(inst)
   return inst
+end
+
+---Wall-clock unix time the given harness's CURRENT terminal instance was opened, or nil when it has
+--no live instance. Used by cwd-keyed label adapters to pick the session that matches this open rather
+--than the most recently active one for the dir.
+---@param harness string
+---@return number?
+function M.opened_at(harness)
+  local e = state.table[harness]
+  if e and is_live(e.inst) then
+    return e.opened_at
+  end
+  return nil
 end
 
 ---The buffer number holding the given harness's terminal, or nil if it has no live instance.
