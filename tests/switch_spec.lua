@@ -203,4 +203,27 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
 
     assert.is_true(term_mod.is_open(target), "after_pick must open the selected harness's terminal")
   end)
+
+  it("waits for Telescope's mapping to return before focusing the terminal", function()
+    local called = false
+    local original = sw.after_pick
+    local original_mode = vim.fn.mode
+    local mode_calls = 0
+    sw.after_pick = function()
+      called = true
+    end
+    vim.fn.mode = function()
+      mode_calls = mode_calls + 1
+      return mode_calls < 3 and "no" or "n"
+    end
+
+    sw.schedule_after_pick()
+    assert.is_false(called, "picker terminal focus must not run inside Telescope's mapping")
+    vim.wait(100, function() return called end, 10)
+    vim.fn.mode = original_mode
+    assert.is_true(called, "picker terminal focus must run on the next event-loop turn")
+    assert.is_true(mode_calls >= 3, "picker terminal focus must wait for ordinary normal mode")
+
+    sw.after_pick = original
+  end)
 end)

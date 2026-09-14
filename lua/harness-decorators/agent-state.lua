@@ -104,12 +104,35 @@ local function terminal_chan(bufnr)
   return nil
 end
 
----Resolve the agent's pid from a terminal buffer. Neovim does not expose the
---job pid on the buffer (no term_jobpid variable in v0.13), so we resolve it
---from the pty: fstat the pty device to get its rdev, then scan /proc/*/stat
---for the process whose controlling tty matches. When several processes share
---the pty (the shell wrapper + the command), pick the deepest - the one with no
---other match as a descendant. Linux only (/proc); returns nil elsewhere.
+---Resolve the direct process launched for a terminal pty from a portable ps snapshot. Both
+---macOS (/dev/ttys006 -> ttys006) and Linux (/dev/pts/3 -> pts/3) report the pty without /dev/.
+---When descendants share the pty, return the topmost one because that is the command Neovim
+---launched; child-process status detection depends on counting its descendants.
+---@param snap string? Precomputed "pid ppid tty" lines
+---@param pty string Terminal pty path
+---@return number? pid
+function M.pid_from_tty_snapshot(snap, pty)
+  if not snap or type(pty) ~= "string" then
+    return nil
+  end
+  local tty = pty:gsub("^/dev/", "")
+  local matches = {}
+  for line in snap:gmatch("[^\n]+") do
+    local pid, ppid, process_tty = line:match("^%s*(%d+)%s+(%d+)%s+(%S+)")
+    if pid and process_tty == tty then
+      matches[pid] = ppid
+    end
+  end
+  for pid, ppid in pairs(matches) do
+    if not matches[ppid] then
+      return tonumber(pid)
+    end
+  end
+  return nil
+end
+
+---Resolve the agent's pid from a terminal buffer. macOS has no /proc, so use the terminal's
+---tty from ps there. Linux keeps the rdev-based /proc path as a fallback.
 ---@param bufnr number
 ---@return number? pid
 function M.pid_for_buf(bufnr)
@@ -117,6 +140,20 @@ function M.pid_for_buf(bufnr)
   if not chan or type(chan.pty) ~= "string" then
     return nil
   end
+
+  local ps = io.popen("ps -eo pid=,ppid=,tty=")
+  if ps then
+    local lines = {}
+    for line in ps:lines() do
+      lines[#lines + 1] = line
+    end
+    ps:close()
+    local pid = M.pid_from_tty_snapshot(table.concat(lines, "\n"), chan.pty)
+    if pid then
+      return pid
+    end
+  end
+
   local ok_fd, fd = pcall(vim.uv.fs_open, chan.pty, "r", 438) -- O_RDONLY
   if not ok_fd or type(fd) ~= "number" then
     return nil
@@ -174,31 +211,15 @@ function M.pid_for_buf(bufnr)
   if #matches == 1 then
     return tonumber(matches[1])
   end
-  -- Deepest match: no other match is its descendant.
-  local function descendants(root)
-    local desc, stack = {}, { root }
-    while #stack > 0 do
-      local p = table.remove(stack)
-      for q, pp in pairs(ppid_of) do
-        if pp == p then
-          desc[q] = true
-          stack[#stack + 1] = q
-        end
-      end
-    end
-    return desc
+  -- Topmost match: its parent does not share the pty. This is the direct command Neovim launched;
+  -- returning a leaf would make child_count always zero while that command is doing work.
+  local matched = {}
+  for _, pid in ipairs(matches) do
+    matched[pid] = true
   end
-  for _, m in ipairs(matches) do
-    local d = descendants(m)
-    local deepest = true
-    for _, m2 in ipairs(matches) do
-      if m2 ~= m and d[m2] then
-        deepest = false
-        break
-      end
-    end
-    if deepest then
-      return tonumber(m)
+  for _, pid in ipairs(matches) do
+    if not matched[ppid_of[pid]] then
+      return tonumber(pid)
     end
   end
   return tonumber(matches[1])
@@ -229,7 +250,8 @@ function M.poll(name, snap)
     return nil
   end
 
-  local cwd = vim.fn.getcwd()
+  local cwd = type(term.cwd) == "function" and term.cwd(name) or nil
+  cwd = cwd or vim.fn.getcwd()
   local status
   if state.no_child_check then
     status = state.status(pid, cwd)
@@ -249,7 +271,15 @@ function M.poll(name, snap)
     end
   end
 
-  return { status = status, label = label, pid = pid }
+  local session_id = nil
+  if type(state.session_id) == "function" then
+    local ok2, id = pcall(state.session_id, pid, cwd)
+    if ok2 and type(id) == "string" and id ~= "" then
+      session_id = id
+    end
+  end
+
+  return { status = status, label = label, session_id = session_id, pid = pid }
 end
 
 ---Poll every harness that has a live terminal. One ps snapshot for the whole

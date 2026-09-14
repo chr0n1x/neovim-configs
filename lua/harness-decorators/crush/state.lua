@@ -14,6 +14,20 @@
 
 local M = {}
 
+local missing_reader_notified = false
+
+local function notify_missing_reader()
+  if missing_reader_notified then
+    return
+  end
+  missing_reader_notified = true
+  vim.notify("crush: install sqlite3 or lsqlite3 to show session details", vim.log.levels.WARN)
+end
+
+function M._reset()
+  missing_reader_notified = false
+end
+
 ---@param cwd string
 ---@return string?
 local function db_path(cwd)
@@ -100,6 +114,47 @@ function M.label(_pid, cwd)
   close()
   if ok and type(title) == "string" then
     return title
+  end
+  return nil
+end
+
+---@param pid number|string
+---@param cwd string
+---@return string?
+function M.session_id(_pid, cwd)
+  local db_path_ = db_path(cwd)
+  if not db_path_ then
+    return nil
+  end
+  local db, close = open_ro(db_path_)
+  if db then
+    local ok, session_id = pcall(function()
+      local stmt = db:prepare("SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1")
+      local row = stmt:get()
+      return row and row[1] or nil
+    end)
+    close()
+    if ok and type(session_id) == "string" and session_id ~= "" then
+      return session_id
+    end
+  end
+  if vim.fn.executable("sqlite3") ~= 1 then
+    notify_missing_reader()
+    return nil
+  end
+  local result = vim
+    .system({
+      "sqlite3",
+      "-readonly",
+      db_path_,
+      "SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1",
+    }, { text = true })
+    :wait()
+  if result.code == 0 then
+    local session_id = result.stdout:match("^%s*(.-)%s*$")
+    if session_id ~= "" then
+      return session_id
+    end
   end
   return nil
 end

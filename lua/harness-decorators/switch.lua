@@ -189,6 +189,19 @@ function M.after_pick()
   park.show_selected()
 end
 
+function M.schedule_after_pick()
+  local attempts = 0
+  local function after_picker_returns()
+    if vim.fn.mode(1) == "n" or attempts == 50 then
+      M.after_pick()
+      return
+    end
+    attempts = attempts + 1
+    vim.defer_fn(after_picker_returns, 10)
+  end
+  vim.defer_fn(after_picker_returns, 10)
+end
+
 ---Telescope picker over available harness dirs; selecting one calls M.switch.
 ---Map each harness to the buffer number holding its terminal output, for the picker preview.
 ---Built entirely from the unified park table (Task 6), which now tracks BOTH the selected (active)
@@ -453,7 +466,7 @@ function M.pick()
           -- After switching, open the newly-selected harness's terminal so the picker is a one-keystroke
           -- "switch AND show" - previously it only switched and left you to press <leader>c. Re-shows the
           -- SAME live process if the harness was already running (park.show_selected -> term.open).
-          M.after_pick()
+          M.schedule_after_pick()
         end)
         return true
       end,

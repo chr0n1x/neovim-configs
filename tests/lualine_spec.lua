@@ -46,47 +46,45 @@ describe("lualine session component", function()
     assert.are.equal("%#lualine_x_normal#🤖%* sess-42", decorators.session_component("⠋"))
   end)
 
-  it("shows nothing (no spinner) for a stub harness with no sessions dir", function()
-    -- crush and pi have projects_dir() == nil, so they can never pin. A perpetual spinner is
-    -- noise; the component should render empty instead.
+  it("shows the active stub harness and its status instead of hiding the slot", function()
+    local display = require("harness-decorators.agent-display")
     for _, h in ipairs({ "crush", "pi" }) do
+      display._set_agents({
+        [h] = {
+          status = h == "crush" and "working" or "idle",
+          label = nil,
+          pid = 1,
+          session_id = h == "crush" and "d5bb8c50-400e" or nil,
+        },
+      })
       utils.harness = h
       watcher.pinned_jsonl_path = nil
       local out = decorators.session_component("⠋")
-      assert.are.equal("", out, ("%s: stub harness must not spin forever"):format(h))
+      local expected = h == "crush" and display.HL_WORKING or display.HL_IDLE
+      local identity = h == "crush" and "d5bb8c50-400e" or h
+      assert.is_not_nil(out:find("%#" .. expected .. "#", 1, true), h .. ": active status light must be visible")
+      assert.is_not_nil(out:find(identity, 1, true), h .. ": active session identity must be visible")
     end
   end)
 
   it("appends the active agent's own status dot when its state is known", function()
-    -- The session component shows "🤖 <id>" plus, when we KNOW the active agent's state, a trailing
-    -- status dot (working = blue pulse, idle = green). Stub agent-state.poll to return a known state
-    -- without driving real terminals.
+    -- The session component reads the cached poll result so fast spinner redraws never run ps/SQLite.
     local display = require("harness-decorators.agent-display")
-    local state = require("harness-decorators.agent-state")
-    local orig_poll = state.poll
     utils.harness = "claude"
     watcher.pinned_jsonl_path = "/home/u/.claude/projects/x/deadbeef.jsonl"
 
-    state.poll = function()
-      return { status = "working", label = nil, pid = 1 }
-    end
+    display._set_agents({ claude = { status = "working", label = nil, pid = 1 } })
     local working = decorators.session_component("⠋")
     -- The working state animates through the spinner frames (frame 0 -> first frame). It sits right
     -- after the emoji and before the session id; only the emoji carries the section fill.
     assert.is_not_nil(working:find("%#lualine_x_normal#🤖%* %#" .. display.HL_WORKING .. "#" .. display.spinner[1] .. "%* deadbeef", 1, true), "known-working active agent must show the blue spinner after the emoji")
 
-    state.poll = function()
-      return { status = "idle", label = nil, pid = 1 }
-    end
+    display._set_agents({ claude = { status = "idle", label = nil, pid = 1 } })
     local idle = decorators.session_component("⠋")
     assert.is_not_nil(idle:find("%#lualine_x_normal#🤖%* %#" .. display.HL_IDLE .. "#✓%* deadbeef", 1, true), "known-idle active agent must show the green checkmark after the emoji")
 
-    state.poll = function()
-      return { status = "unknown", label = nil, pid = 1 }
-    end
+    display._set_agents({ claude = { status = "unknown", label = nil, pid = 1 } })
     local unknown = decorators.session_component("⠋")
     assert.are.equal("%#lualine_x_normal#🤖%* deadbeef", unknown, "unknown active-agent state must show NO dot (no hollow ring of noise)")
-
-    state.poll = orig_poll
   end)
 end)

@@ -63,6 +63,14 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     assert.are.equal(inst.buf, term.bufnr("claude"), "bufnr(harness) must be the stored instance's buffer")
   end)
 
+  it("records the spawn cwd so session lookup survives later cwd changes", function()
+    local term = require("harness-decorators.term")
+    term._reset()
+    local spawn_cwd = vim.fn.getcwd()
+    term.open("crush")
+    assert.are.equal(spawn_cwd, term.cwd("crush"))
+  end)
+
   it("a second open(same_harness) reuses the existing instance (no second Snacks.open)", function()
     local term = require("harness-decorators.term")
     term._reset()
@@ -126,36 +134,26 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     pcall(vim.api.nvim_win_close, win, true)
   end)
 
-  it("show(harness) enters terminal INSERT mode on a re-focus (selecting a harness = typing)", function()
-    -- The bug: after <C-h> (or any re-select), focus returns to the float in NORMAL mode. Snacks only
-    -- enters insert on a fresh open, so a pure :focus() leaves you staring at a normal-mode prompt -
-    -- selecting a harness should land you typing. focus_instance must call startinsert itself when the
-    -- instance has a live buffer. (A truly headless nvim cannot actually enter terminal insert - no UI -
-    -- so we assert on the startinsert CALL, not vim.fn.mode().) We stand in for the float with a real
-    -- terminal window (vsplit + :terminal cat - the reliable headless path).
+  it("uses one deferred WinEnter handler for every harness terminal", function()
     local term = require("harness-decorators.term")
     term._reset()
-    local inst = term.open("claude")
+    local autocmds = vim.api.nvim_get_autocmds({ group = "HarnessTerminalAutoInsert", event = "WinEnter" })
+    assert.are.equal(1, #autocmds, "harness terminals must share one WinEnter autocmd")
 
-    -- Collapse to a single window so the vsplit below has room, then open a real terminal there.
     for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
       if w ~= vim.api.nvim_get_current_win() then
         pcall(vim.api.nvim_win_close, w, true)
       end
     end
+    local work_win = vim.api.nvim_get_current_win()
     vim.cmd("vsplit")
     local ok = pcall(vim.cmd, "terminal cat")
     assert.is_true(ok, "could not open a terminal window (cat)")
-    local win = vim.api.nvim_get_current_win()
+    local term_win = vim.api.nvim_get_current_win()
+    local term_buf = vim.api.nvim_win_get_buf(term_win)
+    vim.b[term_buf].harness_terminal = "claude"
     vim.wait(100, function() return false end, 25)
 
-    inst.buf = vim.api.nvim_win_get_buf(win)
-    inst.win = win
-    inst.focus = function()
-      vim.api.nvim_set_current_win(win)
-    end
-
-    -- Spy on startinsert: focus_instance must invoke it for a live terminal buffer.
     local orig_startinsert = vim.cmd.startinsert
     local insert_calls = 0
     vim.cmd.startinsert = function(...)
@@ -163,32 +161,37 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
       return orig_startinsert(...)
     end
 
-    term.show("claude")
-    -- Insert is deferred to the next tick (see enter_insert_scheduled) so it sticks; flush before asserting.
+    vim.api.nvim_set_current_win(work_win)
+    vim.api.nvim_set_current_win(term_win)
+    assert.are.equal(0, insert_calls, "WinEnter must defer startinsert until navigation has settled")
     vim.wait(200, function()
       return insert_calls > 0
     end, 10)
-    assert.is_true(insert_calls > 0, "show(claude) must enter terminal insert mode (startinsert not called)")
+    assert.is_true(insert_calls > 0, "focusing a harness terminal must enter terminal mode")
+
+    pcall(vim.cmd.stopinsert)
+    insert_calls = 0
+    vim.api.nvim_exec_autocmds("WinEnter", { buffer = term_buf })
+    vim.api.nvim_set_current_win(work_win)
+    vim.wait(50, function() return false end, 10)
+    assert.are.equal(0, insert_calls, "deferred startinsert must not run after focus leaves the harness terminal")
 
     vim.cmd.startinsert = orig_startinsert
     pcall(vim.cmd.stopinsert)
-    local term_buf = inst.buf
-    pcall(vim.api.nvim_win_close, win, true)
+    pcall(vim.api.nvim_win_close, term_win, true)
     pcall(vim.api.nvim_buf_delete, term_buf, { force = true })
   end)
 
-  it("show_selected (the <leader>cl picker path) enters INSERT mode on a fresh open", function()
-    -- The reported bug: picking a harness from the <leader>cl picker did not land in insert mode. That
-    -- path is switch.after_pick -> park.show_selected -> term.open, which for a never-opened harness is a
-    -- FRESH Snacks.open (not a re-focus). Snacks' start_insert only fires in on_win and can be skipped if
-    -- focus is already on the terminal window (the picker has no focus.restore() to move it away first), so
-    -- term.open must enter insert itself. We stub Snacks.open to return a fake backed by a real terminal
-    -- buffer and assert startinsert is called for the fresh-open branch.
+  it("enters terminal mode directly when the target window is ALREADY current (WinEnter cannot fire)", function()
+    -- The bug: nvim_set_current_win on the window you're already in is a no-op and does NOT fire
+    -- WinEnter. Re-selecting a harness whose float already has focus (e.g. pressing <leader>c a
+    -- second time while sitting in it, in normal-in-terminal mode) went through focus_instance's
+    -- :focus() call, which relied solely on the WinEnter autocmd to enter insert - so it silently did
+    -- nothing and left the float stuck in "-- (terminal) --". focus_instance/open must trigger insert
+    -- directly, not only via WinEnter.
     local term = require("harness-decorators.term")
-    local park = require("harness-decorators.park")
     term._reset()
 
-    -- A real terminal buffer to back the fake (startinsert needs a valid buffer).
     for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
       if w ~= vim.api.nvim_get_current_win() then
         pcall(vim.api.nvim_win_close, w, true)
@@ -201,21 +204,16 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     vim.wait(100, function() return false end, 25)
     local term_buf = vim.api.nvim_win_get_buf(win)
 
-    -- Stub Snacks.open to hand back a fake instance backed by that real terminal buffer.
-    local orig_open = snacks.open
-    snacks.open = function()
-      return {
-        buf = term_buf,
-        win = win,
-        hide = function() end,
-        show = function() end,
-        focus = function() end,
-        close = function() end,
-        buf_valid = function(self)
-          return self.buf ~= nil and vim.api.nvim_buf_is_valid(self.buf)
-        end,
-      }
+    local inst = term.open("claude")
+    inst.buf = term_buf
+    inst.win = win
+    inst.focus = function()
+      -- Mirrors real Snacks/nvim behavior: setting the current win to itself is a no-op autocmd-wise.
+      vim.api.nvim_set_current_win(win)
     end
+    vim.b[term_buf].harness_terminal = "claude"
+
+    pcall(vim.cmd.stopinsert) -- normal-in-terminal, focus already on win - no window transition follows
 
     local orig_startinsert = vim.cmd.startinsert
     local insert_calls = 0
@@ -224,22 +222,45 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
       return orig_startinsert(...)
     end
 
-    park.set_selected("claude")
-    local shown = park.show_selected()
-    assert.are.equal("claude", shown, "show_selected must open the selected harness")
-    -- The fresh-open insert is deferred to the next tick (see enter_insert_scheduled), so flush the
-    -- schedule before asserting it ran.
+    term.open("claude") -- re-select while already focused
     vim.wait(200, function()
       return insert_calls > 0
     end, 10)
-    assert.is_true(insert_calls > 0, "picker path (show_selected -> fresh open) must enter terminal insert mode")
+    assert.is_true(insert_calls > 0, "re-selecting an already-focused harness terminal must still enter insert mode")
 
     vim.cmd.startinsert = orig_startinsert
-    snacks.open = orig_open
     pcall(vim.cmd.stopinsert)
-    term._reset()
     pcall(vim.api.nvim_win_close, win, true)
     pcall(vim.api.nvim_buf_delete, term_buf, { force = true })
+  end)
+
+  it("disables Snacks insert hooks and marks fresh harness terminal buffers", function()
+    local term = require("harness-decorators.term")
+    term._reset()
+
+    local inst = term.open("claude")
+    local opts = calls[#calls].opts
+    assert.is_false(opts.auto_insert, "Snacks BufEnter auto-insert must be disabled")
+    assert.is_false(opts.start_insert, "Snacks synchronous on_win insert must be disabled")
+    assert.are.equal("claude", opts.win.b.harness_terminal)
+    assert.are.equal("claude", vim.b[inst.buf].harness_terminal)
+  end)
+
+  it("marks an existing harness buffer before refocusing it", function()
+    local term = require("harness-decorators.term")
+    term._reset()
+    local inst = term.open("claude")
+    vim.b[inst.buf].harness_terminal = nil
+
+    local win = vim.api.nvim_open_win(inst.buf, false, { split = "right" })
+    inst.win = win
+    inst.focus = function()
+      vim.api.nvim_set_current_win(win)
+    end
+
+    term.show("claude")
+    assert.are.equal("claude", vim.b[inst.buf].harness_terminal)
+    pcall(vim.api.nvim_win_close, win, true)
   end)
 
   it("open(same_harness) re-focuses an already-open instance via :focus(), not a second Snacks.open", function()
@@ -261,66 +282,6 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     assert.are.equal(count_after_first, #calls, "reopening an open harness must not call Snacks.open again")
     assert.is_true(focused, "open(claude) with an open window must re-focus via :focus()")
     pcall(vim.api.nvim_win_close, win, true)
-  end)
-
-  it("open(already-live harness) enters terminal INSERT mode on a re-show (swap between terminals)", function()
-    -- The bug: swapping between two already-running terminals (claude -> maki -> claude) is a RE-SHOW of
-    -- an existing live instance, which goes through term.open's is_live branch. That branch called
-    -- enter_insert SYNCHRONOUSLY right after focus_instance - the same unreliable pattern the fresh-open
-    -- path already fixed by deferring to the next tick (a synchronous startinsert before the window/buffer
-    -- settle does not stick, leaving you in "-- (terminal) --" normal mode instead of "-- TERMINAL --").
-    -- The re-show path must use the SAME deferred insert as fresh open. We assert the distinguishing
-    -- property: immediately after term.open returns, startinsert has NOT yet run synchronously - it is
-    -- scheduled for the next tick (then we flush and confirm it did run).
-    local term = require("harness-decorators.term")
-    term._reset()
-
-    -- Stand in for the float with a real terminal window (the reliable headless path).
-    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-      if w ~= vim.api.nvim_get_current_win() then
-        pcall(vim.api.nvim_win_close, w, true)
-      end
-    end
-    vim.cmd("vsplit")
-    local ok = pcall(vim.cmd, "terminal cat")
-    assert.is_true(ok, "could not open a terminal window (cat)")
-    local win = vim.api.nvim_get_current_win()
-    vim.wait(100, function() return false end, 25)
-    local term_buf = vim.api.nvim_win_get_buf(win)
-
-    -- First open: make the stored instance back onto this real terminal buffer so it reads as live.
-    local inst = term.open("claude")
-    inst.buf = term_buf
-    inst.win = win
-    inst.focus = function()
-      vim.api.nvim_set_current_win(win)
-    end
-
-    -- Drop out of insert so the re-show has to put us back in (mirrors a parked/normal-mode panel).
-    pcall(vim.cmd.stopinsert)
-
-    -- Spy on startinsert: the second open (a re-show) must schedule it, not run it synchronously.
-    local orig_startinsert = vim.cmd.startinsert
-    local insert_calls = 0
-    vim.cmd.startinsert = function(...)
-      insert_calls = insert_calls + 1
-      return orig_startinsert(...)
-    end
-
-    -- Second open of the same live harness: this is the swap-between-terminals re-show path.
-    term.open("claude")
-    assert.are.equal(0, insert_calls, "re-show must NOT enter insert synchronously (it would not stick)")
-    -- The deferred (scheduled) insert lands on the next tick; flush it and confirm it ran.
-    vim.wait(200, function()
-      return insert_calls > 0
-    end, 10)
-    assert.is_true(insert_calls > 0, "re-showing an already-live harness must enter terminal insert mode (deferred)")
-
-    vim.cmd.startinsert = orig_startinsert
-    pcall(vim.cmd.stopinsert)
-    term._reset()
-    pcall(vim.api.nvim_win_close, win, true)
-    pcall(vim.api.nvim_buf_delete, term_buf, { force = true })
   end)
 
   it("hide(harness) routes to that harness's own instance", function()

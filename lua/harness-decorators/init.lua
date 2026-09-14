@@ -62,12 +62,14 @@ end
 function M.session_component(frame)
   local path = M.get_pinned_path()
   if not path then
-    -- No pin yet. A real harness (claude/copilot/maki) will pin once a session starts, so
-    -- show the spinner as "waiting". A stub harness (crush/pi) has no sessions dir and can
-    -- never pin - render empty instead of an eternal spinner.
     local ok_a, adapter = pcall(require, "harness-decorators." .. utils.harness)
     if ok_a and adapter and not adapter.projects_dir() then
-      return ""
+      local ok_d, display = pcall(require, "harness-decorators.agent-display")
+      local state = ok_d and display.status(utils.harness) or nil
+      local status = state and display.dot_for(state.status) or nil
+      local identity = (state and state.session_id) or utils.harness
+      local prefix = "%#lualine_x_normal#🤖%*"
+      return prefix .. (status and " " .. status or "") .. " " .. identity
     end
     -- The robot emoji carries the SECTION's highlight group (see plugins/lualine.lua), so it is the
     -- only part of this slot that shows the section fill. The waiting spinner uses the same blue as
@@ -89,12 +91,9 @@ function M.session_component(frame)
   local dot = ""
   local ok_d, display = pcall(require, "harness-decorators.agent-display")
   if ok_d then
-    local ok_s, state = pcall(require, "harness-decorators.agent-state")
-    if ok_s then
-      local r = state.poll(utils.harness)
-      if r and type(display.dot_for) == "function" then
-        dot = display.dot_for(r.status) or ""
-      end
+    local state = display.status(utils.harness)
+    if state and type(display.dot_for) == "function" then
+      dot = display.dot_for(state.status) or ""
     end
   end
   -- The dot sits right after the robot emoji (before the session id), not at the end. The emoji

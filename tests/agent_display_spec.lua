@@ -80,6 +80,14 @@ describe("agent-display: component rendering", function()
     assert.is_not_nil(out:find("%#" .. display.HL_BACKGROUND .. "#⚙ %* %#" .. display.HL_WORKING .. "#" .. display.spinner[1] .. "%*", 1, true), "working aggregate must use the blue spinner after the gear")
   end)
 
+  it("advances the spinner when only the active agent is working", function()
+    display._set_agents({ claude = { status = "working", label = "auth", pid = 1 } })
+    display._set_active("claude")
+    local before = display.dot_for("working")
+    display.tick()
+    assert.are_not.equal(before, display.dot_for("working"))
+  end)
+
   it("shows a steady green dot when none are working and at least one is known-idle", function()
     display._set_agents({
       claude = { status = "working", label = "auth", pid = 1 },

@@ -261,8 +261,8 @@ describe("<leader>ca action: resolves % to a real file and reaches the send stag
               ("maki: unexpectedly sent an @mention, got %q"):format(text))
           end
 
-          -- The command must have jumped focus to the terminal (type_into_terminal's final
-          -- action) - a regression that drops startinsert/set_current_win shows up here.
+          -- The command must have jumped focus to the terminal; term.lua's shared WinEnter handler
+          -- owns the terminal-mode transition for this path too.
           assert.are.equal(term_win, vim.api.nvim_get_current_win(),
             ("%s: focus did not move to the terminal after add"):format(harness))
         end

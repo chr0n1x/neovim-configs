@@ -21,6 +21,65 @@ local M = {}
 local state = require("harness-decorators.state")
 local title = require("harness-decorators.title")
 
+local auto_insert_group = vim.api.nvim_create_augroup("HarnessTerminalAutoInsert", { clear = true })
+
+local function mark_harness_buffer(harness, inst)
+  if inst and inst.buf and vim.api.nvim_buf_is_valid(inst.buf) then
+    vim.b[inst.buf].harness_terminal = harness
+  end
+end
+
+local function enter_terminal_mode(win, buf)
+  if
+    not vim.api.nvim_win_is_valid(win)
+    or not vim.api.nvim_buf_is_valid(buf)
+    or vim.api.nvim_get_current_win() ~= win
+    or vim.api.nvim_win_get_buf(win) ~= buf
+    or vim.bo[buf].buftype ~= "terminal"
+    or not vim.b[buf].harness_terminal
+  then
+    return
+  end
+  if vim.fn.mode(1) == "t" then
+    return
+  end
+  vim.cmd.startinsert()
+end
+
+vim.api.nvim_create_autocmd("WinEnter", {
+  group = auto_insert_group,
+  callback = function(args)
+    local buf = args.buf
+    if not vim.b[buf].harness_terminal then
+      return
+    end
+    local win = vim.api.nvim_get_current_win()
+    vim.schedule(function()
+      enter_terminal_mode(win, buf)
+    end)
+  end,
+})
+
+---Deferred to the next tick (same reasoning as the old enter_insert_scheduled: snacks.open and a
+-- re-focus both return before the window/buffer has settled, so a synchronous startinsert does not
+-- reliably stick). Needed IN ADDITION to the WinEnter autocmd above: WinEnter only fires when the
+-- target window is not already the current window. Re-selecting a harness whose float already has
+-- focus (e.g. pressing <leader>c a second time while sitting in it, or picking the already-active
+-- harness from <leader>cl) calls nvim_set_current_win on the window you're already in, which is a
+-- no-op and never fires WinEnter - leaving a normal-mode-in-terminal ("-- (terminal) --") float stuck
+-- there. Every focus/open path in this module must call this directly rather than depend solely on
+-- the autocmd.
+---@param win integer?
+---@param buf integer?
+local function schedule_enter_terminal_mode(win, buf)
+  if not win or not buf then
+    return
+  end
+  vim.schedule(function()
+    enter_terminal_mode(win, buf)
+  end)
+end
+
 ---The shared per-harness record for `harness`, creating it if absent. Every instance read/write in
 -- this module goes through here so term and park never diverge (Task 8).
 ---@param harness string
@@ -252,6 +311,7 @@ local function win_opts(harness)
     position = "float",
     border = "rounded",
     title = title.title(harness),
+    b = { harness_terminal = harness },
     -- Snacks' style default maps FloatTitle:SnacksTitle, which overrides the per-segment groups in
     -- `title`. Set winhighlight after all merging is done so our override sticks.
     on_win = function(self)
@@ -263,7 +323,6 @@ local function win_opts(harness)
     fix_buf = false,
     resize = true,
     stack = true,
-    start_insert = true,
 
     keys = M.terminal_keys(),
 
@@ -285,6 +344,12 @@ end
 --   * window closed but buffer alive (after :hide(), i.e. parked) -> use :show() to reopen it.
 ---@param inst table the Snacks terminal instance (has .win, :focus(), :show())
 local function focus_instance(inst)
+  for harness, e in pairs(state.table) do
+    if e.inst == inst then
+      mark_harness_buffer(harness, inst)
+      break
+    end
+  end
   local win = inst.win
   if win and vim.api.nvim_win_is_valid(win) then
     pcall(function()
@@ -295,33 +360,12 @@ local function focus_instance(inst)
       inst:show()
     end)
   end
-end
-
----Drop the focused terminal into INSERT mode, deferred to the next tick. Selecting a harness (via
--- <leader>c OR the <leader>cl picker) - whether a fresh open or a re-show of an already-running
--- terminal - should land you typing, not staring at a normal-mode prompt. We do this ourselves rather
--- than relying on Snacks: its start_insert only fires in on_win on a FRESH open, and its auto-insert
--- BufEnter autocmd only fires when the buffer is re-entered - so a pure re-focus (:focus()) leaves you
--- in normal mode. Deferring to the next tick is what makes it STICK: snacks.open (and a re-focus) return
--- before the window/buffer has settled, so a synchronous startinsert does not reliably take effect -
--- the swap-between-terminals case landed in "-- (terminal) --" instead of "-- TERMINAL --". Idempotent,
--- so it is harmless if Snacks' own on_win already entered insert. Guarded so a headless non-terminal
--- context (tests with windowless fakes) never errors.
----@param inst table the Snacks terminal instance (has .buf)
-local function enter_insert_scheduled(inst)
-  vim.schedule(function()
-    pcall(function()
-      if inst.buf and vim.api.nvim_buf_is_valid(inst.buf) then
-        vim.cmd.startinsert()
-      end
-    end)
-  end)
+  schedule_enter_terminal_mode(inst.win, inst.buf)
 end
 
 ---Open (or focus, if already open) the given harness's floating terminal. If the harness has a live
 ---instance (valid buffer) it is re-shown - the SAME running process resumes. Otherwise a fresh one
----is spawned with the harness's command (+ optional extra args, e.g. `--continue`). Either way it ends
----in terminal INSERT mode (enter_insert_scheduled), so <leader>c / picker selection always lands you typing.
+---is spawned with the harness's command (+ optional extra args, e.g. `--continue`).
 ---Returns the snacks.terminal instance.
 ---@param harness string
 ---@param opts? { args?: string } Extra CLI args appended to the spawn command (e.g. "--continue").
@@ -330,11 +374,6 @@ function M.open(harness, opts)
   local existing = entry(harness).inst
   if is_live(existing) then
     focus_instance(existing)
-    -- Re-show (e.g. swapping between two already-running terminals): defer insert to the next tick,
-    -- same as a fresh open. A synchronous startinsert right after re-focusing does not reliably stick -
-    -- the window/buffer has not settled - leaving you in "-- (terminal) --" normal mode instead of
-    -- "-- TERMINAL --". See enter_insert_scheduled.
-    enter_insert_scheduled(existing)
     return existing
   end
 
@@ -352,17 +391,27 @@ function M.open(harness, opts)
     cmd = cmd .. " " .. opts.args
   end
 
-  local inst = snacks.open(cmd, { win = win_opts(harness) })
+  local spawn_cwd = vim.fn.getcwd()
+  local inst = snacks.open(cmd, {
+    auto_insert = false,
+    start_insert = false,
+    win = win_opts(harness),
+  })
   local e = entry(harness)
   e.inst = inst
+  mark_harness_buffer(harness, inst)
+  schedule_enter_terminal_mode(inst.win, inst.buf)
+  e.cwd = spawn_cwd
   -- Wall-clock open time for THIS instance. The cwd-keyed label adapters (maki/pi) match the live
   -- session to this timestamp instead of assuming "newest file = current session" - which is wrong
   -- the moment you start a fresh session in a dir that already has older ones. A re-show (live
   -- branch above) deliberately does NOT touch it: the process is the same, so its open time stands.
   e.opened_at = os.time()
-  -- Fresh open: defer insert to the next tick so it sticks (see enter_insert_scheduled).
-  enter_insert_scheduled(inst)
   return inst
+end
+
+for harness, e in pairs(state.table) do
+  mark_harness_buffer(harness, e.inst)
 end
 
 ---Wall-clock unix time the given harness's CURRENT terminal instance was opened, or nil when it has
@@ -374,6 +423,16 @@ function M.opened_at(harness)
   local e = state.table[harness]
   if e and is_live(e.inst) then
     return e.opened_at
+  end
+  return nil
+end
+
+---@param harness string
+---@return string?
+function M.cwd(harness)
+  local e = state.table[harness]
+  if e and is_live(e.inst) then
+    return e.cwd
   end
   return nil
 end
@@ -397,8 +456,6 @@ function M.show(harness)
   local inst = entry(harness).inst
   if is_live(inst) then
     focus_instance(inst)
-    -- Same re-show as term.open's live branch: defer insert so it sticks (see enter_insert_scheduled).
-    enter_insert_scheduled(inst)
   end
 end
 

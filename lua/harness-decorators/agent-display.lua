@@ -188,7 +188,9 @@ end
 ---Advance the spinner one frame and redraw. Driven by the fast spin timer, but only does real work
 --while a backgrounded agent is working - a steady idle/unknown section must not flicker.
 function M.tick()
-  if any_backgrounded_working() then
+  local active = active_harness()
+  local active_working = active and agents[active] and agents[active].status == "working"
+  if active_working or any_backgrounded_working() then
     frame = (frame + 1) % #SPINNER
     pcall(vim.schedule, function()
       vim.cmd("redrawstatus")
@@ -201,6 +203,10 @@ end
 --separate session section, so it is excluded here. Empty when disabled or when there are no
 --backgrounded agents.
 ---@return string
+function M.status(name)
+  return agents[name]
+end
+
 function M.component()
   if not enabled then
     return ""

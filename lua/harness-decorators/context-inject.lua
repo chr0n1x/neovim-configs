@@ -106,8 +106,9 @@ function M.type_into_terminal(text, opts, harness)
     end
   end
 
-  -- chansend writes to the PTY without moving focus; jump to the harness terminal and enter
-  -- insert mode so you can review/edit/submit the added context. Drop any active visual
+  -- chansend writes to the PTY without moving focus; jump to the harness terminal so you can
+  -- review/edit/submit the added context. term.lua's shared WinEnter handler enters terminal mode.
+  -- Drop any active visual
   -- selection first: switching windows while in visual mode exits it and parks the cursor on
   -- '>, which then poisoned later sends.
   if vim.fn.mode() == "V" or vim.fn.mode() == "v" then
@@ -115,7 +116,6 @@ function M.type_into_terminal(text, opts, harness)
     vim.cmd("normal! lv")
   end
   vim.api.nvim_set_current_win(win)
-  vim.cmd.startinsert()
   return win
 end
 
@@ -193,19 +193,14 @@ end
 function M.send_visual_selection(type_into_terminal, build_context_text)
   return function()
     local file_path = vim.fn.expand("%:p")
+    local mode = vim.fn.mode()
 
-    if vim.fn.mode():match("[vV]") then
-      -- Exit visual first so the '< / '> marks are set to the true selection bounds. A
-      -- captured anchor (where v was pressed) is wrong for text-object motions like vap,
-      -- where the selection starts before the entry point; and the marks are only written
-      -- when visual mode ends, so we must leave it. feedkeys with 'x' fully consumes the
-      -- <Esc> so no stray byte leaks into the terminal's insert mode after startinsert().
+    if mode == "v" or mode == "V" or mode == "\22" then
+      local anchor_line = vim.fn.line("v")
+      local cursor_line = vim.fn.line(".")
+      local start_line = math.min(anchor_line, cursor_line)
+      local end_line = math.max(anchor_line, cursor_line)
       vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "x", false)
-      local start_line = vim.fn.line("'<")
-      local end_line = vim.fn.line("'>")
-      if start_line > end_line then
-        start_line, end_line = end_line, start_line
-      end
       type_into_terminal(build_context_text(file_path, start_line, end_line))
       return
     end

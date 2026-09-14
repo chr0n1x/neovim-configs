@@ -36,6 +36,20 @@ describe("agent-state: shared child-process check", function()
     assert.are.equal("idle", agent_state.child_status(snap, 999))
   end)
 
+  it("resolves a macOS terminal process from its pty", function()
+    local snap = "46253 46241 ??\n47496 46253 ttys006\n49254 47496 ttys006"
+    assert.are.equal(47496, agent_state.pid_from_tty_snapshot(snap, "/dev/ttys006"))
+  end)
+
+  it("resolves a Linux terminal process from its pty", function()
+    local snap = "100 1 ?\n200 100 pts/3\n300 200 pts/3"
+    assert.are.equal(200, agent_state.pid_from_tty_snapshot(snap, "/dev/pts/3"))
+  end)
+
+  it("returns nil when no process owns the terminal pty", function()
+    assert.is_nil(agent_state.pid_from_tty_snapshot("100 1 ??", "/dev/ttys006"))
+  end)
+
   it("harnesses() returns every adapter that loads (sourced from keymaps discovery)", function()
     local harnesses = agent_state.harnesses()
     -- The candidate list is utils.list_harnesses(); every one of those that ships a state.lua must
@@ -297,6 +311,45 @@ describe("agent-state: per-harness adapters (sandboxed HOME)", function()
 
     it("label: no project db => nil", function()
       assert.is_nil(crush.label(1234, "/no-such-dir"))
+    end)
+
+    it("session id falls back to the sqlite3 CLI when lsqlite3 is unavailable", function()
+      vim.fn.mkdir(home .. "/project/.crush", "p")
+      local db_path = home .. "/project/.crush/crush.db"
+      write_file(db_path, "fixture")
+      local original_executable = vim.fn.executable
+      local original_system = vim.system
+      vim.fn.executable = function(command)
+        return command == "sqlite3" and 1 or original_executable(command)
+      end
+      vim.system = function()
+        return { wait = function() return { code = 0, stdout = "d5bb8c50-400e-4b7b\n" } end }
+      end
+      local id = crush.session_id(1234, home .. "/project")
+      vim.fn.executable = original_executable
+      vim.system = original_system
+      assert.are.equal("d5bb8c50-400e-4b7b", id)
+    end)
+
+    it("notifies once when no SQLite reader is available", function()
+      vim.fn.mkdir(home .. "/project/.crush", "p")
+      write_file(home .. "/project/.crush/crush.db", "fixture")
+      local original_executable = vim.fn.executable
+      local original_notify = vim.notify
+      local notes = {}
+      vim.fn.executable = function(command)
+        return command == "sqlite3" and 0 or original_executable(command)
+      end
+      vim.notify = function(message)
+        notes[#notes + 1] = message
+      end
+      crush._reset()
+      crush.session_id(1234, home .. "/project")
+      crush.session_id(1234, home .. "/project")
+      vim.fn.executable = original_executable
+      vim.notify = original_notify
+      assert.are.equal(1, #notes)
+      assert.is_not_nil(notes[1]:find("sqlite3", 1, true))
     end)
   end)
 

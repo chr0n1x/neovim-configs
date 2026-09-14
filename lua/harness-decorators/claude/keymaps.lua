@@ -22,12 +22,18 @@ local ci = require("harness-decorators.context-inject")
 ---Build a claude @-mention for a tree node. Directories keep a trailing slash so the CLI
 ---treats the reference as a folder, not a file.
 ---@param file_path string
+---@param start_line? integer
+---@param end_line? integer
 ---@return string
-local function build_context_text(file_path)
+local function build_context_text(file_path, start_line, end_line)
   local is_dir = vim.fn.isdirectory(file_path) == 1
   local short = ci.shorten_path(file_path)
   if is_dir and not short:match("/$") then
     short = short .. "/"
+  end
+  if start_line and end_line then
+    local range = start_line == end_line and ("#L" .. start_line) or ("#L" .. start_line .. "-" .. end_line)
+    return "@" .. short .. range
   end
   return "@" .. short
 end

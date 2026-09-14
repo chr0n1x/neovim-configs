@@ -762,7 +762,7 @@ function M.start()
   M.watcher_poll_timer = vim.uv.new_timer()
   M.watcher_poll_timer:start(0, 500, vim.schedule_wrap(on_watcher_poll))
 
-  utils.log("watcher started on " .. projects_dir, vim.log.levels.INFO)
+  utils.log("watcher started on " .. projects_dir, vim.log.levels.DEBUG)
 end
 
 ---Re-point the watcher at a different harness at runtime (called by switch.lua
