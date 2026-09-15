@@ -1,11 +1,15 @@
 -- Claude harness env setup: terminal command (CLI + model flags).
 -- NOTE: make sure the model can use tools.
-local cmd_env = os.getenv("CLAUDE_COMMAND") or ""
-local model = os.getenv("CLAUDE_MODEL") or ""
-vim.fn.setenv("CLAUDE_CODE_TRACKING_ENABLED", "false")
-if cmd_env ~= "" then
-  return cmd_env
+local utils = require("harness-decorators.utils")
+
+-- CLAUDE_COMMAND is a full override handled by command_for; check it first so the Ollama env
+-- side-effect below only runs when we actually build a `claude --model` command ourselves.
+if (os.getenv("CLAUDE_COMMAND") or "") ~= "" then
+  return utils.command_for("claude", "claude", "--model ")
 end
+
+vim.fn.setenv("CLAUDE_CODE_TRACKING_ENABLED", "false")
+local model = os.getenv("CLAUDE_MODEL") or ""
 
 -- point Claude Code at the local server only when a model is set;
 -- otherwise leave the env untouched so the default claude setup works
@@ -17,7 +21,6 @@ if model ~= "" then
   if not vim.env.ANTHROPIC_AUTH_TOKEN then
     vim.fn.setenv("ANTHROPIC_AUTH_TOKEN", "ollama")
   end
-  return "claude --model " .. model
 end
 
-return "claude"
+return utils.command_for("claude", "claude", "--model ")

@@ -1,4 +1,5 @@
 local utils = require("harness-decorators.utils")
+local parser = require("harness-decorators.jsonl-parser")
 local diff = require("harness-decorators.diff")
 
 local M = {}
@@ -47,50 +48,25 @@ end
 ---inotifywait -r on projects_dir, which is recursive regardless of this flag.
 M.flat_sessions_dir = true
 
----Copilot keeps events.jsonl open and appends to it, which fires inotify
----"modify" rather than "close_write". Subscribe to modify too so live edits are
----seen on Linux (macOS/fswatch uses --event Updated and is unaffected). Extra
----events are harmless: the watcher's byte-offset dedup makes redundant polls a
----cheap no-op.
----@return string
-function M.inotify_events()
-  return "close_write,moved_to,modify"
-end
-
 -- ==========================================================================
 -- SESSION IDENTIFICATION
 -- ==========================================================================
 
 local function read_session_start_cwd(jsonl_path)
-  if not jsonl_path then
-    return nil
-  end
-  local f = io.open(jsonl_path, "r")
-  if not f then
-    return nil
-  end
-  local first = f:read("*l")
-  f:close()
-  if not first then
-    return nil
-  end
-  local ok, entry = pcall(vim.json.decode, first)
-  if ok and entry and entry.type == "session.start" then
+  local entry = utils.read_first_line_table(jsonl_path)
+  if entry and entry.type == "session.start" then
     return entry.data and entry.data.context and entry.data.context.cwd
   end
   return nil
 end
 
 function M.extract_cwd(lines)
-  for _, line in ipairs(lines) do
-    if line:find('"session.start"') then
-      local ok, entry = pcall(vim.json.decode, line)
-      if ok and entry and entry.type == "session.start" then
-        return entry.data and entry.data.context and entry.data.context.cwd
-      end
+  return utils.scan_lines_for_field(lines, '"session.start"', function(entry)
+    if entry.type == "session.start" then
+      return entry.data and entry.data.context and entry.data.context.cwd
     end
-  end
-  return nil
+    return nil
+  end)
 end
 
 function M.session_ownership(nvim_cwd, lines, jsonl_path)
@@ -207,17 +183,17 @@ function M.parse_tool_result(line, line_number)
 
   local dedup_key = d.toolCallId and ("copilot-" .. d.toolCallId) or nil
 
-  return {
-    file_path = fp,
-    operation = operation,
-    starting_line = starting_line,
-    delta = delta,
-    event_uuid = entry.id,
-    event_timestamp = entry.timestamp,
-    event_id = d.toolCallId,
-    dedup_key = dedup_key,
-    source_line = line_number,
-  }
+  return parser.make_change_info(
+    fp,
+    operation,
+    starting_line,
+    delta,
+    entry.id,
+    entry.timestamp,
+    d.toolCallId,
+    dedup_key,
+    line_number
+  )
 end
 
 return M

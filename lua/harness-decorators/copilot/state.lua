@@ -14,6 +14,8 @@
 --session id (the session dir's basename). Needs lsqlite3; without it the label
 --falls back to the 8-char session id, same as the tmux script.
 
+local utils = require("harness-decorators.utils")
+
 local M = {}
 
 M.no_child_check = true
@@ -92,41 +94,24 @@ local function session_dir(pid)
   return best_lock and vim.fs.dirname(best_lock) or nil
 end
 
----Last turn marker in events.jsonl (tail -n 400 | grep | tail -1 equivalent).
+---Last turn marker in events.jsonl (tail -n 400 | grep | tail -1 equivalent). Scans the tail and
+--keeps the state set by the last turn_start/turn_end marker; non-marker lines are skipped.
 ---@param path string
 ---@return "working"|"idle"|nil
 local function read_turn_state(path)
-  local f = io.open(path, "r")
-  if not f then
-    return nil
-  end
-  f:seek("end")
-  local size = f:seek()
-  -- 400 lines ~ generous tail; cap the bytes read.
-  local chunk_size = math.min(size, 512 * 1024)
-  f:seek("set", size - chunk_size)
-  local chunk = f:read(chunk_size) or ""
-  f:close()
-  if chunk == "" then
-    return nil
-  end
-  local state
-  for line in chunk:gmatch("[^\n]+") do
+  return utils.read_tail_lines(path, 512 * 1024, function(line)
     -- Match the value (the quoted string), not the key: copilot writes
     -- "assistant.turn_start" with a space after the colon, so a compact-key
     -- pattern would never hit. No alternation here: in this LuaJIT the bare
     -- word `end` inside (start|end) matches empty and the capture returns nil.
     -- plain=true: no pattern magic, so the dot is literal and needs no %. escape.
     if line:find('"assistant.turn_start"', 1, true) then
-      state = "working"
+      return "working"
     elseif line:find('"assistant.turn_end"', 1, true) then
-      state = "idle"
+      return "idle"
     end
-  end
-  if state then
-    return state
-  end
-  return nil -- no markers yet (fresh session)
+    return nil -- no marker on this line; keep the running state
+  end)
 end
 
 ---@param pid number|string

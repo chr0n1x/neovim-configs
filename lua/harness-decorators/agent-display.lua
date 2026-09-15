@@ -100,8 +100,9 @@ local function aggregate_state()
   return "unknown"
 end
 
----The summary dot for the aggregate state: blue and pulsing while working, steady green when idle,
---a dim hollow ring when unknown.
+---The status-dot markup for a single state: blue-and-pulsing while working, steady green checkmark
+--when idle, dim hollow ring when unknown. Shared by the aggregate summary dot and the per-agent
+--session dot (the latter just maps nil/unknown to "no dot").
 ---@param state string "working"|"idle"|"unknown"
 ---@return string
 local function dot(state)
@@ -119,16 +120,12 @@ end
 ---The status-dot markup for a single KNOWN state, or nil when the state is unknown/nil. The session
 --component uses this to show the ACTIVE agent's own dot next to its session id - only when we know
 --its state (working/idle), never a hollow "unknown" ring there (that would just be noise for the
---agent you're actively looking at).
+--agent you're actively looking at). Delegates to dot() so the working/idle markup stays in one place.
 ---@param status string? "working"|"idle"|"unknown"|nil
 ---@return string?
 function M.dot_for(status)
-  if status == "working" then
-    -- The active agent's own working state also animates through the spinner frames, colored blue.
-    return "%#" .. HL_WORKING .. "#" .. SPINNER[frame % #SPINNER + 1] .. "%*"
-  elseif status == "idle" then
-    -- Idle/done reads as a checkmark (not an emoji) - the agent finished and is waiting.
-    return "%#" .. HL_IDLE .. "#✓%*"
+  if status == "working" or status == "idle" then
+    return dot(status)
   end
   return nil
 end

@@ -113,52 +113,68 @@ local function declared_session_id(lines)
   return nil
 end
 
+---The full set of per-session state fields, each with its "cleared" value. This is the single
+--definition of what "all session state" means. jsonl_positions and pending_notifications are
+--module-local (not on M) but are part of session state. `reset(opts)` below clears a named subset;
+--every reset site picks the flags it needs, so a field added here is easy to audit for coverage.
+---
+---Flag semantics:
+---  pin                pinned_jsonl_path / pinned_session_id / ignored_jsonl_paths / pin_notified
+---  pending            pending_notifications (early tool-result notification handles)
+---  positions          jsonl_positions (byte offsets; keep on re-pin to avoid a missed-write-batch)
+---  edit_sources       edit_jump.edit_sources for every session (harness switch only - a mid-work
+---                     /resume must NOT wipe prior diffs from <leader>cu)
+---  dedup              utils dedup cache
+local function reset(opts)
+  if opts.pin then
+    M.pinned_jsonl_path = nil
+    M.pinned_session_id = nil
+    M.ignored_jsonl_paths = {}
+    M.pin_notified = false
+  end
+  if opts.pending then
+    pending_notifications = {}
+  end
+  if opts.positions then
+    jsonl_positions = {}
+  end
+  if opts.edit_sources then
+    edit_jump.edit_sources = {}
+  end
+  if opts.dedup then
+    utils.reset_dedup()
+  end
+end
+
 ---Clear the pin-state trio shared by every reset site: which session is pinned (by both path
 ---and declared id), which paths are confirmed foreign, and whether the pin notification has
----fired. The other two fields in the full set (jsonl_positions, pending_notifications) are NOT
----part of this - they are only cleared where a full re-scan is wanted (see M.reset_all). Exposed
----so init.setup_auto_follow can reset the same trio without reaching into watcher's internals.
+---fired. The other fields in the full set (jsonl_positions, pending_notifications) are NOT part of
+---this - they are only cleared where a full re-scan is wanted (see M.reset_all). Exposed so
+---init.setup_auto_follow can reset the same trio without reaching into watcher's internals.
 function M.reset_pin_state()
-  M.pinned_jsonl_path = nil
-  M.pinned_session_id = nil
-  M.ignored_jsonl_paths = {}
-  M.pin_notified = false
-end
-
----The full set of per-session state fields, each with its "cleared" value. This is the
----single definition of what "all session state" means; the three reset sites below pick
----the subset they need so a field added here is easy to audit for coverage. jsonl_positions
----and pending_notifications are module-local (not on M) but are part of session state.
-local function clear_all_session_state()
-  M.reset_pin_state()
-  jsonl_positions = {}
-  pending_notifications = {}
-end
-
----Clear ALL per-session state: every field in the set above, plus the edit-jump history for
----every session and the utils dedup cache. Used by set_harness, where nothing from the
----previous harness may leak into the new one. (reset_log is NOT part of this: the logger's
----cooldown cache is keyed by message text and is not per-session state; init.setup_auto_follow
----clears it separately at startup.)
-function M.reset_all()
-  clear_all_session_state()
-  edit_jump.edit_sources = {}
-  utils.reset_dedup()
+  reset({ pin = true })
 end
 
 ---Clear per-session RUNTIME state on a session switch (re-pin or a reset command detected in
----the pinned session). Unlike M.reset_all this does NOT clear jsonl_positions: keeping byte
----offsets avoids a missed-write-batch immediately after re-pin.
+---the pinned session). Unlike M.reset_all this does NOT clear jsonl_positions: keeping byte offsets
+---avoids a missed-write-batch immediately after re-pin.
 ---
----It deliberately does NOT delete the old session's edit history (edit_sources[old_id]). A
----mid-work switch (/resume to a new JSONL) should not make prior diffs disappear from
----<leader>cu - the user explicitly chose "preserve old history" over wiping it. The picker
----shows only the CURRENTLY pinned session's records, so preserved history stays reachable by
----re-pinning the old session and never pollutes the current view. (M.reset_all still wipes all
----history on a harness switch, where nothing from the previous harness should leak.)
+---It deliberately does NOT delete the old session's edit history (edit_sources[old_id]). A mid-work
+---switch (/resume to a new JSONL) should not make prior diffs disappear from <leader>cu - the user
+---explicitly chose "preserve old history" over wiping it. The picker shows only the CURRENTLY pinned
+---session's records, so preserved history stays reachable by re-pinning the old session and never
+---pollutes the current view. (M.reset_all still wipes all history on a harness switch, where nothing
+---from the previous harness should leak.)
 local function reset_session_state(_old_session_id)
-  M.reset_pin_state()
-  pending_notifications = {}
+  reset({ pin = true, pending = true })
+end
+
+---Clear ALL per-session state: every field in the set above, plus the edit-jump history for every
+---session and the utils dedup cache. Used by set_harness, where nothing from the previous harness may
+---leak into the new one. (reset_log is NOT part of this: the logger's cooldown cache is keyed by
+---message text and is not per-session state; init.setup_auto_follow clears it separately at startup.)
+function M.reset_all()
+  reset({ pin = true, pending = true, positions = true, edit_sources = true, dedup = true })
 end
 
 ---Pin to a JSONL session, recording both its path and its declared session id (Option B). The
@@ -615,20 +631,28 @@ local function resolve_watch(projects_dir)
   return { projects_dir }, recursive
 end
 
----Spawn inotifywait, writing its own output to `log_path` via --outfile.
----The set of inotify events is harness-specific: each adapter returns its full
----event string via inotify_events(). The default (close_write,moved_to) covers
----direct writes and the tmp+rename pattern; maki adds modify because it keeps
----its JSONL open and appends. Extra events are harmless - the byte-offset dedup
----in process_jsonl_write makes a redundant poll a cheap no-op.
-local function spawn_inotifywait(projects_dir, log_path)
-  local events = "close_write,moved_to"
-  if adapter.inotify_events then
+---The inotify event set. close_write+moved_to cover direct writes and the tmp+rename pattern;
+--flat-session harnesses (maki, copilot) keep their JSONL open and append, so they additionally
+--need modify - which is exactly the flat_sessions_dir adapters already expose for resolve_watch.
+---Extra events are harmless: the byte-offset dedup in process_jsonl_write makes a redundant poll
+---a cheap no-op. Adapters may still override via inotify_events() if their needs diverge.
+local function inotify_event_set()
+  local base = "close_write,moved_to"
+  if adapter.flat_sessions_dir then
+    base = base .. ",modify"
+  end
+  if type(adapter.inotify_events) == "function" then
     local ev = adapter.inotify_events()
     if type(ev) == "string" and #ev > 0 then
-      events = ev
+      return ev
     end
   end
+  return base
+end
+
+---Spawn inotifywait, writing its own output to `log_path` via --outfile.
+local function spawn_inotifywait(projects_dir, log_path)
+  local events = inotify_event_set()
   return vim.uv.spawn("inotifywait", {
     args = {
       "-m",

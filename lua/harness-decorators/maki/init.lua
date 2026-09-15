@@ -7,6 +7,7 @@
 -- not implemented yet, so no notifications or jumps fire for maki edits. The
 -- setup warning in harness-decorators.init tells the user this.
 local utils = require("harness-decorators.utils")
+local parser = require("harness-decorators.jsonl-parser")
 local diff = require("harness-decorators.diff")
 
 local M = {}
@@ -49,16 +50,6 @@ M.flat_sessions_dir = true
 ---several full-file Diff records, capped so a long resumed session doesn't replay
 ---its whole history.
 local PIN_TAIL_BYTES = 16384
-
----inotify events the watcher should subscribe to for this harness. Maki keeps its
----session JSONL open and appends to it, which fires "modify" on each write rather
----than "close_write". close_write+moved_to are kept for the tmp+rename pattern
----(/compact and session rewrites). Extra events are harmless: the watcher's
----byte-offset dedup makes a redundant poll a cheap no-op.
----@return string
-function M.inotify_events()
-  return "close_write,moved_to,modify"
-end
 
 ---Sidecar filename for a session (without the .jsonl extension).
 ---@param session_id string
@@ -166,35 +157,20 @@ end
 ---@param lines string[]
 ---@return string?
 function M.session_id_from_lines(lines)
-  for _, line in ipairs(lines) do
-    if line:find('"id"') then
-      local ok, entry = pcall(vim.json.decode, line)
-      if ok and entry and entry.t == "header" and type(entry.id) == "string" and #entry.id > 0 then
-        return entry.id
-      end
+  return utils.scan_lines_for_field(lines, '"id"', function(entry)
+    if entry.t == "header" and type(entry.id) == "string" and #entry.id > 0 then
+      return entry.id
     end
-  end
-  return nil
+    return nil
+  end)
 end
 
 ---Read the cwd from the header line at the TOP of a maki session file.
 ---@param jsonl_path string?
 ---@return string?
 function M.read_header_cwd(jsonl_path)
-  if not jsonl_path then
-    return nil
-  end
-  local f = io.open(jsonl_path, "r")
-  if not f then
-    return nil
-  end
-  local first = f:read("*l")
-  f:close()
-  if not first then
-    return nil
-  end
-  local ok, entry = pcall(vim.json.decode, first)
-  if ok and entry and entry.t == "header" and entry.cwd then
+  local entry = utils.read_first_line_table(jsonl_path)
+  if entry and entry.t == "header" and entry.cwd then
     return entry.cwd
   end
   return nil
@@ -205,15 +181,12 @@ end
 ---@param lines string[]
 ---@return string?
 function M.extract_cwd(lines)
-  for _, line in ipairs(lines) do
-    if line:find('"cwd"') then
-      local ok, entry = pcall(vim.json.decode, line)
-      if ok and entry and entry.t == "header" and entry.cwd then
-        return entry.cwd
-      end
+  return utils.scan_lines_for_field(lines, '"cwd"', function(entry)
+    if entry.t == "header" and entry.cwd then
+      return entry.cwd
     end
-  end
-  return nil
+    return nil
+  end)
 end
 
 ---Determine whether a JSONL session belongs to this Neovim instance.
@@ -281,17 +254,17 @@ local function parse_diff_out(entry, line_number)
   local after_count = #vim.split(maki_diff.after, "\n", { plain = true })
   local delta = string.format("%d -> %d lines", before_count, after_count)
 
-  return {
-    file_path = fp,
-    operation = "Edit",
-    starting_line = starting_line,
-    delta = delta,
-    event_uuid = nil,
-    event_timestamp = nil,
-    event_id = entry.id,
-    dedup_key = "maki-out-" .. tostring(entry.id),
-    source_line = line_number,
-  }
+  return parser.make_change_info(
+    fp,
+    "Edit",
+    starting_line,
+    delta,
+    nil,
+    nil,
+    entry.id,
+    "maki-out-" .. tostring(entry.id),
+    line_number
+  )
 end
 
 ---Extract change_info from a tool_use msg record (early notification).
@@ -310,17 +283,17 @@ local function parse_tool_use_msg(entry, line_number)
         if item.input.new_string then
           delta = item.input.new_string:gsub("\n", "\\n"):sub(1, 60)
         end
-        return {
-          file_path = fp,
-          operation = "Edit",
-          starting_line = nil,
-          delta = delta,
-          event_uuid = nil,
-          event_timestamp = nil,
-          event_id = item.id,
-          dedup_key = "maki-" .. tostring(item.id),
-          source_line = line_number,
-        }
+        return parser.make_change_info(
+          fp,
+          "Edit",
+          nil,
+          delta,
+          nil,
+          nil,
+          item.id,
+          "maki-" .. tostring(item.id),
+          line_number
+        )
       end
     end
   end

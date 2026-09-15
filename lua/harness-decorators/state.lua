@@ -21,6 +21,32 @@ local M = {}
 -- park.set_selected flips the selection bit. No other module stores a copy of either field.
 M.table = {}
 
+---The shared per-harness record for `harness`, creating it if absent (inst=nil, selected=false). The
+-- single create-if-absent accessor: term.lua and park.lua both route every instance/selection read or
+-- write through here so they can never diverge on the record's shape.
+---@param harness string
+---@return table entry { inst = snacks.terminal|nil, selected = boolean }
+function M.entry(harness)
+  local e = M.table[harness]
+  if not e then
+    e = { inst = nil, selected = false }
+    M.table[harness] = e
+  end
+  return e
+end
+
+---Make `harness` the single selected entry: clear every other entry's selection bit and set this one.
+-- This is the ONE place the "at most one selected" invariant is written, so park.set_selected and
+-- park.show_selected both route through it instead of each re-implementing the clear-all-then-set.
+---Creates the entry if absent (inst=nil, so its first <leader>c spawns fresh).
+---@param harness string
+function M.select(harness)
+  for _, e in pairs(M.table) do
+    e.selected = false
+  end
+  M.entry(harness).selected = true
+end
+
 ---Test-only: clear the whole table without touching any buffer (buffers are managed by Snacks).
 function M._reset()
   M.table = {}

@@ -2,6 +2,7 @@
 -- and watcher path helpers for the claude LLM harness (the default). Loaded by
 -- the generic modules (jsonl-parser, watcher) when the harness is not maki.
 local utils = require("harness-decorators.utils")
+local parser = require("harness-decorators.jsonl-parser")
 
 local M = {}
 
@@ -160,15 +161,12 @@ end
 ---@param lines string[]
 ---@return string?
 function M.extract_cwd(lines)
-  for _, line in ipairs(lines) do
-    if line:find('"cwd"') then
-      local ok, entry = pcall(vim.json.decode, line)
-      if ok and entry and entry.cwd then
-        return entry.cwd
-      end
+  return utils.scan_lines_for_field(lines, '"cwd"', function(entry)
+    if entry.cwd then
+      return entry.cwd
     end
-  end
-  return nil
+    return nil
+  end)
 end
 
 ---Extract the explicit session id from Claude JSONL lines. The header (and many other
@@ -178,15 +176,12 @@ end
 ---@param lines string[]
 ---@return string?
 function M.session_id_from_lines(lines)
-  for _, line in ipairs(lines) do
-    if line:find('"sessionId"') then
-      local ok, entry = pcall(vim.json.decode, line)
-      if ok and entry and type(entry.sessionId) == "string" and #entry.sessionId > 0 then
-        return entry.sessionId
-      end
+  return utils.scan_lines_for_field(lines, '"sessionId"', function(entry)
+    if type(entry.sessionId) == "string" and #entry.sessionId > 0 then
+      return entry.sessionId
     end
-  end
-  return nil
+    return nil
+  end)
 end
 
 ---True if a typed message content is a session-resetting slash command.
@@ -294,17 +289,17 @@ local function parse_tool_use_result(entry, line_number)
     delta = string.format("%d->%d lines", sp.oldLines or 0, sp.newLines or 0)
   end
 
-  return {
-    file_path = fp,
-    operation = operation,
-    starting_line = starting_line,
-    delta = delta,
-    event_uuid = entry.uuid,
-    event_timestamp = entry.timestamp,
-    event_id = nil,
-    dedup_key = entry.uuid and (entry.uuid .. entry.timestamp) or nil,
-    source_line = line_number,
-  }
+  return parser.make_change_info(
+    fp,
+    operation,
+    starting_line,
+    delta,
+    entry.uuid,
+    entry.timestamp,
+    nil,
+    entry.uuid and (entry.uuid .. entry.timestamp) or nil,
+    line_number
+  )
 end
 
 ---Extract change_info from a tool_use (assistant-type invocation entry).
@@ -333,17 +328,17 @@ local function parse_tool_use(entry, line_number)
           delta = item.input.content:gsub("\n", "\\n"):sub(1, 60)
         end
 
-        return {
-          file_path = fp,
-          operation = operation,
-          starting_line = starting_line,
-          delta = delta,
-          event_uuid = entry.uuid,
-          event_timestamp = entry.timestamp,
-          event_id = item.id,
-          dedup_key = entry.uuid and (entry.uuid .. entry.timestamp .. item.id) or nil,
-          source_line = line_number,
-        }
+        return parser.make_change_info(
+          fp,
+          operation,
+          starting_line,
+          delta,
+          entry.uuid,
+          entry.timestamp,
+          item.id,
+          entry.uuid and (entry.uuid .. entry.timestamp .. item.id) or nil,
+          line_number
+        )
       end
     end
   end

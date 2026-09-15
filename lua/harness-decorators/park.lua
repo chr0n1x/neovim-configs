@@ -20,26 +20,20 @@ local state = require("harness-decorators.state")
 local term = require("harness-decorators.term")
 
 ---The shared per-harness record for `harness`, creating it if absent (inst=nil, selected=false).
+-- Delegates to the single accessor in state.lua so term and park never diverge on the record shape.
 ---@param harness string
 ---@return table entry { inst = snacks.terminal|nil, selected = boolean }
 local function entry(harness)
-  local e = state.table[harness]
-  if not e then
-    e = { inst = nil, selected = false }
-    state.table[harness] = e
-  end
-  return e
+  return state.entry(harness)
 end
 
 ---Mark `harness` as the selected (foreground-target) harness: set its entry selected=true and every
 ---other entry selected=false. Creates the entry if absent (inst=nil, so its first <leader>c spawns it
----fresh). Called by switch after deciding the incoming harness is now active.
+---fresh). Called by switch after deciding the incoming harness is now active. Routes through the
+---single invariant-enforcing accessor in state.lua.
 ---@param harness string
 function M.set_selected(harness)
-  for _, e in pairs(state.table) do
-    e.selected = false
-  end
-  entry(harness).selected = true
+  state.select(harness)
 end
 
 ---The currently-selected harness name, or nil.
@@ -78,13 +72,9 @@ function M.show_selected()
   if not selected then
     return nil
   end
-  -- Enforce the invariant: exactly one selected. (set_selected already does this on switch; this
-  -- guards against any path that left two true.)
-  for name, e in pairs(state.table) do
-    if name ~= selected then
-      e.selected = false
-    end
-  end
+  -- Enforce the invariant (exactly one selected) before showing, guarding against any path that left
+  -- two true. state.select clears all others and re-sets this one atomically.
+  state.select(selected)
 
   local inst = term.open(selected)
   if not inst then

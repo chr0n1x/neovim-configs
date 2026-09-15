@@ -13,9 +13,10 @@
 --
 -- Until then projects_dir() returns nil, which makes watcher.start() log
 -- "live JSONL following disabled" and no-op cleanly. The remaining required
--- functions are stubbed and are never actually reached while projects_dir() is
--- nil (the watcher never spawns, so no writes are ever processed).
-local M = {}
+-- functions are inherited from the shared stub base (stub-adapter.lua) and are
+-- never actually reached while projects_dir() is nil (the watcher never spawns,
+-- so no writes are ever processed).
+local M = setmetatable({}, { __index = require("harness-decorators.stub-adapter") })
 
 -- ==========================================================================
 -- PATHS
@@ -25,30 +26,6 @@ local M = {}
 ---watcher for this harness, gracefully.
 ---@return string?
 function M.projects_dir()
-  return nil
-end
-
--- ==========================================================================
--- ADAPTER INTERFACE (stubbed - unreachable while projects_dir() is nil)
--- ==========================================================================
-
----@return "match"|"mismatch"|"unknown"
-function M.session_ownership(_nvim_cwd, _lines, _jsonl_path)
-  return "unknown"
-end
-
----@return string?
-function M.find_reset_command(_lines)
-  return nil
-end
-
----@return boolean
-function M.is_same_file_reset(_cmd)
-  return false
-end
-
----@return table?
-function M.parse_tool_result(_line, _line_number)
   return nil
 end
 

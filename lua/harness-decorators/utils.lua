@@ -4,6 +4,28 @@ local M = {}
 ---Which LLM harness this Neovim session uses. Used for the notify prefix.
 M.harness = os.getenv("NVIM_LLM_HARNESS") or "claude"
 
+---Build a harness terminal command from its env overrides. Every per-harness env.lua shares this
+---shape: honor <HARNESS>_COMMAND as a full override (wrapper script, extra flags), else append an
+---optional model flag when <HARNESS>_MODEL is set, else run the bare CLI. Harnesses with no model
+---flag (copilot/crush/pi) just pass model_flag = nil. The claude harness keeps its Ollama env
+---side-effect inline and only uses this for the command string itself.
+---@param harness string e.g. "claude" - uppercased to form the env var names
+---@param cli string the bare CLI name, e.g. "claude"
+---@param model_flag? string flag prefix before the model value, e.g. "--model " or "-m " (nil = none)
+---@return string command
+function M.command_for(harness, cli, model_flag)
+  local h = harness:upper()
+  local cmd_env = os.getenv(h .. "_COMMAND") or ""
+  if cmd_env ~= "" then
+    return cmd_env
+  end
+  local model = os.getenv(h .. "_MODEL") or ""
+  if model_flag and model ~= "" then
+    return cli .. " " .. model_flag .. model
+  end
+  return cli
+end
+
 -- The harness-decorators dir (parent of this file). list_harnesses scans it for sibling harness dirs.
 local this_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h")
 
@@ -44,6 +66,144 @@ function M.command_executable(cmd)
     return false
   end
   return vim.fn.executable(exe) == 1
+end
+
+---Scan a list of raw JSONL lines for the first one containing `needle`, decode it, and return what
+--`extract(entry)` yields (or nil to keep scanning). Returns nil when no line matches. This is the
+--shared shape behind every adapter's extract_cwd / session_id_from_lines: a cheap needle pre-filter
+--avoids decoding lines that can't match, then the caller's guard + extraction runs on the decoded
+--table. The needle and extraction are harness-specific; the loop/decode discipline is not.
+---@param lines string[] raw JSONL lines
+---@param needle string plain substring that must appear for a line to be considered
+---@param extract fun(entry: table): any? decode-guard + field extraction; nil means "not this one"
+---@return any?
+function M.scan_lines_for_field(lines, needle, extract)
+  for _, line in ipairs(lines) do
+    if line:find(needle, 1, true) then
+      local ok, entry = pcall(vim.json.decode, line)
+      if ok and type(entry) == "table" then
+        local v = extract(entry)
+        if v ~= nil then
+          return v
+        end
+      end
+    end
+  end
+  return nil
+end
+
+---Pick the *.jsonl in `dir` whose candidate time best matches `opened_at`, within `tolerance`
+--seconds. This is the shared "match a session to THIS terminal's open time" skeleton used by the
+--cwd-keyed label adapters (maki, pi): a fresh session started in a dir that already has older ones
+--must NOT be labelled with the previous one, so we match by open time rather than "newest file".
+--`time_of(path)` returns the candidate unix time for a path (or nil to skip it - e.g. maki reads the
+--header created_at and also rejects a cwd mismatch, pi uses the file mtime). Returns the best path,
+--or nil when nothing is close enough (caller falls back to its own newest-file heuristic).
+---@param dir string
+---@param opened_at number? unix time this terminal instance was opened; non-number returns nil
+---@param tolerance number max |candidate - opened_at| in seconds
+---@param time_of fun(path: string): number? candidate time for a path, or nil to skip it
+---@return string? best_path
+function M.pick_jsonl_by_time(dir, opened_at, tolerance, time_of)
+  if type(opened_at) ~= "number" then
+    return nil
+  end
+  local d = vim.uv.fs_opendir(dir)
+  if not d then
+    return nil
+  end
+  local best, best_dt = nil, math.huge
+  while true do
+    local r = vim.uv.fs_readdir(d)
+    if not r or type(r) ~= "table" or #r == 0 then
+      break
+    end
+    local e = r[1]
+    if not e or not e.name then
+      break
+    end
+    -- Skip non-session files - do NOT break: readdir order is unspecified, so the session we need
+    -- may come after a non-matching entry.
+    if e.name:match("%.jsonl$") then
+      local path = dir .. "/" .. e.name
+      local t = time_of(path)
+      if t then
+        local dt = math.abs(t - opened_at)
+        if dt <= tolerance and dt < best_dt then
+          best, best_dt = path, dt
+        end
+      end
+    end
+  end
+  vim.uv.fs_closedir(d)
+  return best
+end
+
+---Read and decode the FIRST line of a JSONL file, returning the decoded table or nil. Reading only
+--the first line keeps this cheap even for long sessions (the header/first-record lives at the top).
+--Callers keep their own type guards on the returned table (e.g. `t == "header"`,
+--`type == "session.start"`); this helper just does the open / read-first-line / pcall-decode.
+---@param path string? nil or unreadable returns nil
+---@return table?
+function M.read_first_line_table(path)
+  if not path then
+    return nil
+  end
+  local f = io.open(path, "r")
+  if not f then
+    return nil
+  end
+  local line = f:read("*l")
+  f:close()
+  if not line or line == "" then
+    return nil
+  end
+  local ok, e = pcall(vim.json.decode, line)
+  if ok and type(e) == "table" then
+    return e
+  end
+  return nil
+end
+
+---Tail-scan reader shared by the per-harness label/status adapters. Reads at most `max_bytes` from
+--the END of `path`, skips a possible partial first line (only when we actually truncated, so a small
+--file never loses its first line), and calls `fn(line)` once per complete line in file order. fn
+--returns the value to KEEP for that line, or nil to leave the running result unchanged - so callers
+--implement "last matching record wins" (claude/maki titles) or "accumulate a state, last marker wins"
+--(copilot turn state) without re-scanning. Returns the final result, or nil if no line ever produced
+--one (or the file is missing/empty). The needle/predicate and accumulator live in the caller, not here.
+---@param path string
+---@param max_bytes number cap on bytes read from the end
+---@param fn fun(line: string): any? per-line handler; nil means "no change to the running result"
+---@return any?
+function M.read_tail_lines(path, max_bytes, fn)
+  local f = io.open(path, "r")
+  if not f then
+    return nil
+  end
+  f:seek("end")
+  local size = f:seek()
+  local chunk_size = math.min(size, max_bytes)
+  f:seek("set", size - chunk_size)
+  local chunk = f:read(chunk_size) or ""
+  f:close()
+  if chunk == "" then
+    return nil
+  end
+  -- Skip a possible partial first line. Only when we truncated (size > chunk_size): a file smaller
+  -- than the cap starts on a real line boundary and must not drop its first line.
+  local nl = chunk:find("\n")
+  if nl and size > chunk_size then
+    chunk = chunk:sub(nl + 1)
+  end
+  local result
+  for line in chunk:gmatch("[^\n]+") do
+    local v = fn(line)
+    if v ~= nil then
+      result = v
+    end
+  end
+  return result
 end
 
 -- ==========================================================================
@@ -176,19 +336,16 @@ end
 
 ---Get the file(s) selected in the current tree plugin, safely.
 ---
----Wraps claudecode.nvim's get_selected_files_from_tree in a pcall: that function
----can throw when the tree window has been closed or recreated (it calls
----nvim_win_get_cursor on a stale win id -> E5108). Returning an error string keeps
----every harness's <C-t>/tree-add handler from crashing.
+---Delegates to our own neo-tree selector (harness-decorators/tree-select), which
+---reads the live neo-tree state directly - no claudecode.nvim dependency. The whole
+---call is wrapped in a pcall because reading a tree whose window was just closed or
+---recreated can throw (a stale win id -> E5108). Returning an error string keeps every
+---harness's <C-t>/tree-add handler from crashing.
 ---@return table files List of file paths (empty on failure)
 ---@return string|nil err Error message if no selection or the lookup threw
 function M.get_tree_selection()
-  local ok, integrations = pcall(require, "claudecode.integrations")
+  local ok, files, err = pcall(require("harness-decorators.tree-select").get_selected)
   if not ok then
-    return {}, "claudecode.integrations not available"
-  end
-  local ok2, files, err = pcall(integrations.get_selected_files_from_tree)
-  if not ok2 then
     return {}, tostring(files)
   end
   return files or {}, err

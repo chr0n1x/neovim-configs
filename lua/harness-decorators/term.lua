@@ -81,16 +81,11 @@ local function schedule_enter_terminal_mode(win, buf)
 end
 
 ---The shared per-harness record for `harness`, creating it if absent. Every instance read/write in
--- this module goes through here so term and park never diverge (Task 8).
+-- this module goes through the single accessor in state.lua so term and park never diverge (Task 8).
 ---@param harness string
 ---@return table entry { inst = snacks.terminal|nil, selected = boolean }
 local function entry(harness)
-  local e = state.table[harness]
-  if not e then
-    e = { inst = nil, selected = false }
-    state.table[harness] = e
-  end
-  return e
+  return state.entry(harness)
 end
 
 ---True if the given Snacks instance still has a valid buffer. Must be called with method syntax

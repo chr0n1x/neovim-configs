@@ -8,6 +8,59 @@ local M = {}
 
 local FT_AUGROUP = "AiHarnessFtKeys"
 
+---The tree filetypes a <C-t> tree-add binding is scoped to. Shared by every per-harness keymaps.lua
+--via tree_add_spec, so the set of recognized trees lives in one place (a new tree plugin is added
+--here once, not in five files).
+local TREE_FTS = { "NvimTree", "neo-tree", "oil", "minifiles", "netrw" }
+
+---The <leader>cc "continue last session" spec. Identical across every harness: it drives OUR
+--per-harness float (term.open) with --continue, not a claudecode command - so it opens/continues
+--THIS harness's terminal. Per-harness keymaps.lua files emit this via M.continue_spec rather than
+--re-declaring the callback.
+---@param harness string
+---@return table spec
+function M.continue_spec(harness)
+  return {
+    "<leader>cc",
+    function()
+      require("harness-decorators.term").open(harness, { args = "--continue" })
+    end,
+    desc = "Continue " .. harness:sub(1, 1):upper() .. harness:sub(2),
+  }
+end
+
+---The <C-t> tree-add spec: ft-scoped to the shared TREE_FTS, running the harness's own <Harness>TreeAdd
+--command (registered by context-inject.make_tree_add_command). Per-harness keymaps.lua files emit this
+--via M.tree_add_spec rather than re-declaring the lhs/ft/desc shape.
+---@param harness string
+---@param tree_cmd string the user command, e.g. "ClaudeTreeAdd"
+---@return table spec
+function M.tree_add_spec(harness, tree_cmd)
+  return {
+    "<C-t>",
+    "<cmd>" .. tree_cmd .. "<cr>",
+    desc = "Add file to " .. harness:sub(1, 1):upper() .. harness:sub(2),
+    ft = TREE_FTS,
+  }
+end
+
+---The <leader>cu history-picker spec: opens the telescope-history-picker over this session's recorded
+--edits. Identical across every harness that has live edit-following (claude/copilot/maki); crush and pi
+--have no JSONL to hang a picker off, so they omit it. Per-harness keymaps.lua files emit this via
+--M.history_spec rather than re-declaring the callback.
+---@param harness string
+---@return table spec
+function M.history_spec(harness)
+  return {
+    "<leader>cu",
+    function()
+      require("harness-decorators.telescope-history-picker").pick()
+    end,
+    desc = "View changes made by " .. harness,
+    mode = { "n" },
+  }
+end
+
 ---Buffer-local ft-mappings written by M.apply (bufnr -> list of {mode, lhs}).
 ---Tracked so M.clear can remove them: deleting the FileType augroup alone leaves
 ---these mappings on already-open buffers, so a stale harness's <C-t> survives a
@@ -67,11 +120,10 @@ local function focus_spec(harness)
         focus.suppress_next_leave()
         focus.restore()
       end
-      -- Table-driven show (Task 6): instead of ClaudeCodeFocus - which routes through
-      -- claudecode's single terminal handle and could re-show a parked buffer from a
-      -- DIFFERENT harness ("maki shows claude") - ask the unified park table for the
-      -- selected harness and show ITS buffer. The table is the source of truth for which
-      -- harness is active; claudecode still does the actual window show/hide.
+      -- Table-driven show (Task 6): instead of a single shared terminal handle - which could
+      -- re-show a parked buffer from a DIFFERENT harness ("maki shows claude") - ask the unified
+      -- park table for the selected harness and show ITS buffer. The table is the source of truth
+      -- for which harness is active; term.lua owns each per-harness float.
       local pok, park = pcall(require, "harness-decorators.park")
       if pok then
         park.show_selected()
@@ -141,19 +193,19 @@ function M.clear()
   ft_buf_maps = {}
 end
 
----Build the consolidated spec list for a harness: its own entries (with the
----<leader>c focus entry replaced by the watcher-triggering version), plus
----<leader>cl. Returns the list; registration is M.apply's job.
+---Build the consolidated spec list for a harness: the watcher-triggering <leader>c
+---focus entry (always first, so the JSONL watcher starts on open), then the harness's
+---own entries, then <leader>cl and <leader>co. Returns the list; registration is
+---M.apply's job. The per-harness keymaps files do NOT declare <leader>c themselves -
+---focus_spec owns it, so a harness can't shadow the watcher trigger with a stale
+---ClaudeCodeFocus binding.
 ---@param harness string
 function M.build(harness)
   local specs = {}
+  table.insert(specs, focus_spec(harness))
   package.loaded["harness-decorators." .. harness .. ".keymaps"] = nil
   for _, spec in ipairs(require("harness-decorators." .. harness .. ".keymaps")) do
-    if spec[1] == "<leader>c" and not spec.ft then
-      table.insert(specs, focus_spec(harness))
-    else
-      table.insert(specs, spec)
-    end
+    table.insert(specs, spec)
   end
   table.insert(specs, switch_spec())
   table.insert(specs, agent_overview_spec())

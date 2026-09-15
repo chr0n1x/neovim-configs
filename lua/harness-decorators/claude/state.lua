@@ -9,6 +9,8 @@
 --not "derived"); otherwise the ai-title from the project jsonl, looked up by
 --sessionId.
 
+local utils = require("harness-decorators.utils")
+
 local M = {}
 
 local function sessions_dir()
@@ -69,41 +71,24 @@ local function find_project_jsonl(session_id)
   return nil
 end
 
----Last ai-title in a jsonl (the tmux script greps '"ai-title"' | tail -1).
+---Last ai-title in a jsonl (the tmux script greps '"ai-title"' | tail -1). Scans the tail and keeps
+--the last line that carries an aiTitle, so the final value wins.
 ---@param path string
 ---@return string?
 local function read_ai_title(path)
-  local f = io.open(path, "r")
-  if not f then
-    return nil
-  end
-  -- Read the file in chunks from the end to avoid loading long sessions fully.
-  f:seek("end")
-  local size = f:seek()
-  local chunk_size = math.min(size, 256 * 1024)
-  f:seek("set", size - chunk_size)
-  local chunk = f:read(chunk_size) or ""
-  f:close()
-  if chunk == "" then
-    return nil
-  end
-  -- Skip a possible partial first line.
-  local nl = chunk:find("\n")
-  if nl and size > chunk_size then
-    chunk = chunk:sub(nl + 1)
-  end
-  local title
-  for line in chunk:gmatch("[^\n]+") do
+  return utils.read_tail_lines(path, 256 * 1024, function(line)
     -- Match the value, not the key: claude writes "aiTitle": with a space after
-    -- the colon, so a compact-key pattern would never hit.
+    -- the colon, so a compact-key pattern would never hit. Only a real aiTitle line returns a
+    -- non-nil title; anything else falls through to nil so an earlier match is NOT overwritten by a
+    -- later non-title line (the caller keeps the last non-nil it saw).
     if line:find('"aiTitle"', 1, true) or line:find('"ai-title"', 1, true) then
       local ok, entry = pcall(vim.json.decode, line)
       if ok and type(entry) == "table" and type(entry.aiTitle) == "string" then
-        title = entry.aiTitle
+        return entry.aiTitle
       end
     end
-  end
-  return title
+    return nil
+  end)
 end
 
 ---@param pid number|string

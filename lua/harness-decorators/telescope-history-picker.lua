@@ -224,27 +224,20 @@ function M.pick()
         -- uses for live auto-follow); clamp it once the buffer is loaded.
         local line = entry.starting_line
 
-        -- Use edit-jump's jump window if available, otherwise just :edit.
+        -- Open the file, jumping to the changed line when we have one. If edit-jump's
+        -- jump window is still alive, land the cursor there; otherwise :edit handles it.
+        if line then
+          vim.cmd(string.format("edit +%d %s", line, vim.fn.fnameescape(file_path)))
+        else
+          vim.cmd("edit " .. vim.fn.fnameescape(file_path))
+        end
         local win = edit_jump.jump_win
         if win and vim.api.nvim_win_is_valid(win) then
-          if line then
-            vim.cmd(string.format("edit +%d %s", line, vim.fn.fnameescape(file_path)))
-          else
-            vim.cmd("edit " .. vim.fn.fnameescape(file_path))
-          end
           -- Set cursor in the jump window after edit.
-          if vim.api.nvim_win_is_valid(win) then
-            local buf = vim.api.nvim_win_get_buf(win)
-            local target = utils.clamp_line(line, vim.api.nvim_buf_line_count(buf))
-            if target then
-              vim.api.nvim_win_set_cursor(win, { target, 0 })
-            end
-          end
-        else
-          if line then
-            vim.cmd(string.format("edit +%d %s", line, vim.fn.fnameescape(file_path)))
-          else
-            vim.cmd("edit " .. vim.fn.fnameescape(file_path))
+          local buf = vim.api.nvim_win_get_buf(win)
+          local target = utils.clamp_line(line, vim.api.nvim_buf_line_count(buf))
+          if target then
+            vim.api.nvim_win_set_cursor(win, { target, 0 })
           end
         end
       end)

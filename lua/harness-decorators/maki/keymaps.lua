@@ -9,6 +9,7 @@
 -- claudecode's server-backed ones.
 
 local ci = require("harness-decorators.context-inject")
+local keymaps = require("harness-decorators.keymaps")
 
 -- ==========================================================================
 -- CONTEXT FORMAT (maki-specific: bare path, optional #L<start>-<end> range)
@@ -54,33 +55,12 @@ local send_selection = ci.send_visual_selection(type_into_terminal, build_contex
 -- ==========================================================================
 
 return {
-  { "<leader>c", "<cmd>ClaudeCodeFocus<cr>", desc = "Maki", mode = { "n", "x" } },
+  -- <leader>c is wired by keymaps.build() from focus_spec, which triggers the JSONL
+  -- watcher; this file does not declare it.
   -- <leader>cc: continue the last session via OUR per-harness float (term.lua), not a claudecode cmd.
-  {
-    "<leader>cc",
-    function()
-      require("harness-decorators.term").open("maki", { args = "--continue" })
-    end,
-    desc = "Continue Maki",
-  },
-  { "<leader>cm", "<cmd>ClaudeCodeSelectModel<cr>", desc = "Select Maki model" },
-  {
-    "<leader>cu",
-    function()
-      require("harness-decorators.telescope-history-picker").pick()
-    end,
-    desc = "View changes made by maki",
-    mode = { "n" },
-  },
+  keymaps.continue_spec("maki"),
+  keymaps.history_spec("maki"),
   { "<leader>ca", "<cmd>MakiAdd %<cr>", desc = "Add current buffer" },
   { "<leader>ca", send_selection, mode = "v", desc = "Send selection to Maki" },
-  {
-    "<C-t>",
-    "<cmd>MakiTreeAdd<cr>",
-    desc = "Add file to Maki",
-    ft = { "NvimTree", "neo-tree", "oil", "minifiles", "netrw" },
-  },
-  -- Diff management
-  { "<leader>cda", "<cmd>ClaudeCodeDiffAccept<cr>; redraw<cr>", desc = "Accept diff & redraw" },
-  { "<leader>cdd", "<cmd>ClaudeCodeDiffDeny<cr>; redraw<cr>", desc = "Deny diff & redraw" },
+  keymaps.tree_add_spec("maki", "MakiTreeAdd"),
 }

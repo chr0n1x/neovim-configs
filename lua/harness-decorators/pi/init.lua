@@ -17,8 +17,9 @@
 -- parse_tool_result() from a real pi edit session.
 --
 -- While projects_dir() returns nil, watcher.start() logs "live JSONL following
--- disabled" and no-ops; the remaining required functions are never reached.
-local M = {}
+-- disabled" and no-ops; the remaining required functions are inherited from the
+-- shared stub base (stub-adapter.lua) and are never reached.
+local M = setmetatable({}, { __index = require("harness-decorators.stub-adapter") })
 
 -- ==========================================================================
 -- PATHS
@@ -28,30 +29,6 @@ local M = {}
 ---return os.getenv("HOME") .. "/.pi/agent/sessions".)
 ---@return string?
 function M.projects_dir()
-  return nil
-end
-
--- ==========================================================================
--- ADAPTER INTERFACE (stubbed - unreachable while projects_dir() is nil)
--- ==========================================================================
-
----@return "match"|"mismatch"|"unknown"
-function M.session_ownership(_nvim_cwd, _lines, _jsonl_path)
-  return "unknown"
-end
-
----@return string?
-function M.find_reset_command(_lines)
-  return nil
-end
-
----@return boolean
-function M.is_same_file_reset(_cmd)
-  return false
-end
-
----@return table?
-function M.parse_tool_result(_line, _line_number)
   return nil
 end
 

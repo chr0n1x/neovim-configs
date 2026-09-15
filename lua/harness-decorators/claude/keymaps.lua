@@ -14,6 +14,7 @@
 -- only claude's build_context_text format and its command registrations.
 
 local ci = require("harness-decorators.context-inject")
+local keymaps = require("harness-decorators.keymaps")
 
 -- ==========================================================================
 -- CONTEXT FORMAT (claude-specific: @<path>, directories keep a trailing slash)
@@ -48,55 +49,28 @@ end
 -- ==========================================================================
 
 ---ClaudeTreeAdd: sends the file(s)/dir(s) under the cursor / selected in the tree plugin
----as @<path> mentions typed into the terminal. Reuses claudecode.nvim's server-independent
----tree detection, but formats paths locally so a cwd-equal directory never collapses to a
----bare "@".
+---as @<path> mentions typed into the terminal. Uses our own neo-tree selector (tree-select),
+-- and formats paths locally so a cwd-equal directory never collapses to a bare "@".
 ci.make_tree_add_command("ClaudeTreeAdd", "claude", type_into_terminal, build_context_text)
 
----Normal-mode <leader>ca: add the whole current buffer as an @<path> mention. Routed through
--- context-inject (types into our per-harness float), not claudecode's stock ClaudeCodeAdd - see the
--- keymap entry below for why.
-local function type_into_terminal_buffer()
-  type_into_terminal(build_context_text(vim.fn.expand("%:p")))
-end
+---ClaudeAdd: adds the current buffer (or an explicit file + line range) as an @<path> mention
+-- typed into our per-harness float. Same shared machinery as MakiAdd/CopilotAdd - no claudecode
+-- dependency. Usage: ClaudeAdd <file-path> [start-line] [end-line]
+ci.make_add_command("ClaudeAdd", "claude", type_into_terminal, build_context_text)
 
 ---Visual-mode <leader>ca: send the selected lines (path + #L range) to the claude terminal.
 local send_selection = ci.send_visual_selection(type_into_terminal, build_context_text)
 
 return {
-  { "<leader>c", "<cmd>ClaudeCodeFocus<cr>", desc = "Claude Code", mode = { "n", "x" } },
+  -- <leader>c is wired by keymaps.build() from focus_spec, which triggers the JSONL
+  -- watcher; this file does not declare it.
   -- <leader>cc: continue the last session. Drives OUR per-harness float (term.lua), not a
   -- claudecode command, so it opens/continues THIS harness's terminal with `--continue`.
-  {
-    "<leader>cc",
-    function()
-      require("harness-decorators.term").open("claude", { args = "--continue" })
-    end,
-    desc = "Continue Claude",
-  },
-  { "<leader>cm", "<cmd>ClaudeCodeSelectModel<cr>", desc = "Select Claude model" },
-  {
-    "<leader>cu",
-    function()
-      require("harness-decorators.telescope-history-picker").pick()
-    end,
-    desc = "View changes made by claude",
-    mode = { "n" },
-  },
-  -- <leader>ca: type the buffer's @path into OUR per-harness float (context-inject), NOT via
-  -- claudecode's stock ClaudeCodeAdd/ClaudeCodeSend. Those route through claudecode's own terminal
-  -- handle, which has no float of its own under Task 7 - so a second claude window would flash up in
-  -- a separate pane instead of typing into the one we already have open. Same approach as copilot/maki.
-  { "<leader>ca", type_into_terminal_buffer, desc = "Add current buffer" },
+  keymaps.continue_spec("claude"),
+  keymaps.history_spec("claude"),
+  -- <leader>ca: type the buffer's @path into OUR per-harness float (context-inject). Model
+  -- switching is done in the CLI itself (/model), not via a plugin command.
+  { "<leader>ca", "<cmd>ClaudeAdd %<cr>", desc = "Add current buffer" },
   { "<leader>ca", send_selection, mode = "v", desc = "Send to Claude" },
-  {
-    "<C-t>",
-    "<cmd>ClaudeTreeAdd<cr>",
-    desc = "Add file to Claude",
-    ft = { "NvimTree", "neo-tree", "oil", "minifiles", "netrw" },
-  },
-  -- Diff management - I barely use these but wanted to give some defaults
-  -- that fall under <leader>c
-  { "<leader>cda", "<cmd>ClaudeCodeDiffAccept<cr>; redraw<cr>", desc = "Accept diff & redraw" },
-  { "<leader>cdd", "<cmd>ClaudeCodeDiffDeny<cr>; redraw<cr>", desc = "Deny diff & redraw" },
+  keymaps.tree_add_spec("claude", "ClaudeTreeAdd"),
 }

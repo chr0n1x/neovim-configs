@@ -3,10 +3,40 @@ local M = {}
 local utils = require("harness-decorators.utils")
 local watcher = require("harness-decorators.watcher")
 local edit_jump = require("harness-decorators.edit-jump")
+local keymaps = require("harness-decorators.keymaps")
+local switch = require("harness-decorators.switch")
+local title = require("harness-decorators.title")
+local focus = require("harness-decorators.focus")
 
 ---Callback for VimLeavePre autocmd.
 local function on_vim_leave()
   watcher.stop()
+end
+
+---Startup wiring for the AI harness, called once from lua/plugins/ai-harness.lua (a lazy.nvim
+--spec file that loads at startup). Registers the consolidated <leader>c* keymaps for the active
+--harness, seeds switch.lua's initial state, and installs the two session-lifetime autocmds:
+--WinLeave (remember the last normal-mode buffer so focus-gaining actions can restore it) and
+--ColorScheme (re-define title/agent-overview highlight groups after a theme switch). The terminal
+--itself is NOT opened here; the first <leader>c press opens it (and starts the JSONL watcher via
+--setup_auto_follow). Kept in this module rather than ai-harness.lua so it has no plugin-spec
+--dependency and tests can drive it directly.
+---@param harness string the active harness name (NVIM_LLM_HARNESS or "claude")
+function M.setup(harness)
+  keymaps.apply(keymaps.build(harness))
+  switch.init(harness)
+
+  vim.api.nvim_create_autocmd("WinLeave", {
+    pattern = "*",
+    callback = focus.capture,
+  })
+  vim.api.nvim_create_autocmd("ColorScheme", {
+    pattern = "*",
+    callback = function()
+      title.define_all()
+      pcall(require("harness-decorators.agent-display").setup_highlights)
+    end,
+  })
 end
 
 ---True once the jump autocmds and VimLeavePre handler have been registered for this nvim

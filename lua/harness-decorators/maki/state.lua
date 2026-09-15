@@ -10,6 +10,8 @@
 --title in <sid>.jsonl (the header carries the title too, but meta lines are
 --re-written as the session evolves).
 
+local utils = require("harness-decorators.utils")
+
 local M = {}
 
 ---Sessions dir resolution mirrors maki/init.lua sessions_dir (check both the
@@ -38,33 +40,15 @@ end
 ---@param path string
 ---@return string?
 local function read_meta_title(path)
-  local f = io.open(path, "r")
-  if not f then
-    return nil
-  end
-  f:seek("end")
-  local size = f:seek()
-  local chunk_size = math.min(size, 256 * 1024)
-  f:seek("set", size - chunk_size)
-  local chunk = f:read(chunk_size) or ""
-  f:close()
-  if chunk == "" then
-    return nil
-  end
-  local nl = chunk:find("\n")
-  if nl and size > chunk_size then
-    chunk = chunk:sub(nl + 1)
-  end
-  local title
-  for line in chunk:gmatch("[^\n]+") do
+  return utils.read_tail_lines(path, 256 * 1024, function(line)
     if line:find('"t":"meta"', 1, true) or line:find('"t": "meta"', 1, true) then
       local ok, entry = pcall(vim.json.decode, line)
       if ok and type(entry) == "table" and type(entry.title) == "string" and entry.title ~= "" then
-        title = entry.title
+        return entry.title
       end
     end
-  end
-  return title
+    return nil
+  end)
 end
 
 ---Header of a session jsonl: the first line carries id + created_at (unix). Returns the decoded
@@ -72,20 +56,7 @@ end
 ---@param path string
 ---@return table?
 local function read_header(path)
-  local f = io.open(path, "r")
-  if not f then
-    return nil
-  end
-  local line = f:read("*l")
-  f:close()
-  if not line or line == "" then
-    return nil
-  end
-  local ok, e = pcall(vim.json.decode, line)
-  if ok and type(e) == "table" then
-    return e
-  end
-  return nil
+  return utils.read_first_line_table(path)
 end
 
 ---The session jsonl in `dir` whose header created_at best matches the terminal's open time. A fresh
@@ -97,45 +68,18 @@ end
 ---@param cwd string the terminal's working dir (the header carries it, so we can disambiguate)
 ---@return string?
 local function session_for_open(dir, opened_at, cwd)
-  if type(opened_at) ~= "number" then
-    return nil
-  end
-  local d = vim.uv.fs_opendir(dir)
-  if not d then
-    return nil
-  end
-  local best, best_dt = nil, math.huge
-  while true do
-    local r = vim.uv.fs_readdir(d)
-    if not r or type(r) ~= "table" or #r == 0 then
-      break
-    end
-    local e = r[1]
-    if not e or not e.name then
-      break
-    end
-    -- Skip non-session files (e.g. cwd_latest.json) - do NOT break: readdir order is unspecified,
-    -- so the session we need may come after a non-matching entry.
-    if not e.name:match("%.jsonl$") then
-      goto continue_open
-    end
-    local path = dir .. "/" .. e.name
+  -- Tolerance: the header is written at session start, our os.time() at snacks.open; a few seconds of
+  -- skew (clock granularity, slow first write) must not break the match.
+  return utils.pick_jsonl_by_time(dir, opened_at, 30, function(path)
     local hdr = read_header(path)
     local created = hdr and tonumber(hdr.created_at)
     -- The sessions dir is shared across every cwd, so a fresh session in one dir must not match a
     -- same-timestamped file from another. Require the header's cwd to agree when it carries one.
     if created and (type(hdr.cwd) ~= "string" or hdr.cwd == "" or hdr.cwd == cwd) then
-      local dt = math.abs(created - opened_at)
-      -- Tolerance: the header is written at session start, our os.time() at snacks.open; a few
-      -- seconds of skew (clock granularity, slow first write) must not break the match.
-      if dt <= 30 and dt < best_dt then
-        best, best_dt = path, dt
-      end
+      return created
     end
-    ::continue_open::
-  end
-  vim.uv.fs_closedir(d)
-  return best
+    return nil
+  end)
 end
 
 ---@param pid number|string

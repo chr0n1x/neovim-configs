@@ -10,6 +10,7 @@
 -- this file keeps only crush's build_context_text format and its command registrations.
 
 local ci = require("harness-decorators.context-inject")
+local keymaps = require("harness-decorators.keymaps")
 
 -- ==========================================================================
 -- CONTEXT FORMAT (crush-specific: bare path, directories keep a trailing slash)
@@ -48,19 +49,9 @@ ci.make_tree_add_command("CrushTreeAdd", "crush", type_into_terminal, build_cont
 -- ==========================================================================
 
 return {
-  { "<leader>c", "<cmd>ClaudeCodeFocus<cr>", desc = "Crush", mode = { "n", "x" } },
+  -- <leader>c is wired by keymaps.build() from focus_spec, which triggers the JSONL
+  -- watcher; this file does not declare it.
   -- <leader>cc: continue the last session via OUR per-harness float (term.lua), not a claudecode cmd.
-  {
-    "<leader>cc",
-    function()
-      require("harness-decorators.term").open("crush", { args = "--continue" })
-    end,
-    desc = "Continue Crush",
-  },
-  {
-    "<C-t>",
-    "<cmd>CrushTreeAdd<cr>",
-    desc = "Add file to Crush",
-    ft = { "NvimTree", "neo-tree", "oil", "minifiles", "netrw" },
-  },
+  keymaps.continue_spec("crush"),
+  keymaps.tree_add_spec("crush", "CrushTreeAdd"),
 }

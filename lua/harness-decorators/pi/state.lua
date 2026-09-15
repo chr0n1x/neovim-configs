@@ -10,6 +10,8 @@
 --in that dir (matches maki's cwd-latest behaviour). The label is the last
 --session_info.name (user/auto title), else the first user message.
 
+local utils = require("harness-decorators.utils")
+
 local M = {}
 
 local function sessions_root()
@@ -33,40 +35,11 @@ end
 ---@param opened_at number? unix time this terminal instance was opened
 ---@return string?
 local function jsonl_for_open(dir, opened_at)
-  if type(opened_at) ~= "number" then
-    return nil
-  end
-  local d = vim.uv.fs_opendir(dir)
-  if not d then
-    return nil
-  end
-  local best, best_dt = nil, math.huge
-  while true do
-    local r = vim.uv.fs_readdir(d)
-    if not r or type(r) ~= "table" or #r == 0 then
-      break
-    end
-    local e = r[1]
-    if not e or not e.name then
-      break
-    end
-    -- Skip non-session files - do NOT break: readdir order is unspecified.
-    if not e.name:match("%.jsonl$") then
-      goto continue_open
-    end
-    local st = vim.uv.fs_stat(dir .. "/" .. e.name)
-    local m = st and st.mtime.sec
-    if m then
-      local dt = math.abs(m - opened_at)
-      -- Tolerance: the file's first write lands within a second or two of snacks.open.
-      if dt <= 30 and dt < best_dt then
-        best, best_dt = dir .. "/" .. e.name, dt
-      end
-    end
-    ::continue_open::
-  end
-  vim.uv.fs_closedir(d)
-  return best
+  -- Tolerance: the file's first write lands within a second or two of snacks.open.
+  return utils.pick_jsonl_by_time(dir, opened_at, 30, function(path)
+    local st = vim.uv.fs_stat(path)
+    return st and st.mtime.sec
+  end)
 end
 
 ---Most recently modified *.jsonl in a dir (ls -t | head -1 equivalent). Fallback when no session's

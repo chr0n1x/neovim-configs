@@ -15,9 +15,13 @@ local function wait_until_ready(timeout_ms)
   timeout_ms = timeout_ms or 60000
   local deadline = vim.uv.now() + timeout_ms
   while vim.uv.now() < deadline do
-    local ok_cc = pcall(require, "claudecode")
+    -- The harness layer is ready once its core modules load. We used to also gate on
+    -- require("claudecode") (the plugin's setup ran the keymap registration), but that
+    -- plugin is gone - the wiring now lives in harness-decorators.init.setup, reached via
+    -- switch/keymaps. Gating on those two is enough.
+    local ok_init = pcall(require, "harness-decorators")
     local ok_sw = pcall(require, "harness-decorators.switch")
-    if ok_cc and ok_sw then
+    if ok_init and ok_sw then
       return true
     end
     vim.wait(100) -- process events so lazy.nvim can finish loading

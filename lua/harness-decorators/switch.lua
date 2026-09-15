@@ -4,11 +4,10 @@
 -- env.lua (terminal command) and a keymaps.lua (per-harness <leader>c* keys) -
 -- exactly the shape used by lua/harness-decorators/<harness>/.
 --
--- Switching does four things:
+-- Switching does three things:
 --   1. Backgrounds the outgoing harness's floating terminal (config-hides it, keeping its
 --      PTY alive so it keeps executing) and records the buffer for later resume - Option A.
---   2. Points claudecode.nvim's terminal module at the new harness's command.
---   3. Foregrounds the incoming harness: if it was previously backgrounded, re-shows its
+--   2. Foregrounds the incoming harness: if it was previously backgrounded, re-shows its
 --      SAME live process; otherwise leaves it closed until the first <leader>c press opens it.
 --   4. Rebinds the consolidated <leader>c* keymaps to the new harness's keymaps.lua so
 --      bindings like <leader>cr/<leader>cm (which differ, or don't exist, per harness) match
@@ -58,30 +57,6 @@ function M.current()
   return current_harness
 end
 
----Ensure claudecode.nvim (a lazy-loaded plugin) is actually loaded before we
----poke at its modules/commands - by the time M.switch runs the plugin should
----already be loaded (it's triggered from a key that lives in the plugin's own
----lazy.nvim `keys` spec), but this is a cheap safety net.
-local function ensure_plugin_loaded()
-  local ok_lazy, lazy = pcall(require, "lazy")
-  if ok_lazy then
-    pcall(lazy.load, { plugins = { "claudecode.nvim" } })
-  end
-end
-
----Kill the running floating terminal so the next open spawns a fresh process
----with the newly configured harness command. Force-deleting the terminal buffer
----makes the CLI process exit with a non-zero/-1 status (it's killed, not exited
----cleanly), which trips claudecode's snacks provider TermClose handler and logs
----a scary "Claude exited with code -1" error - expected and harmless here since
----we're the ones killing it, so silence claudecode's logger.error for the
----duration of the kill (restored on the next tick, after TermClose has fired).
--- REMOVED (Option A): switch.lua no longer kills the terminal on a harness swap.
--- The old process is backgrounded instead - park.park() config-hides its float
--- (keeping the PTY alive so it keeps executing) and records the buffer for later
--- resume. See docs/multi-agent-prd.md. Kept as a comment block so the reason the
--- "Claude exited with code -1" logger suppression below no longer exists is clear.
-
 ---Record initial state for the harness ai-harness.lua starts with. The keymaps
 ---for this first harness are registered by ai-harness.lua's config (via
 ---harness-decorators.keymaps), so this remembers what's active for later switches/teardown AND
@@ -94,9 +69,10 @@ function M.init(harness)
   park.set_selected(harness)
 end
 
----Swap the backing CLI: background the current floating terminal (Option A), point
----claudecode.nvim's terminal command at the new harness's CLI, foreground any parked terminal for
----the new harness, and rebind <leader>c* to the new harness's keymaps.
+---Swap the backing CLI: background the current floating terminal (Option A), foreground any parked
+---terminal for the new harness, and rebind <leader>c* to the new harness's keymaps. The spawn
+---command is not re-pointed on any global - term.lua resolves each harness's command from its env
+---module at open time.
 ---@param new_harness string
 function M.switch(new_harness)
   if new_harness == current_harness then
@@ -111,26 +87,14 @@ function M.switch(new_harness)
   -- notify at the end reports it by name.
   local previous_harness = current_harness
 
-  ensure_plugin_loaded()
   -- Background the outgoing harness instead of killing it: hide ITS OWN float (PTY stays alive, so
   -- it keeps executing) and record it for resume. If focus is in the terminal window, hiding it makes
   -- nvim re-parent focus to another window and WinLeave fires - capture would record that random
-  -- window as the restore target, so suppress for the tick (same reason the old kill path needed it).
+  -- window as the restore target, so suppress for the tick.
   pcall(function()
     require("harness-decorators.focus").suppress_next_leave()
   end)
   local backgrounded = current_harness ~= nil and park.park(current_harness)
-
-  -- maki disables auto_start (no @ mention server); everything else wants it. This only toggles the
-  -- websocket server - it has no effect on the floating terminal, which term.lua now owns directly.
-  pcall(function()
-    require("claudecode").stop()
-  end)
-  if new_harness ~= "maki" then
-    pcall(function()
-      require("claudecode").start(false)
-    end)
-  end
 
   -- Re-point the harness identity. The spawn command is NOT re-pointed on any global anymore: term.lua
   -- resolves each harness's command from its env module at open time, so there is no claudecode

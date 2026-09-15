@@ -138,16 +138,20 @@ describe("harness keymap contract (all harnesses)", function()
       end)
 
       -- Regression (claude): normal-mode <leader>ca must type into OUR per-harness float via
-      -- context-inject, NOT run claudecode's stock ClaudeCodeAdd. That command routes through
-      -- claudecode's own terminal handle, which has no float under Task 7 - so it opened a SECOND
-      -- claude window in a separate pane instead of adding to the one already open. The action must
-      -- be a Lua function (the context-inject path), not a "<cmd>ClaudeCodeAdd..." string.
+      -- context-inject. It used to run claudecode's stock ClaudeCodeAdd, which routed through the
+      -- plugin's own terminal handle and opened a SECOND window in a separate pane. Now it runs our
+      -- own local ClaudeAdd command - so assert it does NOT reference any stock ClaudeCode* command.
       if harness == "claude" then
-        it("claude <leader>ca is a Lua callback, not the stock ClaudeCodeAdd command", function()
+        it("claude <leader>ca does not run a stock ClaudeCode* command", function()
           local ca = find_spec(specs, "<leader>ca")
           assert.is_not_nil(ca, "claude must declare a normal-mode <leader>ca")
-          assert.is_function(ca[2],
-            "claude <leader>ca must be a Lua callback (context-inject), not a command string - got: " .. type(ca[2]))
+          -- The action is either our local command string or a Lua callback; neither may invoke the
+          -- removed stock plugin commands.
+          local rhs = tostring(ca[2])
+          for _, stock in ipairs({ "ClaudeCodeAdd", "ClaudeCodeSend", "ClaudeCodeOpen" }) do
+            assert.is_falsy(rhs:find(stock, 1, true),
+              ("claude <leader>ca must not run the stock %s command - got: %q"):format(stock, rhs))
+          end
         end)
       end
     end)

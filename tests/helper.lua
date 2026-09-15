@@ -13,19 +13,6 @@
 
 local M = {}
 
--- Capture the pristine startup terminal command at require-time (before any spec mutates
--- it). Specs that override terminal_cmd (focus_spec's stub) restore to this in teardown so
--- they leave no trace for later specs - especially startup_spec, which asserts the true
--- startup value. Requiring helper.lua happens before any spec body runs, so this records
--- the genuine post-startup state.
-M.pristine_terminal_cmd = (function()
-  local ok, term = pcall(require, "claudecode.terminal")
-  if not ok or not term.defaults then
-    return nil
-  end
-  return term.defaults.terminal_cmd
-end)()
-
 ---Wait until a terminal-buftype window exists and is visible, or timeout. In headless
 -- mode snacks' float open can hang before recording cc.state.terminal, but the terminal
 -- buffer/window IS created - so we detect by scanning for a terminal buftype window
@@ -124,20 +111,6 @@ function M.active_harness()
     return nil
   end
   return sw.current()
-end
-
----The terminal command claudecode.nvim will actually run. This is the value that
--- reaches the spawned process: it lives in the terminal module's `defaults` table,
--- which setup() populates from config.terminal_cmd. (state.config.terminal_cmd is the
--- source; defaults.terminal_cmd is what the PTY uses.) Checking defaults catches both
--- a nil-at-startup desync (A1) and a failed re-point after a harness swap.
----@return string?
-function M.terminal_cmd()
-  local ok, term = pcall(require, "claudecode.terminal")
-  if not ok or not term.defaults then
-    return nil
-  end
-  return term.defaults.terminal_cmd
 end
 
 ---The command our per-harness terminal owner (term.lua) will spawn for `harness`, resolved at call
