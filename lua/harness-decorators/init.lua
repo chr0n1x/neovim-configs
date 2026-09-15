@@ -37,6 +37,14 @@ function M.setup(harness)
       pcall(require("harness-decorators.agent-display").setup_highlights)
     end,
   })
+
+  -- Optional per-adapter activation hook. Only pi defines on_activate (symlinks its
+  -- edit-following extension into pi's extensions dir); guarded so every other harness
+  -- and the stub base are unaffected.
+  local ok_ad, adapter = pcall(require, "harness-decorators." .. harness)
+  if ok_ad and type(adapter.on_activate) == "function" then
+    pcall(adapter.on_activate)
+  end
 end
 
 ---True once the jump autocmds and VimLeavePre handler have been registered for this nvim

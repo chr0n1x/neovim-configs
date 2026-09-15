@@ -39,6 +39,25 @@ local function find_adjacent_window()
   return nil
 end
 
+---Find an existing normal window displaying file_path.
+---@param file_path string
+---@return integer?
+local function find_file_window(file_path)
+  local target = vim.uv.fs_realpath(file_path) or file_path
+  for _, win_id in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    local cfg = vim.api.nvim_win_get_config(win_id)
+    if cfg.relative == "" then
+      local buf = vim.api.nvim_win_get_buf(win_id)
+      local name = vim.api.nvim_buf_get_name(buf)
+      local actual = name ~= "" and (vim.uv.fs_realpath(name) or name) or nil
+      if actual == target then
+        return win_id
+      end
+    end
+  end
+  return nil
+end
+
 ---Get or validate the jump window. Reuses the existing non-float window
 ---next to the floating terminal — no new splits created.
 local function get_jump_win()
@@ -64,7 +83,9 @@ local function jump_to_edit(data, file_path)
     return
   end
 
-  local win = get_jump_win()
+  -- Reuse the target's existing window when it is already visible. Setting that buffer on
+  -- another work window would display the same buffer twice and leave a duplicate view behind.
+  local win = find_file_window(file_path) or get_jump_win()
   if not win then
     return
   end

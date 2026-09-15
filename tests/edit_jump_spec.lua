@@ -30,6 +30,39 @@ describe("edit-jump.create_jump_autocmds wiring", function()
     end
   end)
 
+  it("reuses an existing target window instead of duplicating its buffer", function()
+    local path = vim.fn.tempname() .. "-edit-jump.txt"
+    local file = assert(io.open(path, "w"))
+    file:write("first\nsecond\nthird\n")
+    file:close()
+
+    vim.cmd("edit " .. vim.fn.fnameescape(path))
+    local target_win = vim.api.nvim_get_current_win()
+    vim.cmd("new")
+    local other_win = vim.api.nvim_get_current_win()
+    local old_jump_win = edit_jump.jump_win
+    edit_jump.jump_win = other_win
+
+    edit_jump.on_edit({
+      data = {
+        file_path = path,
+        starting_line = 2,
+        jsonl_path = nil,
+      },
+    })
+    vim.wait(800)
+
+    local target_buf = vim.api.nvim_win_get_buf(target_win)
+    assert.are.equal(path, vim.api.nvim_buf_get_name(target_buf))
+    assert.are.equal(2, vim.api.nvim_win_get_cursor(target_win)[1])
+    assert.are_not.equal(target_buf, vim.api.nvim_win_get_buf(other_win))
+
+    edit_jump.jump_win = old_jump_win
+    pcall(vim.api.nvim_win_close, other_win, true)
+    pcall(vim.api.nvim_buf_delete, target_buf, { force = true })
+    vim.fn.delete(path)
+  end)
+
   it("on_diff_closed no longer exists (diff path removed)", function()
     assert.is_nil(edit_jump.on_diff_closed, "on_diff_closed should have been removed with the diff path")
   end)

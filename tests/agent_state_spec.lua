@@ -363,55 +363,41 @@ describe("agent-state: per-harness adapters (sandboxed HOME)", function()
       assert.are.equal("unknown", pi.status(1234, "/x"))
     end)
 
-    it("label: session_info.name wins over first user message", function()
+    it("label: returns the short (8-char) uuid parsed from the session filename", function()
+      -- No pushed session state here, so label uses the filename fallback (…_<uuid>.jsonl).
+      require("harness-decorators.pi.follow")._reset()
       local dir = home .. "/.pi/agent/sessions/--proj--"
       vim.fn.mkdir(dir, "p")
-      write_file(
-        dir .. "/s.jsonl",
-        '{"type":"message","message":{"role":"user","content":[{"type":"text","text":"hello world"}]}}\n'
-          .. '{"type":"session_info","name":"Refactor auth"}\n'
-      )
-      assert.are.equal("Refactor auth", pi.label(1234, "/proj"))
-    end)
-
-    it("label: falls back to first user message when no session_info", function()
-      local dir = home .. "/.pi/agent/sessions/--proj--"
-      vim.fn.mkdir(dir, "p")
-      write_file(
-        dir .. "/s.jsonl",
-        '{"type":"message","message":{"role":"user","content":[{"type":"text","text":"hello world"}]}}\n'
-      )
-      assert.are.equal("hello world", pi.label(1234, "/proj"))
+      write_file(dir .. "/2026-01-01T00-00-00-000Z_01a0a1c2-5d71-72af-bafe-f08b1ecb862f.jsonl", "{}\n")
+      assert.are.equal("01a0a1c2", pi.label(1234, "/proj"))
     end)
 
     it("label: no session dir for cwd => nil", function()
+      require("harness-decorators.pi.follow")._reset()
       assert.is_nil(pi.label(1234, "/no-such-dir"))
     end)
 
     it("label: a fresh session in a dir with an older one is matched by open time (not newest mtime)", function()
       -- The regression: the previous session's file has the NEWEST mtime (it was touched last), so a
       -- brand-new terminal must be labelled from its own file, picked out by the open time.
+      require("harness-decorators.pi.follow")._reset()
       local dir = home .. "/.pi/agent/sessions/--proj--"
       vim.fn.mkdir(dir, "p")
       local now = os.time()
-      write_file(
-        dir .. "/fresh.jsonl",
-        '{"type":"session_info","name":"FRESH PI"}\n'
-      )
-      write_file(
-        dir .. "/old.jsonl",
-        '{"type":"session_info","name":"OLD PI"}\n'
-      )
+      local fresh = dir .. "/2026-01-01T00-00-00-000Z_aaaaaaaa-1111-2222-3333-444444444444.jsonl"
+      local old = dir .. "/2025-01-01T00-00-00-000Z_bbbbbbbb-1111-2222-3333-444444444444.jsonl"
+      write_file(fresh, "{}\n")
+      write_file(old, "{}\n")
       -- Make the OLD file the most recently modified (the trap "newest mtime" would fall into).
-      vim.uv.fs_utime(dir .. "/old.jsonl", now + 500, now + 500)
-      vim.uv.fs_utime(dir .. "/fresh.jsonl", now, now)
+      vim.uv.fs_utime(old, now + 500, now + 500)
+      vim.uv.fs_utime(fresh, now, now)
       local term = require("harness-decorators.term")
       local orig = term.opened_at
       term.opened_at = function(_h)
         return now
       end
       local ok, err = pcall(function()
-        assert.are.equal("FRESH PI", pi.label(1234, "/proj"))
+        assert.are.equal("aaaaaaaa", pi.label(1234, "/proj"))
       end)
       term.opened_at = orig
       if not ok then

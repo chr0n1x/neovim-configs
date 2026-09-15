@@ -3,45 +3,50 @@
 -- harness-agnostic modules (watcher, jsonl-parser) can require it without
 -- crashing when pi is the active harness.
 --
--- Status: STUB for edit-following (projects_dir() returns nil). The context keymaps
--- (<leader>ca / <C-t> / visual <leader>ca / <leader>cc / <leader>cr) ARE wired - see
--- pi/keymaps.lua. Only live JSONL edit-following is still stubbed.
+-- Context keymaps (<leader>ca / <C-t> / visual <leader>ca / <leader>cc / <leader>cr) are
+-- wired in pi/keymaps.lua.
 --
--- Unlike crush (SQLite), pi DOES write JSONL sessions, so a real edit-following adapter
--- is feasible. The on-disk layout is Claude-like:
---   ~/.pi/agent/sessions/--<encoded-cwd>--/<timestamp>_<uuid>.jsonl
--- The first line is a header: {"type":"session","version":N,"id":..,"cwd":..}, so
--- session_ownership/extract_cwd read straight off `cwd` (the maki/claude pattern).
+-- Edit-following AND session state: pi does NOT use the JSONL watcher other harnesses use.
+-- projects_dir() stays nil (watcher off). Instead a pi EXTENSION (nvim-harness-follow.ts) runs
+-- inside pi and pushes two kinds of events to this nvim over $NVIM:
+--   * edit events    -> fire the `User HarnessEdit` autocmd edit-jump.lua consumes (jump to file:line)
+--   * session events -> real session id + working/idle status, which pi/state.lua reads for accurate
+--                       status + a uuid label instead of guessing from file mtimes.
+-- This avoids reverse-engineering pi's JSONL record shape, session pinning, and fswatch - pi hands
+-- us structured data (path + numbered details.diff, getSessionId(), agent_start/settled) directly.
+-- See pi/follow.lua for the nvim-side bridge (symlink bootstrap + RPC receiver + registry) and
+-- nvim-harness-follow.ts for the pi-side push.
 --
--- The edit-record shape HAS now been reverse-engineered from real sessions (the old
--- "no edit session to sample" blocker is gone). Entries are {"type":"message",
--- "message":{role,...}}. Edits look like:
---   * assistant toolCall block: {type:"toolCall", id, name:"edit"|"write", arguments:{path,...}}
---   * toolResult: {role:"toolResult", toolCallId, toolName, content:[{text}], details, isError}
---       - edit results carry details.diff: an ALREADY-numbered unified diff, e.g.
---         "+163   // ..." / "-165   if (...)" (sign BEFORE the line number - not maki's format)
---       - write results have details:null and text "Successfully wrote to <path>"
--- To upgrade: point projects_dir() at ~/.pi/agent/sessions (recursive - per-project
--- subdirs, NOT flat), keep session_ownership()/extract_cwd() reading the header cwd, and
--- implement parse_tool_result() by matching edit/write toolResult lines: pull the path from
--- the result text (or correlate toolCallId back to the toolCall's arguments.path) and the
--- starting_line from the first signed line number in details.diff. Then wire history_spec
--- back into pi/keymaps.lua.
+-- on_activate() (called by the generic adapter hook in init.setup and switch.switch) is what
+-- makes the extension portable: it symlinks the repo's extension file into pi's global
+-- extensions dir, so shipping the nvim config ships pi edit-following with no manual install.
 --
--- While projects_dir() returns nil, watcher.start() logs "live JSONL following
--- disabled" and no-ops; the remaining required functions are inherited from the
--- shared stub base (stub-adapter.lua) and are never reached.
+-- The remaining adapter functions are inherited from the shared stub base (stub-adapter.lua)
+-- and are never reached while projects_dir() is nil.
 local M = setmetatable({}, { __index = require("harness-decorators.stub-adapter") })
 
 -- ==========================================================================
 -- PATHS
 -- ==========================================================================
 
----Barebones: return nil so the watcher stays off for pi. (A real adapter would
----return os.getenv("HOME") .. "/.pi/agent/sessions".)
+---nil keeps the JSONL watcher off for pi: edit-following is push-based via the extension
+---(see pi/follow.lua), not tail-based.
 ---@return string?
 function M.projects_dir()
   return nil
+end
+
+-- ==========================================================================
+-- ACTIVATION
+-- ==========================================================================
+
+---Run when pi becomes the active harness (init.setup at startup, or switch.switch). Ensures
+---the pi edit-following extension is symlinked into pi's global extensions dir so the next pi
+---launch loads it. Idempotent and fail-soft.
+function M.on_activate()
+  pcall(function()
+    require("harness-decorators.pi.follow").ensure()
+  end)
 end
 
 return M

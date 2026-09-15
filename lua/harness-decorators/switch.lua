@@ -116,6 +116,15 @@ function M.switch(new_harness)
   keymaps.apply(keymaps.build(new_harness))
   current_harness = new_harness
 
+  -- Optional per-adapter activation hook (only pi defines it: symlinks its edit-following
+  -- extension into pi's extensions dir). Guarded so other harnesses are unaffected.
+  pcall(function()
+    local adapter = require("harness-decorators." .. new_harness)
+    if type(adapter.on_activate) == "function" then
+      adapter.on_activate()
+    end
+  end)
+
   -- Re-point the JSONL watcher at the new (now-active) harness: stop the old backend (it's
   -- still subscribed to the OLD harness's sessions dir), clear all pinned/session state (so
   -- edit-jump can't keep following the previous harness's files), then restart against the new

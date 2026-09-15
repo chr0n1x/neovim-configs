@@ -1,14 +1,15 @@
--- Pi state adapter: session label (ported from the tmux picker's pi branch).
+-- Pi state adapter: work status + session label.
 --
--- Pi has no per-pid status source in the tmux script - it rides the shared
---child-process check - so this adapter only provides a label.
+-- Preferred source: the pi extension (nvim-harness-follow.ts) pushes session events into
+-- pi/follow.lua while pi runs inside nvim, giving the REAL session id + working/idle status.
+-- When that pushed state exists for the cwd, status/label use it directly - accurate status
+-- (not "unknown") and a uuid label with no guessing.
 --
--- Label: pi keys its session dir off the cwd: --<cwd>-- with the leading slash
---stripped and /, \, : turned into - (jsonlSessionDirectoryName in the pi
---bundle). macOS won't expose a process's env, so the exact PI_SESSION_FILE
---isn't reachable by pid; instead take the most recently modified session file
---in that dir (matches maki's cwd-latest behaviour). The label is the last
---session_info.name (user/auto title), else the first user message.
+-- Fallback (pi run OUTSIDE nvim, so nothing was pushed): pi keys its session dir off the cwd
+-- (--<cwd>-- with the leading slash stripped and /, \, : turned into -). macOS won't expose a
+-- process's env, so the exact session isn't reachable by pid; take the session file whose mtime
+-- best matches the terminal's open time and derive the uuid from its filename (…_<uuid>.jsonl).
+-- Status has no fallback signal, so it stays "unknown" (delegates to the shared child check).
 
 local utils = require("harness-decorators.utils")
 
@@ -73,51 +74,19 @@ local function newest_jsonl(dir)
   return best
 end
 
----Last session_info.name, else first user message (ported from the python).
----@param path string
----@return string?
-local function read_title(path)
-  local f = io.open(path, "r")
-  if not f then
-    return nil
-  end
-  local name, first = nil, nil
-  for line in f:lines() do
-    local ok, e = pcall(vim.json.decode, line)
-    if not ok or type(e) ~= "table" then
-      goto continue
-    end
-    if e.type == "session_info" and type(e.name) == "string" and e.name ~= "" then
-      name = e.name
-    elseif not first and e.type == "message" then
-      local m = e.message
-      if type(m) == "table" and m.role == "user" then
-        local c = m.content
-        if type(c) == "table" then
-          local parts = {}
-          for _, b in ipairs(c) do
-            if type(b) == "table" and b.type == "text" and type(b.text) == "string" then
-              parts[#parts + 1] = b.text
-            end
-          end
-          c = table.concat(parts, " ")
-        end
-        if type(c) == "string" and c ~= "" then
-          first = c:gsub("\n", " "):match("^%s*(.-)%s*$")
-        end
-      end
-    end
-    ::continue::
-  end
-  f:close()
-  return name or first
-end
-
 ---@param pid number|string
 ---@param cwd string
 ---@return "working"|"idle"|"unknown"
-function M.status(_pid, _cwd)
-  -- No per-pid signal; delegate to the child-process check.
+function M.status(_pid, cwd)
+  -- Preferred: real status the extension pushed for this cwd (pi running in nvim).
+  local ok, follow = pcall(require, "harness-decorators.pi.follow")
+  if ok then
+    local s = follow.session_for_cwd(cwd)
+    if s and (s.status == "working" or s.status == "idle") then
+      return s.status
+    end
+  end
+  -- No pushed state (pi run outside nvim): no per-pid signal, delegate to the child check.
   return "unknown"
 end
 
@@ -128,13 +97,23 @@ function M.label(_pid, cwd)
   if not cwd or cwd == "" then
     return nil
   end
+
+  -- Preferred: the short uuid the extension pushed for this cwd (pi running in nvim).
+  local ok, follow = pcall(require, "harness-decorators.pi.follow")
+  if ok then
+    local s = follow.session_for_cwd(cwd)
+    if s and s.session_id then
+      return follow.short_uuid(s.session_id)
+    end
+  end
+
+  -- Fallback: derive the uuid from the session file whose mtime matches THIS terminal's open time
+  -- (a fresh session in a dir with older ones must not inherit the previous one). term.opened_at is
+  -- nil for non-term contexts/tests, which falls through to newest_jsonl.
   local dir = sessions_root() .. "/" .. dir_name(cwd)
   if not vim.uv.fs_stat(dir) then
     return nil
   end
-  -- Prefer the session whose mtime matches THIS terminal's open time (a fresh session in a dir with
-  -- older ones must not inherit the previous title). term.opened_at is nil for non-term contexts/
-  -- tests, which falls through to newest_jsonl.
   local f = nil
   local ok_term, term = pcall(require, "harness-decorators.term")
   if ok_term and type(term.opened_at) == "function" then
@@ -146,7 +125,11 @@ function M.label(_pid, cwd)
   if not f then
     return nil
   end
-  return read_title(f)
+  local uuid = vim.fn.fnamemodify(f, ":t"):match("_([%x%-]+)%.jsonl$")
+  if not uuid then
+    return nil
+  end
+  return uuid:sub(1, 8)
 end
 
 return M
