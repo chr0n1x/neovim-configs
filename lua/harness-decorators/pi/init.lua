@@ -3,18 +3,30 @@
 -- harness-agnostic modules (watcher, jsonl-parser) can require it without
 -- crashing when pi is the active harness.
 --
--- Status: STUB (no live edit-following), by choice - this is the barebones scope.
+-- Status: STUB for edit-following (projects_dir() returns nil). The context keymaps
+-- (<leader>ca / <C-t> / visual <leader>ca / <leader>cc / <leader>cr) ARE wired - see
+-- pi/keymaps.lua. Only live JSONL edit-following is still stubbed.
 --
--- Unlike crush (SQLite), pi DOES write JSONL sessions, so a real adapter is
--- feasible later. The on-disk layout is Claude-like:
---   ~/.pi/agent/sessions/<encoded-cwd>/<timestamp>_<uuid>.jsonl
--- The first line is a header: {"type":"session","version":N,"id":..,"cwd":..},
--- so session_ownership/pinning could be read straight from `cwd` (the maki
--- pattern). Edit-following additionally needs pi's tool_use/edit record shape,
--- which wasn't reverse-engineered here (no non-errored local edit session to
--- sample). To upgrade later: point projects_dir() at ~/.pi/agent/sessions and
--- implement session_ownership()/extract_cwd() from the header, then
--- parse_tool_result() from a real pi edit session.
+-- Unlike crush (SQLite), pi DOES write JSONL sessions, so a real edit-following adapter
+-- is feasible. The on-disk layout is Claude-like:
+--   ~/.pi/agent/sessions/--<encoded-cwd>--/<timestamp>_<uuid>.jsonl
+-- The first line is a header: {"type":"session","version":N,"id":..,"cwd":..}, so
+-- session_ownership/extract_cwd read straight off `cwd` (the maki/claude pattern).
+--
+-- The edit-record shape HAS now been reverse-engineered from real sessions (the old
+-- "no edit session to sample" blocker is gone). Entries are {"type":"message",
+-- "message":{role,...}}. Edits look like:
+--   * assistant toolCall block: {type:"toolCall", id, name:"edit"|"write", arguments:{path,...}}
+--   * toolResult: {role:"toolResult", toolCallId, toolName, content:[{text}], details, isError}
+--       - edit results carry details.diff: an ALREADY-numbered unified diff, e.g.
+--         "+163   // ..." / "-165   if (...)" (sign BEFORE the line number - not maki's format)
+--       - write results have details:null and text "Successfully wrote to <path>"
+-- To upgrade: point projects_dir() at ~/.pi/agent/sessions (recursive - per-project
+-- subdirs, NOT flat), keep session_ownership()/extract_cwd() reading the header cwd, and
+-- implement parse_tool_result() by matching edit/write toolResult lines: pull the path from
+-- the result text (or correlate toolCallId back to the toolCall's arguments.path) and the
+-- starting_line from the first signed line number in details.diff. Then wire history_spec
+-- back into pi/keymaps.lua.
 --
 -- While projects_dir() returns nil, watcher.start() logs "live JSONL following
 -- disabled" and no-ops; the remaining required functions are inherited from the

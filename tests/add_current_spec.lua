@@ -154,8 +154,8 @@ describe("<leader>ca action: resolves % to a real file and reaches the send stag
 
       it("<leader>ca binding matches the harness's declared add command", function()
         if not cmd_name then
-          -- crush (tree-add only), pi (barebones), or an inline-callback <leader>ca declare no
-          -- parseable user-command here; their binding is covered by harness_keymaps_spec.
+          -- crush (tree-add only) or an inline-callback <leader>ca declare no parseable
+          -- user-command here; their binding is covered by harness_keymaps_spec.
           return
         end
         assert.is_not_nil(cmd_name, ("%s: <leader>ca entry has no parseable command"):format(harness))

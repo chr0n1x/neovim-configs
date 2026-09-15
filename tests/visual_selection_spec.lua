@@ -61,4 +61,26 @@ describe("visual context selection", function()
 
     assert.is_truthy(sent:match("^@.+#L2%-3$"), sent)
   end)
+
+  it("formats Pi selections as an @mention with a line range", function()
+    local sent
+    package.loaded["harness-decorators.pi.keymaps"] = nil
+    local original = context_inject.send_visual_selection
+    context_inject.send_visual_selection = function(_, build_context_text)
+      return function()
+        sent = build_context_text(vim.fn.expand("%:p"), 2, 3)
+      end
+    end
+
+    local specs = require("harness-decorators.pi.keymaps")
+    context_inject.send_visual_selection = original
+    for _, spec in ipairs(specs) do
+      if spec[1] == "<leader>ca" and spec.mode == "v" then
+        spec[2]()
+        break
+      end
+    end
+
+    assert.is_truthy(sent:match("^@.+#L2%-3$"), sent)
+  end)
 end)

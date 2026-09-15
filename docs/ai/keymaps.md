@@ -2,8 +2,11 @@
 
 `lua/plugins/ai-harness.lua` consolidates the per-harness tables from
 `lua/harness-decorators/<harness>/keymaps.lua` into one keys table. The bindings
-below are shared by both `claude` and `maki`; only the underlying command names
-and descriptions differ.
+below are the full set; harnesses wire up a subset and differ in command names.
+`claude`, `copilot`, `maki`, and `pi` all wire the context keys (`<leader>ca`,
+`<C-t>`, visual `<leader>ca`) via the shared `context-inject` helpers; `crush` has
+tree-add only. `<leader>cu` (edit-history picker) exists only where the harness has
+live JSONL edit-following - not `crush` or `pi` (yet).
 
 | Key | Mode | Action |
 |---|---|---|

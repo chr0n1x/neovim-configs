@@ -6,8 +6,8 @@
 --      "maki: not a readable file: neo-tree".
 --   3. If a harness declares a <leader>ca binding, it is mapped globally (normal mode).
 --
--- Harnesses differ in how many of these they wire up (pi is deliberately barebones; crush
--- has tree-add but no add-current-buffer), so we assert each invariant CONDITIONALLY on
+-- Harnesses differ in how many of these they wire up (crush has tree-add but no
+-- add-current-buffer), so we assert each invariant CONDITIONALLY on
 -- the harness's own declared keymap table - reading it via keymaps.build() rather than
 -- hardcoding a per-harness list. This catches a regression where a harness loses a binding
 -- it declares, or accidentally maps <C-t> globally, without forcing every harness to be
@@ -151,6 +151,26 @@ describe("harness keymap contract (all harnesses)", function()
           for _, stock in ipairs({ "ClaudeCodeAdd", "ClaudeCodeSend", "ClaudeCodeOpen" }) do
             assert.is_falsy(rhs:find(stock, 1, true),
               ("claude <leader>ca must not run the stock %s command - got: %q"):format(stock, rhs))
+          end
+        end)
+      end
+
+      -- Regression (pi): the pre-refactor pi keymaps were stashed against claudecode.nvim
+      -- (ClaudeCodeFocus/ClaudeCodeOpen/claudecode.integrations). The re-port onto our own
+      -- term.lua/tree-select must NOT reintroduce any claudecode reference. pi now declares
+      -- both <leader>ca (PiAdd) and <C-t> (PiTreeAdd); assert their actions are claudecode-free.
+      if harness == "pi" then
+        it("pi <leader>ca and <C-t> declared and reference no claudecode command", function()
+          local ca = find_spec(specs, "<leader>ca")
+          local ct = find_spec(specs, "<C-t>")
+          assert.is_not_nil(ca, "pi must declare a normal-mode <leader>ca")
+          assert.is_not_nil(ct, "pi must declare a <C-t> tree-add")
+          for _, spec in ipairs({ ca, ct }) do
+            local rhs = tostring(spec[2])
+            for _, stock in ipairs({ "ClaudeCode", "claudecode" }) do
+              assert.is_falsy(rhs:find(stock, 1, true),
+                ("pi keymap must not reference %s - got: %q"):format(stock, rhs))
+            end
           end
         end)
       end
