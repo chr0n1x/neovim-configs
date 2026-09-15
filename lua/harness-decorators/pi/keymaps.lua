@@ -16,8 +16,8 @@
 -- @mention (@path#L1-2) is unverified - whole-file @path is confirmed working; the range
 -- form follows the claude/copilot convention.
 --
--- No history_spec (<leader>cu): pi has no live JSONL edit-following wired yet (see
--- pi/init.lua), so there is no recorded-edits picker to hang off. Add it when the pi
+-- Pi's push bridge records edit events in the shared sidecar format, so it uses the same
+-- <leader>cu history picker as the JSONL-watching adapters. Add it when the pi
 -- JSONL adapter lands.
 
 local ci = require("harness-decorators.context-inject")
@@ -87,5 +87,6 @@ return {
   },
   { "<leader>ca", "<cmd>PiAdd %<cr>", desc = "Add current buffer" },
   { "<leader>ca", send_selection, mode = "v", desc = "Send selection to Pi" },
+  keymaps.history_spec("pi"),
   keymaps.tree_add_spec("pi", "PiTreeAdd"),
 }

@@ -234,6 +234,31 @@ describe("pi follow bridge", function()
   end)
 
   describe("adapter wiring", function()
+    it("declares push-based following so the JSONL watcher stays quiet", function()
+      assert.is_true(require("harness-decorators.pi").push_following)
+    end)
+
+    it("extracts the session id and renders pushed diffs for history", function()
+      local pi = require("harness-decorators.pi")
+      local id = "01a0a1c2-2350-76fa-9de0-430fb6578058"
+      assert.are.equal(id, pi.session_id("/tmp/2026-01-01T00-00-00-000Z_" .. id .. ".jsonl"))
+      assert.are.equal(3, pi.score_event({ type = "pi_harness_edit", diff = "+ 3 changed" }))
+      assert.are.equal("+ 3 changed", pi.extract_diff({ diff = "+ 3 changed" }))
+      assert.are.equal("(no diff data available)", pi.extract_diff(nil))
+    end)
+
+    it("adds pi's edit history to the shared <leader>cu picker", function()
+      local found
+      for _, spec in ipairs(require("harness-decorators.pi.keymaps")) do
+        if spec[1] == "<leader>cu" then
+          found = spec
+          break
+        end
+      end
+      assert.is_not_nil(found)
+      assert.are.equal("n", found.mode[1])
+    end)
+
     it("the pi adapter exposes on_activate", function()
       assert.are.equal("function", type(require("harness-decorators.pi").on_activate))
     end)

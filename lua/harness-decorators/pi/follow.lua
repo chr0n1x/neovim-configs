@@ -16,6 +16,8 @@
 -- All the testable logic lives here (see tests/pi_follow_spec.lua); the .ts stays thin.
 local M = {}
 
+local sidecar = require("harness-decorators.sidecar")
+
 local EXT_NAME = "nvim-harness-follow.ts"
 
 -- Session registry, populated by pushed "session" events. Keyed by session id, with a
@@ -109,6 +111,21 @@ local function fire_edit(data)
     return
   end
   local starting_line = data.starting_line or M.starting_line_from_diff(data.diff)
+  local session_id = data.session_id
+  local event_id = data.event_id or (session_id and (session_id .. ":" .. tostring(vim.uv.hrtime())))
+  if session_id and type(data.diff) == "string" then
+    sidecar.append(
+      sidecar.path(session_id),
+      vim.json.encode({
+        type = "pi_harness_edit",
+        session_id = session_id,
+        event_id = event_id,
+        file_path = file_path,
+        operation = data.operation or "Edit",
+        diff = data.diff,
+      })
+    )
+  end
   vim.schedule(function()
     vim.api.nvim_exec_autocmds("User", {
       pattern = "HarnessEdit",
@@ -119,9 +136,9 @@ local function fire_edit(data)
         delta = data.delta,
         source_line = nil,
         jsonl_path = data.session_file,
-        event_uuid = data.session_id,
+        event_uuid = session_id,
         event_timestamp = nil,
-        event_id = nil,
+        event_id = event_id,
       },
     })
   end)

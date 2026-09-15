@@ -705,6 +705,14 @@ function M.start()
   end
   M.stop()
 
+  -- Push-based adapters (currently pi) receive structured events from the harness extension and
+  -- do not need a filesystem watcher. This is an intentional adapter mode, not a missing sessions
+  -- directory, so do not emit the generic "following disabled" warning.
+  if adapter.push_following then
+    utils.log(utils.harness .. " edit following is provided by the harness extension", vim.log.levels.DEBUG)
+    return
+  end
+
   local backend = which("inotifywait") and "inotifywait" or (which("fswatch") and "fswatch")
   if not backend then
     utils.log("neither inotifywait nor fswatch found; live JSONL following disabled", vim.log.levels.WARN)

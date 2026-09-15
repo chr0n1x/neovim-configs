@@ -25,6 +25,10 @@
 -- and are never reached while projects_dir() is nil.
 local M = setmetatable({}, { __index = require("harness-decorators.stub-adapter") })
 
+-- The pi extension pushes structured edit events into Neovim, so the generic filesystem watcher
+-- must not warn or attempt to start for this adapter.
+M.push_following = true
+
 -- ==========================================================================
 -- PATHS
 -- ==========================================================================
@@ -34,6 +38,37 @@ local M = setmetatable({}, { __index = require("harness-decorators.stub-adapter"
 ---@return string?
 function M.projects_dir()
   return nil
+end
+
+---Extract pi's UUID from its timestamp_UUID session filename.
+---@param jsonl_path string
+---@return string?
+function M.session_id(jsonl_path)
+  return jsonl_path:match("_([%x%-]+)%.jsonl$")
+end
+
+---Name the sidecar used by the pi push bridge.
+---@param session_id string
+---@return string
+function M.sidecar_name(session_id)
+  return "pi-events-session-" .. session_id
+end
+
+---Score a synthetic event written by pi/follow.lua.
+---@param ev table
+---@return integer
+function M.score_event(ev)
+  return ev.type == "pi_harness_edit" and type(ev.diff) == "string" and 3 or 0
+end
+
+---Return pi's already-numbered edit diff for the history preview.
+---@param ev table?
+---@return string
+function M.extract_diff(ev)
+  if ev and type(ev.diff) == "string" and ev.diff ~= "" then
+    return ev.diff
+  end
+  return "(no diff data available)"
 end
 
 -- ==========================================================================

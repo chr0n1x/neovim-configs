@@ -78,8 +78,10 @@ export default function (pi: ExtensionAPI) {
     push({
       kind: "edit",
       session_id: ctx.sessionManager.getSessionId(),
+      session_file: ctx.sessionManager.getSessionFile() ?? undefined,
       file_path: resolve(process.cwd(), input.path),
       operation: event.toolName === "write" ? "Write" : "Edit",
+      event_id: event.toolCallId,
       diff: details.diff,
     });
   });
