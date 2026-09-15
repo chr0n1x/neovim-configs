@@ -268,6 +268,14 @@ function M.terminal_keys()
       desc = "✥",
     },
     {
+      "<C-p>",
+      function()
+        require("util.procs").pick()
+      end,
+      mode = "t",
+      desc = "⚙",
+    },
+    {
       "<C-h>",
       function(self)
         M.go_back_key(self)

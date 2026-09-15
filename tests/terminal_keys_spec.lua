@@ -76,7 +76,9 @@ describe("terminal key legend: one handler per key", function()
     local ok = pcall(vim.cmd, "terminal cat")
     assert.is_true(ok, "could not open a terminal window (cat)")
     local win = vim.api.nvim_get_current_win()
-    vim.wait(100, function() return false end, 25)
+    vim.wait(100, function()
+      return false
+    end, 25)
     return win
   end
 
@@ -105,10 +107,14 @@ describe("terminal key legend: one handler per key", function()
     local lines, cols = vim.o.lines, vim.o.columns
     local exp_w = (1 - 0.2) * cols -- 1 - 2*wide_col_pad
     local exp_h = (1 - 0.1) * lines -- 1 - 2*wide_row_pad
-    assert.is_true(cfg.width >= math.floor(exp_w) - 1 and cfg.width <= math.ceil(exp_w) + 1,
-      string.format("<C-f> fullscreen width %d not near expected ~%d", cfg.width or -1, exp_w))
-    assert.is_true(cfg.height >= math.floor(exp_h) - 1 and cfg.height <= math.ceil(exp_h) + 1,
-      string.format("<C-f> fullscreen height %d not near expected ~%d", cfg.height or -1, exp_h))
+    assert.is_true(
+      cfg.width >= math.floor(exp_w) - 1 and cfg.width <= math.ceil(exp_w) + 1,
+      string.format("<C-f> fullscreen width %d not near expected ~%d", cfg.width or -1, exp_w)
+    )
+    assert.is_true(
+      cfg.height >= math.floor(exp_h) - 1 and cfg.height <= math.ceil(exp_h) + 1,
+      string.format("<C-f> fullscreen height %d not near expected ~%d", cfg.height or -1, exp_h)
+    )
     -- It must be a float now (the animation re-parents the window relative to the editor).
     assert.is_true(cfg.relative == "editor", "<C-f> fullscreen must reposition the window as an editor-relative float")
   end)
@@ -120,7 +126,9 @@ describe("terminal key legend: one handler per key", function()
     local fake = make_fake({ win = win })
 
     pcall(term_mod.fullscreen_key, fake)
-    vim.wait(2000, function() return not (fake._resize_anim and fake._resize_anim:is_running()) end, 25)
+    vim.wait(2000, function()
+      return not (fake._resize_anim and fake._resize_anim:is_running())
+    end, 25)
     local wide_cfg = vim.api.nvim_win_get_config(win)
 
     -- Second press collapses back to the saved config.
@@ -128,14 +136,21 @@ describe("terminal key legend: one handler per key", function()
     assert.is_true(ok, "fullscreen_key (collapse) raised: " .. tostring(err))
     assert.is_false(fake._wide, "<C-f> second press must clear _wide (collapse)")
 
-    vim.wait(2000, function() return not (fake._resize_anim and fake._resize_anim:is_running()) end, 25)
+    vim.wait(2000, function()
+      return not (fake._resize_anim and fake._resize_anim:is_running())
+    end, 25)
     local collapsed_cfg = vim.api.nvim_win_get_config(win)
 
     -- After collapse the window should be back to roughly the saved size - clearly smaller than the
     -- fullscreen width we measured. (The saved config was a plain split, so its width is ~half.)
-    assert.is_true(collapsed_cfg.width < wide_cfg.width,
-      string.format("collapse did not shrink the window: collapsed %d >= wide %d",
-        collapsed_cfg.width or -1, wide_cfg.width or -1))
+    assert.is_true(
+      collapsed_cfg.width < wide_cfg.width,
+      string.format(
+        "collapse did not shrink the window: collapsed %d >= wide %d",
+        collapsed_cfg.width or -1,
+        wide_cfg.width or -1
+      )
+    )
   end)
 
   it("<C-h> go_back_key: moves focus back WITHOUT hiding the float", function()
@@ -157,7 +172,9 @@ describe("terminal key legend: one handler per key", function()
     local win = vim.api.nvim_get_current_win()
     local buf = vim.api.nvim_win_get_buf(win)
     -- Give the buffer a moment to register its buftype before we enter insert mode.
-    vim.wait(100, function() return false end, 25)
+    vim.wait(100, function()
+      return false
+    end, 25)
 
     -- Enter terminal insert mode (what the float does on open via start_insert).
     vim.cmd("startinsert!")
@@ -186,6 +203,32 @@ describe("terminal key legend: one handler per key", function()
     local ok, err = pcall(term_mod.close_key, fake)
     assert.is_true(ok, "close_key raised: " .. tostring(err))
     assert.is_true(fake.hide_called, "<Esc> must hide the float - that is what 'close' means here")
+  end)
+
+  it("<C-p> opens the procs picker from terminal mode", function()
+    local keys = term_mod.terminal_keys()
+    local procs_key
+    for _, spec in ipairs(keys) do
+      if spec[1] == "<C-p>" then
+        procs_key = spec
+        break
+      end
+    end
+    assert.is_not_nil(procs_key, "<C-p> must be in the shared terminal legend")
+    assert.are.equal("t", procs_key.mode, "<C-p> must be a terminal-mode key")
+    assert.are.equal("⚙", procs_key.desc)
+
+    local procs = require("util.procs")
+    local original_pick = procs.pick
+    local called = false
+    procs.pick = function()
+      called = true
+    end
+    local ok, err = pcall(procs_key[2])
+    procs.pick = original_pick
+
+    assert.is_true(ok, "<C-p> handler raised: " .. tostring(err))
+    assert.is_true(called, "<C-p> must call the procs picker")
   end)
 
   it("<C-l> is in the shared legend and bound to the SAME handler as <C-h>", function()

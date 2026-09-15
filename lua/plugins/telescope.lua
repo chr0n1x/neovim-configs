@@ -45,9 +45,12 @@ return {
 
     telescope.load_extension("fzf")
 
-    vim.keymap.set("n", "<leader>P", function()
+    local function pick_procs()
       require("util.procs").pick()
-    end, { desc = "Telescope: long-running processes." })
+    end
+
+    vim.keymap.set("n", "<C-p>", pick_procs, { desc = "Telescope: long-running processes." })
+    vim.keymap.set("n", "<leader>P", pick_procs, { desc = "Telescope: long-running processes." })
 
     vim.keymap.set("n", "<leader>Pr", function()
       require("util.procs").prompt_new()
