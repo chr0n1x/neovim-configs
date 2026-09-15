@@ -142,7 +142,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
     assert.is_not_nil(g[display.HL_WORKING], "working dot group missing")
     -- The dot is "● " (a 4-byte UTF-8 circle + space); the name starts right after it.
     assert.are.equal(0, g[display.HL_WORKING].start)
-    assert.are.equal(#("● "), g[display.HL_WORKING].stop)
+    assert.are.equal(#"● ", g[display.HL_WORKING].stop)
     assert.is_not_nil(g.HarnessTitleClaude, "name must still be colored")
   end)
 
@@ -163,7 +163,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
     local g = groups_of("maki", "claude", { maki = 42 })
     assert.is_not_nil(g[display.HL_UNKNOWN], "unknown dot group missing")
     -- The unknown glyph is a hollow ring "○ ".
-    assert.are.equal(#("○ "), g[display.HL_UNKNOWN].stop)
+    assert.are.equal(#"○ ", g[display.HL_UNKNOWN].stop)
   end)
 
   it("shows no dot for a harness that was never opened (no live buffer)", function()
@@ -183,8 +183,8 @@ describe("picker: make_entry renders a work-status dot + harness name", function
     end
     local g = groups_of("claude", "claude", { claude = 42 })
     -- The working dot is "● " (4 bytes); 'claude' is 6 bytes, so the name spans [4, 10).
-    assert.are.equal(#("● "), g.HarnessTitleClaude.start, "name should start right after the dot")
-    assert.are.equal(#("● ") + #("claude"), g.HarnessTitleClaude.stop)
+    assert.are.equal(#"● ", g.HarnessTitleClaude.start, "name should start right after the dot")
+    assert.are.equal(#"● " + #"claude", g.HarnessTitleClaude.stop)
   end)
 
   it("falls back to plain text when the harness has no title group", function()
@@ -250,6 +250,30 @@ describe("picker: M.pick uses a horizontal layout with the expected titles (Task
     package.loaded["telescope.pickers"] = nil
   end)
 
+  it("puts the active harness before idle harnesses", function()
+    local state = require("harness-decorators.agent-state")
+    local original_poll = state.poll
+    local active = sw.current()
+    local idle = active == "maki" and "claude" or "maki"
+    local other = active == "pi" and "crush" or "pi"
+    state.poll = function(name)
+      if name == idle then
+        return { status = "idle" }
+      end
+      return nil
+    end
+
+    local ordered = sw.order_harnesses({
+      { name = other, installed = true },
+      { name = idle, installed = true },
+      { name = active, installed = true },
+    })
+    state.poll = original_poll
+
+    assert.are.equal(active, ordered[1].name)
+    assert.are.equal(idle, ordered[2].name)
+  end)
+
   it("uses the horizontal layout strategy with the prompt on the bottom", function()
     sw.pick()
     assert.is_not_nil(captured, "M.pick did not reach telescope.pickers.new")
@@ -268,6 +292,19 @@ describe("picker: M.pick uses a horizontal layout with the expected titles (Task
     -- The dynamic per-harness name is already rendered as the first line of the preview buffer, so a
     -- static "Preview" title is the pragmatic choice (telescope titles are set once at creation).
     assert.are.equal("Preview", captured.preview_title)
+  end)
+
+  it("selects the current active harness by default", function()
+    sw.pick()
+    local expected
+    for index, h in ipairs(require("harness-decorators.agent-state").harnesses()) do
+      if h.name == sw.current() then
+        expected = index
+        break
+      end
+    end
+    assert.is_not_nil(expected, "current harness must be present in the picker results")
+    assert.are.equal(expected, captured.default_selection_index)
   end)
 end)
 

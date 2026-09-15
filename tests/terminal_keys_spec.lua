@@ -197,6 +197,17 @@ describe("terminal key legend: one handler per key", function()
     assert.is_false(fake.hide_called, "<C-n> must NOT hide the float")
   end)
 
+  it("registers a FocusGained handler for harness terminals", function()
+    local autocmds = vim.api.nvim_get_autocmds({
+      group = "HarnessTerminalAutoInsert",
+      event = "FocusGained",
+    })
+    assert.are.equal(1, #autocmds, "FocusGained must have one harness-terminal handler")
+
+    local ok, err = pcall(vim.api.nvim_exec_autocmds, "FocusGained", {})
+    assert.is_true(ok, "FocusGained handler raised: " .. tostring(err))
+  end)
+
   it("<Esc> close_key: hides the float (panel closes)", function()
     -- <Esc> is the close key: it MUST hide the instance (the PTY stays alive underneath).
     local fake = make_fake()
@@ -229,6 +240,32 @@ describe("terminal key legend: one handler per key", function()
 
     assert.is_true(ok, "<C-p> handler raised: " .. tostring(err))
     assert.is_true(called, "<C-p> must call the procs picker")
+  end)
+
+  it("<C-o> opens the agent picker from terminal mode", function()
+    local keys = term_mod.terminal_keys()
+    local agent_key
+    for _, spec in ipairs(keys) do
+      if spec[1] == "<C-o>" then
+        agent_key = spec
+        break
+      end
+    end
+    assert.is_not_nil(agent_key, "<C-o> must be in the shared terminal legend")
+    assert.are.equal("t", agent_key.mode, "<C-o> must be a terminal-mode key")
+    assert.are.equal("⇄", agent_key.desc)
+
+    local switch = require("harness-decorators.switch")
+    local original_pick = switch.pick
+    local called = false
+    switch.pick = function()
+      called = true
+    end
+    local ok, err = pcall(agent_key[2])
+    switch.pick = original_pick
+
+    assert.is_true(ok, "<C-o> handler raised: " .. tostring(err))
+    assert.is_true(called, "<C-o> must call the agent picker")
   end)
 
   it("<C-l> is in the shared legend and bound to the SAME handler as <C-h>", function()

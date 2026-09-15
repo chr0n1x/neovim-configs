@@ -5,16 +5,17 @@
 below are the full set; harnesses wire up a subset and differ in command names.
 `claude`, `copilot`, `maki`, and `pi` all wire the context keys (`<leader>ca`,
 `<C-t>`, visual `<leader>ca`) via the shared `context-inject` helpers; `crush` has
-tree-add only. `<leader>cu` (edit-history picker) exists only where the harness has
-live JSONL edit-following - not `crush` or `pi` (yet).
+tree-add only. `<leader>cu` (edit-history picker) is available for harnesses with
+edit-following, including pi's push-based edit following.
 
 | Key | Mode | Action |
-|---|---|---|
+| --- | --- | --- |
 | `<leader>c` | n, x | Focus the harness terminal |
 | `<leader>cr` | n | Resume session (`--resume`) |
 | `<leader>cc` | n | Continue session (`--continue`) |
 | `<leader>cm` | n | Select model |
 | `<leader>cu` | n | Telescope picker of the harness's changes |
+| `<C-o>` | n | Switch AI harness |
 | `<leader>ca` | n | Add current buffer |
 | `<leader>ca` | v | Send visual selection (path + line range) |
 | `<C-t>` | tree ft | Add file(s) under cursor / selected in tree |

@@ -69,12 +69,23 @@ local ft_buf_maps = {}
 
 ---The harness-agnostic switcher key. Appended to every harness's spec list so it
 ---always survives a switch's clear/reapply (see switch.lua).
+local function open_agent_picker()
+  require("harness-decorators.switch").pick()
+end
+
 local function switch_spec()
   return {
     "<leader>cl",
-    function()
-      require("harness-decorators.switch").pick()
-    end,
+    open_agent_picker,
+    desc = "Switch AI harness",
+    mode = { "n" },
+  }
+end
+
+local function agent_picker_spec()
+  return {
+    "<C-o>",
+    open_agent_picker,
     desc = "Switch AI harness",
     mode = { "n" },
   }
@@ -208,6 +219,7 @@ function M.build(harness)
     table.insert(specs, spec)
   end
   table.insert(specs, switch_spec())
+  table.insert(specs, agent_picker_spec())
   table.insert(specs, agent_overview_spec())
   return specs
 end

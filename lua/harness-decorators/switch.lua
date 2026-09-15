@@ -360,6 +360,36 @@ local function make_harness_previewer(bufs, installed_set)
   })
 end
 
+---Order picker rows with the active harness first, followed by definitively idle harnesses.
+---@param harnesses table[] entries from agent-state.harnesses()
+---@return table[] ordered harness entries
+function M.order_harnesses(harnesses)
+  local state_ok, agent_state = pcall(require, "harness-decorators.agent-state")
+  local ordered = vim.deepcopy(harnesses)
+  local ranks = {}
+  for _, h in ipairs(ordered) do
+    local rank = 2
+    if h.name == current_harness then
+      rank = 0
+    elseif not h.installed then
+      rank = 3
+    elseif state_ok and type(agent_state.poll) == "function" then
+      local ok, state = pcall(agent_state.poll, h.name)
+      if ok and state and state.status == "idle" then
+        rank = 1
+      end
+    end
+    ranks[h.name] = rank
+  end
+  table.sort(ordered, function(a, b)
+    if ranks[a.name] ~= ranks[b.name] then
+      return ranks[a.name] < ranks[b.name]
+    end
+    return a.name < b.name
+  end)
+  return ordered
+end
+
 function M.pick()
   local ok_pickers, pickers = pcall(require, "telescope.pickers")
   if not ok_pickers then
@@ -372,15 +402,19 @@ function M.pick()
   local action_state = require("telescope.actions.state")
 
   local agent_state = require("harness-decorators.agent-state")
-  local harnesses = agent_state.harnesses()
+  local harnesses = M.order_harnesses(agent_state.harnesses())
   -- Terminal buffers to preview (active + parked). Captured once at picker-open; the previewer's
   -- refresh timer re-reads these buffers live, so a running harness's output updates in place.
   local bufs = M.collect_terminal_bufs()
   -- Set of installed harness names, used by both the previewer (status line) and the Enter guard.
   local installed_set = {}
-  for _, h in ipairs(harnesses) do
+  local active_index = 1
+  for index, h in ipairs(harnesses) do
     if h.installed then
       installed_set[h.name] = true
+    end
+    if h.name == current_harness then
+      active_index = index
     end
   end
 
@@ -393,6 +427,7 @@ function M.pick()
       prompt_title = "search",
       results_title = "Harnesses",
       preview_title = "Preview",
+      default_selection_index = active_index,
       -- Horizontal layout (Task 9): the prompt + results list stacked in one column on the LEFT, the
       -- colored preview pane on the RIGHT. The vertical strategy can't put the preview beside the
       -- list, and telescope has no multi-column results grid - horizontal is the only strategy that

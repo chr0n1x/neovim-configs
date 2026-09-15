@@ -60,6 +60,20 @@ vim.api.nvim_create_autocmd("WinEnter", {
   end,
 })
 
+vim.api.nvim_create_autocmd("FocusGained", {
+  group = auto_insert_group,
+  callback = function()
+    local win = vim.api.nvim_get_current_win()
+    local buf = vim.api.nvim_win_get_buf(win)
+    if not vim.b[buf].harness_terminal then
+      return
+    end
+    vim.schedule(function()
+      enter_terminal_mode(win, buf)
+    end)
+  end,
+})
+
 ---Deferred to the next tick (same reasoning as the old enter_insert_scheduled: snacks.open and a
 -- re-focus both return before the window/buffer has settled, so a synchronous startinsert does not
 -- reliably stick). Needed IN ADDITION to the WinEnter autocmd above: WinEnter only fires when the
@@ -274,6 +288,14 @@ function M.terminal_keys()
       end,
       mode = "t",
       desc = "⚙",
+    },
+    {
+      "<C-o>",
+      function()
+        require("harness-decorators.switch").pick()
+      end,
+      mode = "t",
+      desc = "⇄",
     },
     {
       "<C-h>",

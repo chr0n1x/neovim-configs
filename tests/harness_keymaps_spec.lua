@@ -83,32 +83,49 @@ describe("harness keymap contract (all harnesses)", function()
       end)
 
       it("<leader>c is mapped globally in normal mode", function()
-        assert.is_true(has_global_map("n", leader_key("c")),
-          ("%s: <leader>c not mapped globally in normal mode"):format(harness))
+        assert.is_true(
+          has_global_map("n", leader_key("c")),
+          ("%s: <leader>c not mapped globally in normal mode"):format(harness)
+        )
+      end)
+
+      it("<C-o> opens the same agent picker as <leader>cl", function()
+        local cl = find_spec(specs, "<leader>cl")
+        local co = find_spec(specs, "<C-o>")
+        assert.is_not_nil(cl, ("%s: missing <leader>cl agent picker"):format(harness))
+        assert.is_not_nil(co, ("%s: missing <C-o> agent picker"):format(harness))
+        assert.are.same({ "n" }, co.mode)
+        assert.are.equal(cl[2], co[2])
+        assert.is_true(has_global_map("n", "<C-o>"), ("%s: <C-o> not mapped globally in normal mode"):format(harness))
       end)
 
       it("declared <C-t> tree binding is ft-scoped, never global", function()
         local ct = find_spec(specs, "<C-t>")
         if ct then
           -- Must declare a tree filetype scope.
-          assert.is_not_nil(ct.ft,
-            ("%s: <C-t> declared without an ft scope (would map globally)"):format(harness))
+          assert.is_not_nil(ct.ft, ("%s: <C-t> declared without an ft scope (would map globally)"):format(harness))
           local fts = type(ct.ft) == "table" and ct.ft or { ct.ft }
           for _, ft in ipairs(fts) do
-            assert.is_true(vim.tbl_contains(TREE_FTS, ft),
-              ("%s: <C-t> scoped to non-tree filetype %q"):format(harness, tostring(ft)))
+            assert.is_true(
+              vim.tbl_contains(TREE_FTS, ft),
+              ("%s: <C-t> scoped to non-tree filetype %q"):format(harness, tostring(ft))
+            )
           end
         end
         -- Regardless of declaration, <C-t> must never be a global mapping.
-        assert.is_false(has_global_map("n", "<C-t>"),
-          ("%s: <C-t> is mapped globally - should be tree-ft-only"):format(harness))
+        assert.is_false(
+          has_global_map("n", "<C-t>"),
+          ("%s: <C-t> is mapped globally - should be tree-ft-only"):format(harness)
+        )
       end)
 
       it("declared <leader>ca binding is mapped globally in normal mode", function()
         local ca = find_spec(specs, "<leader>ca")
         if ca then
-          assert.is_true(has_global_map("n", leader_key("ca")),
-            ("%s: declares <leader>ca but it is not mapped globally"):format(harness))
+          assert.is_true(
+            has_global_map("n", leader_key("ca")),
+            ("%s: declares <leader>ca but it is not mapped globally"):format(harness)
+          )
         end
       end)
 
@@ -132,8 +149,7 @@ describe("harness keymap contract (all harnesses)", function()
             break
           end
         end
-        assert.is_true(found,
-          ("%s: <C-t> declared but not mapped on a neo-tree buffer"):format(harness))
+        assert.is_true(found, ("%s: <C-t> declared but not mapped on a neo-tree buffer"):format(harness))
         pcall(vim.api.nvim_buf_delete, buf, { force = true })
       end)
 
@@ -149,8 +165,10 @@ describe("harness keymap contract (all harnesses)", function()
           -- removed stock plugin commands.
           local rhs = tostring(ca[2])
           for _, stock in ipairs({ "ClaudeCodeAdd", "ClaudeCodeSend", "ClaudeCodeOpen" }) do
-            assert.is_falsy(rhs:find(stock, 1, true),
-              ("claude <leader>ca must not run the stock %s command - got: %q"):format(stock, rhs))
+            assert.is_falsy(
+              rhs:find(stock, 1, true),
+              ("claude <leader>ca must not run the stock %s command - got: %q"):format(stock, rhs)
+            )
           end
         end)
       end
@@ -168,8 +186,10 @@ describe("harness keymap contract (all harnesses)", function()
           for _, spec in ipairs({ ca, ct }) do
             local rhs = tostring(spec[2])
             for _, stock in ipairs({ "ClaudeCode", "claudecode" }) do
-              assert.is_falsy(rhs:find(stock, 1, true),
-                ("pi keymap must not reference %s - got: %q"):format(stock, rhs))
+              assert.is_falsy(
+                rhs:find(stock, 1, true),
+                ("pi keymap must not reference %s - got: %q"):format(stock, rhs)
+              )
             end
           end
         end)
