@@ -40,7 +40,7 @@ local function enter_terminal_mode(win, buf)
   then
     return
   end
-  if vim.fn.mode(1) == "t" then
+  if vim.fn.mode(1) == "t" or vim.b[buf].harness_terminal_normal_mode then
     return
   end
   vim.cmd.startinsert()
@@ -54,6 +54,7 @@ vim.api.nvim_create_autocmd("WinEnter", {
       return
     end
     local win = vim.api.nvim_get_current_win()
+    vim.b[buf].harness_terminal_normal_mode = false
     vim.schedule(function()
       enter_terminal_mode(win, buf)
     end)
@@ -66,6 +67,21 @@ vim.api.nvim_create_autocmd("FocusGained", {
     local win = vim.api.nvim_get_current_win()
     local buf = vim.api.nvim_win_get_buf(win)
     if not vim.b[buf].harness_terminal then
+      return
+    end
+    vim.b[buf].harness_terminal_normal_mode = false
+    vim.schedule(function()
+      enter_terminal_mode(win, buf)
+    end)
+  end,
+})
+
+vim.api.nvim_create_autocmd("TermLeave", {
+  group = auto_insert_group,
+  callback = function()
+    local win = vim.api.nvim_get_current_win()
+    local buf = vim.api.nvim_win_get_buf(win)
+    if not vim.b[buf].harness_terminal or vim.b[buf].harness_terminal_normal_mode then
       return
     end
     vim.schedule(function()
@@ -88,6 +104,9 @@ vim.api.nvim_create_autocmd("FocusGained", {
 local function schedule_enter_terminal_mode(win, buf)
   if not win or not buf then
     return
+  end
+  if vim.api.nvim_buf_is_valid(buf) then
+    vim.b[buf].harness_terminal_normal_mode = false
   end
   vim.schedule(function()
     enter_terminal_mode(win, buf)
@@ -211,6 +230,10 @@ end
 -- focused; this is just the standard "get out of insert" for a terminal buffer (mirrors <Esc> in a
 -- normal buffer, minus the close). Exposed on M so tests can drive it headless with a fake instance.
 function M.normal_mode_key()
+  local buf = vim.api.nvim_get_current_buf()
+  if vim.b[buf].harness_terminal then
+    vim.b[buf].harness_terminal_normal_mode = true
+  end
   vim.cmd.stopinsert()
   vim.cmd("noautocmd stopinsert")
 end
