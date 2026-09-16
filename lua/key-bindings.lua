@@ -10,6 +10,10 @@ vim.g.mapleader = " "
 -- buffer navigation
 nmap("n", "<leader>s", ":/<C-r><C-w>/<CR>", { noremap = true, desc = "Search word underneath cursor." })
 
+-- jump history: <C-o> is the universal "back" key. In the harness float, terminal-mode <C-o> does
+-- focus-back instead (same action as <C-h>/<C-l>, via the shared legend in harness-decorators/term.lua)
+nmap("n", "<C-o>", "b", { noremap = true, desc = "Jump back" })
+
 -- tab navigation
 nmap("n", "<leader>n", ":tabnext<CR>", { noremap = true, desc = "Tab; next" })
 nmap("n", "<leader>b", ":tabprevious<CR>", { noremap = true, desc = "Tab; prev" })

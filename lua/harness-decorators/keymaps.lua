@@ -84,7 +84,7 @@ end
 
 local function agent_picker_spec()
   return {
-    "<C-o>",
+    "<C-q>",
     open_agent_picker,
     desc = "Switch AI harness",
     mode = { "n" },

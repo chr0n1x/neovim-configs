@@ -313,7 +313,7 @@ function M.terminal_keys()
       desc = "⚙",
     },
     {
-      "<C-o>",
+      "<C-q>",
       function()
         require("harness-decorators.switch").pick()
       end,
@@ -337,6 +337,16 @@ function M.terminal_keys()
       end,
       mode = "t",
       desc = "↪",
+    },
+    {
+      -- Third go-back binding (same action as <C-h>/<C-l>): for split-keyboard layouts where home-row
+      -- reach to h/l is worse than Q. In the shared legend, so every harness float gets it.
+      "<C-o>",
+      function(self)
+        M.go_back_key(self)
+      end,
+      mode = "t",
+      desc = "↫",
     },
     {
       "<C-f>",

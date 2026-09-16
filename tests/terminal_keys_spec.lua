@@ -3,6 +3,7 @@
 -- headless nvim, so each handler is exposed on M and driven directly here:
 --   * <C-f> -> term.fullscreen_key : toggles the float's _wide flag (fullscreen <-> collapse)
 --   * <C-h> -> term.go_back_key    : moves focus back WITHOUT hiding the float (see go_back_key_spec)
+--   * <C-o> -> term.go_back_key    : third go-back binding (split-keyboard reach), same as <C-h>
 --   * <C-n> -> term.normal_mode_key: drops into normal mode (stopinsert), float stays open
 --   * <Esc> -> term.close_key      : hides the float (panel closes, PTY kept alive)
 local helper = require("tests.helper")
@@ -244,17 +245,17 @@ describe("terminal key legend: one handler per key", function()
     assert.is_true(called, "<C-p> must call the procs picker")
   end)
 
-  it("<C-o> opens the agent picker from terminal mode", function()
+  it("<C-q> opens the agent picker from terminal mode", function()
     local keys = term_mod.terminal_keys()
     local agent_key
     for _, spec in ipairs(keys) do
-      if spec[1] == "<C-o>" then
+      if spec[1] == "<C-q>" then
         agent_key = spec
         break
       end
     end
-    assert.is_not_nil(agent_key, "<C-o> must be in the shared terminal legend")
-    assert.are.equal("t", agent_key.mode, "<C-o> must be a terminal-mode key")
+    assert.is_not_nil(agent_key, "<C-q> must be in the shared terminal legend")
+    assert.are.equal("t", agent_key.mode, "<C-q> must be a terminal-mode key")
     assert.are.equal("⇄", agent_key.desc)
 
     local switch = require("harness-decorators.switch")
@@ -266,8 +267,8 @@ describe("terminal key legend: one handler per key", function()
     local ok, err = pcall(agent_key[2])
     switch.pick = original_pick
 
-    assert.is_true(ok, "<C-o> handler raised: " .. tostring(err))
-    assert.is_true(called, "<C-o> must call the agent picker")
+    assert.is_true(ok, "<C-q> handler raised: " .. tostring(err))
+    assert.is_true(called, "<C-q> must call the agent picker")
   end)
 
   it("<C-l> is in the shared legend and bound to the SAME handler as <C-h>", function()
@@ -295,5 +296,23 @@ describe("terminal key legend: one handler per key", function()
     local ok_l = pcall(by_lhs["<C-l>"][2], fake_l)
     assert.is_true(ok_l, "<C-l> legend handler raised")
     assert.is_false(fake_l.hide_called, "<C-l> must not hide the float (same go-back behavior as <C-h>)")
+  end)
+
+  it("<C-o> is in the shared legend with the same go-back behavior as <C-h>", function()
+    -- <C-o> is a third go-back binding for split-keyboard layouts (Q reach). Like <C-l>, it must
+    -- live in the shared terminal_keys legend (so every harness float gets it) and route to
+    -- go_back_key: moves focus back, float stays visible.
+    local keys = term_mod.terminal_keys()
+    local by_lhs = {}
+    for _, spec in ipairs(keys) do
+      by_lhs[spec[1]] = spec
+    end
+    assert.is_not_nil(by_lhs["<C-o>"], "<C-o> must be in the shared legend (go-back binding)")
+    assert.are.equal("t", by_lhs["<C-o>"].mode, "<C-o> must be a terminal-mode key")
+
+    local fake_o = make_fake()
+    local ok_o = pcall(by_lhs["<C-o>"][2], fake_o)
+    assert.is_true(ok_o, "<C-o> legend handler raised")
+    assert.is_false(fake_o.hide_called, "<C-o> must not hide the float (same go-back behavior as <C-h>)")
   end)
 end)
