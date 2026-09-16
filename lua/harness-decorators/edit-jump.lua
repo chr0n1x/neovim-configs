@@ -187,6 +187,10 @@ local function jump_to_edit(data, file_path)
         end
       end, 100)
     end
+    local ok_term, term = pcall(require, "harness-decorators.term")
+    if ok_term and type(term.ensure_terminal_mode) == "function" then
+      term.ensure_terminal_mode()
+    end
   end, 100)
 end
 
