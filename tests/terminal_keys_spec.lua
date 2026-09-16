@@ -197,15 +197,17 @@ describe("terminal key legend: one handler per key", function()
     assert.is_false(fake.hide_called, "<C-n> must NOT hide the float")
   end)
 
-  it("registers a FocusGained handler for harness terminals", function()
-    local autocmds = vim.api.nvim_get_autocmds({
-      group = "HarnessTerminalAutoInsert",
-      event = "FocusGained",
-    })
-    assert.are.equal(1, #autocmds, "FocusGained must have one harness-terminal handler")
+  it("registers FocusGained and TermLeave handlers for harness terminals", function()
+    for _, event in ipairs({ "FocusGained", "TermLeave" }) do
+      local autocmds = vim.api.nvim_get_autocmds({
+        group = "HarnessTerminalAutoInsert",
+        event = event,
+      })
+      assert.are.equal(1, #autocmds, event .. " must have one harness-terminal handler")
 
-    local ok, err = pcall(vim.api.nvim_exec_autocmds, "FocusGained", {})
-    assert.is_true(ok, "FocusGained handler raised: " .. tostring(err))
+      local ok, err = pcall(vim.api.nvim_exec_autocmds, event, {})
+      assert.is_true(ok, event .. " handler raised: " .. tostring(err))
+    end
   end)
 
   it("<Esc> close_key: hides the float (panel closes)", function()
