@@ -226,6 +226,18 @@ function M.close_key(self)
   end)
 end
 
+function M.ensure_terminal_mode()
+  local win = vim.api.nvim_get_current_win()
+  local buf = vim.api.nvim_win_get_buf(win)
+  if not vim.b[buf].harness_terminal then
+    return
+  end
+  vim.b[buf].harness_terminal_normal_mode = false
+  vim.schedule(function()
+    enter_terminal_mode(win, buf)
+  end)
+end
+
 ---The <C-n> key handler: drop out of terminal insert mode into NORMAL mode. The float stays open and
 -- focused; this is just the standard "get out of insert" for a terminal buffer (mirrors <Esc> in a
 -- normal buffer, minus the close). Exposed on M so tests can drive it headless with a fake instance.
