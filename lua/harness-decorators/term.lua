@@ -313,7 +313,7 @@ function M.terminal_keys()
       desc = "⚙",
     },
     {
-      "<C-o>",
+      "<C-q>",
       function()
         require("harness-decorators.switch").pick()
       end,

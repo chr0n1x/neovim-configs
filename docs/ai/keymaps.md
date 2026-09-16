@@ -15,7 +15,7 @@ edit-following, including pi's push-based edit following.
 | `<leader>cc` | n | Continue session (`--continue`) |
 | `<leader>cm` | n | Select model |
 | `<leader>cu` | n | Telescope picker of the harness's changes |
-| `<C-o>` | n | Switch AI harness |
+| `<C-q>` | n | Switch AI harness |
 | `<leader>ca` | n | Add current buffer |
 | `<leader>ca` | v | Send visual selection (path + line range) |
 | `<C-t>` | tree ft | Add file(s) under cursor / selected in tree |
