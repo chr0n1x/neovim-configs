@@ -29,8 +29,10 @@ local function mark_harness_buffer(harness, inst)
   end
 end
 
--- TEMP DEBUG: the focus->TERMINAL transition drops randomly (~1 in 2-3). Log every guard
--- failure with the full guard state so we can see WHY the deferred startinsert never runs.
+---Log a terminal-mode transition event with full guard state to a grep-able file and
+-- :messages. Used by every guard in enter_terminal_mode so a stuck state (terminal in
+-- terminal-normal when it should be in terminal-insert) can be diagnosed from the artifact
+-- without scrolling the message history. One line per event.
 local function dbg(tag, buf, detail)
   local line = string.format(
     "%s | %s | cur=%s curbuf=%s buftype=%s mark=%s mode=%s normal_mode=%s",
@@ -46,8 +48,6 @@ local function dbg(tag, buf, detail)
   if detail then
     line = line .. " | " .. detail
   end
-  -- Append to a grep-able file (not just :messages) so a stuck state on another machine can be
-  -- diagnosed from the artifact without scrolling the message history. One line per event.
   local log_path = "/tmp/harness-term-focus.log"
   local f = io.open(log_path, "a")
   if f then
@@ -139,11 +139,11 @@ vim.api.nvim_create_autocmd("FocusGained", {
   end,
 })
 
--- TEMP DEBUG: log every TermLeave from a harness terminal so we can see what kicks us out of
--- insert mode and whether the user's <C-n> (harness_terminal_normal_mode) is what suppresses the
--- re-entry. edit-jump sets harness_term_will_leave on the terminal buffer when a jump is in
--- flight (the buffer switch + deferred cursor set churn the mode briefly); we consume it here so
--- the jump's own leave does not get logged as a spurious kick-out.
+-- Log every TermLeave from a harness terminal so we can see what kicks us out of insert mode
+-- and whether the user's <C-n> (harness_terminal_normal_mode) is what suppresses the re-entry.
+-- edit-jump sets harness_term_will_leave on the terminal buffer when a jump is in flight (the
+-- buffer switch + deferred cursor set churn the mode briefly); we consume it here so the jump's
+-- own leave does not get logged as a spurious kick-out.
 vim.api.nvim_create_autocmd("TermLeave", {
   group = auto_insert_group,
   callback = function()
@@ -458,17 +458,6 @@ local function win_opts(harness)
     -- `title`. Set winhighlight after all merging is done so our override sticks.
     on_win = function(self)
       pcall(vim.api.nvim_set_option_value, "winhighlight", "FloatFooter:SnacksFooter", { win = self.win })
-      -- TEMP DEBUG: log every Snacks window (re)creation for this harness.
-      vim.notify(
-        string.format(
-          "%s DBG on_win %s win=%s buf=%s",
-          os.date("%H:%M:%S"),
-          harness,
-          tostring(self.win),
-          tostring(self.buf)
-        ),
-        vim.log.levels.DEBUG
-      )
     end,
     footer_keys = true,
     -- fix_buf disabled (same reason as before): its BufWinEnter swap duplicates buffers during the
