@@ -130,6 +130,14 @@ local function jump_to_edit(data, file_path)
 
   local saved_ei = vim.o.eventignore
   vim.o.eventignore = "all"
+  -- Tell term.lua's TermLeave logger to ignore the mode churn this jump causes (the work
+  -- window buffer switch and the deferred cursor set both briefly leave/enter insert mode).
+  -- The flag is scoped to THIS terminal buffer; term.lua clears it after the matching
+  -- TermLeave fires (or on the next startinsert restore below).
+  local term_buf = vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win())
+  if vim.api.nvim_buf_is_valid(term_buf) and vim.b[term_buf].harness_terminal then
+    vim.b[term_buf].harness_term_will_leave = true
+  end
   local ok_switch, switch_err = pcall(vim.api.nvim_win_set_buf, win, bufnr)
   vim.o.eventignore = saved_ei
 
@@ -308,6 +316,8 @@ function M.create_jump_autocmds(group)
         if vim.api.nvim_buf_get_option(buf, "buftype") == "terminal" then
           vim.schedule(function()
             if _jump_active then
+              local tbuf = vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win())
+              vim.b[tbuf].harness_term_will_leave = false
               vim.cmd.startinsert()
             end
           end)

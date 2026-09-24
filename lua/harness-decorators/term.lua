@@ -29,92 +29,174 @@ local function mark_harness_buffer(harness, inst)
   end
 end
 
+-- TEMP DEBUG: the focus->TERMINAL transition drops randomly (~1 in 2-3). Log every guard
+-- failure with the full guard state so we can see WHY the deferred startinsert never runs.
+local function dbg(tag, buf, detail)
+  local line = string.format(
+    "%s | %s | cur=%s curbuf=%s buftype=%s mark=%s mode=%s normal_mode=%s",
+    os.date("%H:%M:%S"),
+    tag,
+    tostring(vim.api.nvim_get_current_win()),
+    tostring(vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win())),
+    (buf and vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].buftype) or "invalid",
+    (buf and vim.api.nvim_buf_is_valid(buf) and tostring(vim.b[buf].harness_terminal)) or "invalid",
+    vim.fn.mode(1),
+    (buf and vim.api.nvim_buf_is_valid(buf) and tostring(vim.b[buf].harness_terminal_normal_mode)) or "n/a"
+  )
+  if detail then
+    line = line .. " | " .. detail
+  end
+  -- Append to a grep-able file (not just :messages) so a stuck state on another machine can be
+  -- diagnosed from the artifact without scrolling the message history. One line per event.
+  local log_path = "/tmp/harness-term-focus.log"
+  local f = io.open(log_path, "a")
+  if f then
+    f:write(line .. "\n")
+    f:close()
+  end
+  vim.notify(line, vim.log.levels.DEBUG)
+  return line
+end
+
 local function enter_terminal_mode(win, buf)
-  if
-    not vim.api.nvim_win_is_valid(win)
-    or not vim.api.nvim_buf_is_valid(buf)
-    or vim.api.nvim_get_current_win() ~= win
-    or vim.api.nvim_win_get_buf(win) ~= buf
-    or vim.bo[buf].buftype ~= "terminal"
-    or not vim.b[buf].harness_terminal
-  then
+  if not vim.api.nvim_win_is_valid(win) then
+    dbg("enter_terminal_mode DROPPED: win invalid", buf, "win=" .. tostring(win))
     return
   end
-  if vim.fn.mode(1) == "t" or vim.b[buf].harness_terminal_normal_mode then
+  if not vim.api.nvim_buf_is_valid(buf) then
+    dbg("enter_terminal_mode DROPPED: buf invalid", buf, "buf=" .. tostring(buf))
     return
   end
+  if vim.api.nvim_get_current_win() ~= win then
+    dbg("enter_terminal_mode DROPPED: current win mismatch", buf, "got win=" .. tostring(win))
+    return
+  end
+  if vim.api.nvim_win_get_buf(win) ~= buf then
+    dbg(
+      "enter_terminal_mode DROPPED: win shows different buf",
+      buf,
+      "win shows " .. tostring(vim.api.nvim_win_get_buf(win))
+    )
+    return
+  end
+  if vim.bo[buf].buftype ~= "terminal" then
+    dbg("enter_terminal_mode DROPPED: not a terminal buftype", buf)
+    return
+  end
+  if not vim.b[buf].harness_terminal then
+    dbg("enter_terminal_mode DROPPED: buffer lost harness mark", buf)
+    return
+  end
+  if vim.fn.mode(1) == "t" then
+    dbg("enter_terminal_mode SKIP: already in terminal mode", buf)
+    return
+  end
+  if vim.b[buf].harness_terminal_normal_mode then
+    dbg("enter_terminal_mode SKIP: user pressed <C-n>", buf)
+    return
+  end
+  dbg("enter_terminal_mode: startinsert", buf)
   vim.cmd.startinsert()
+end
+
+-- Forward-declared so the autocmds below (defined before the real function in file order) can
+-- close over it. Reassigned to the real implementation further down; autocmd callbacks only run
+-- after the module is fully loaded, by which point this local points at the real function.
+local schedule_enter_terminal_mode
+
+local function harness_terminal_buf()
+  local buf = vim.api.nvim_get_current_buf()
+  if vim.api.nvim_buf_is_valid(buf) and vim.b[buf].harness_terminal then
+    return buf
+  end
+  return nil
 end
 
 vim.api.nvim_create_autocmd("WinEnter", {
   group = auto_insert_group,
-  callback = function(args)
-    local buf = args.buf
-    if not vim.b[buf].harness_terminal then
-      return
+  callback = function()
+    local buf = harness_terminal_buf()
+    if buf then
+      dbg("WinEnter autocmd", buf)
+      schedule_enter_terminal_mode(vim.api.nvim_get_current_win(), buf)
     end
-    local win = vim.api.nvim_get_current_win()
-    vim.b[buf].harness_terminal_normal_mode = false
-    vim.schedule(function()
-      enter_terminal_mode(win, buf)
-    end)
   end,
 })
 
+-- Re-focusing nvim (e.g. clicking the window, switching from another terminal) restores terminal
+-- insert mode: some window managers and remote setups drop terminal insert mode on focus loss.
 vim.api.nvim_create_autocmd("FocusGained", {
   group = auto_insert_group,
   callback = function()
-    local win = vim.api.nvim_get_current_win()
-    local buf = vim.api.nvim_win_get_buf(win)
-    if not vim.b[buf].harness_terminal then
-      return
+    local buf = harness_terminal_buf()
+    -- A user who pressed <C-n> deliberately wants normal mode; FocusGained must not yank them back
+    -- into insert (schedule_enter_terminal_mode clears the flag, so only the deliberate re-focus
+    -- paths may reset it).
+    if buf and not vim.b[buf].harness_terminal_normal_mode then
+      dbg("FocusGained autocmd", buf)
+      schedule_enter_terminal_mode(vim.api.nvim_get_current_win(), buf)
     end
-    vim.b[buf].harness_terminal_normal_mode = false
-    vim.schedule(function()
-      enter_terminal_mode(win, buf)
-    end)
   end,
 })
 
+-- TEMP DEBUG: log every TermLeave from a harness terminal so we can see what kicks us out of
+-- insert mode and whether the user's <C-n> (harness_terminal_normal_mode) is what suppresses the
+-- re-entry. edit-jump sets harness_term_will_leave on the terminal buffer when a jump is in
+-- flight (the buffer switch + deferred cursor set churn the mode briefly); we consume it here so
+-- the jump's own leave does not get logged as a spurious kick-out.
 vim.api.nvim_create_autocmd("TermLeave", {
   group = auto_insert_group,
   callback = function()
-    local win = vim.api.nvim_get_current_win()
-    local buf = vim.api.nvim_win_get_buf(win)
-    if not vim.b[buf].harness_terminal or vim.b[buf].harness_terminal_normal_mode then
+    local buf = harness_terminal_buf()
+    if not buf then
       return
     end
-    vim.schedule(function()
-      enter_terminal_mode(win, buf)
-    end)
+    if vim.b[buf].harness_term_will_leave then
+      vim.b[buf].harness_term_will_leave = false
+      dbg("TermLeave autocmd (suppressed: edit-jump in flight)", buf)
+      return
+    end
+    dbg("TermLeave autocmd", buf)
   end,
 })
 
 ---Deferred to the next tick (same reasoning as the old enter_insert_scheduled: snacks.open and a
 -- re-focus both return before the window/buffer has settled, so a synchronous startinsert does not
--- reliably stick). Needed IN ADDITION to the WinEnter autocmd above: WinEnter only fires when the
--- target window is not already the current window. Re-selecting a harness whose float already has
--- focus (e.g. pressing <leader>c a second time while sitting in it, or picking the already-active
--- harness from <leader>cl) calls nvim_set_current_win on the window you're already in, which is a
--- no-op and never fires WinEnter - leaving a normal-mode-in-terminal ("-- (terminal) --") float stuck
--- there. Every focus/open path in this module must call this directly rather than depend solely on
--- the autocmd.
+-- reliably stick). Needed IN ADDITION to the autocmds below: the WinEnter/FocusGained handlers only
+-- fire when focus actually moves, so re-selecting a harness whose float already has focus (e.g.
+-- pressing <leader>c a second time while sitting in it) never triggers them. Every focus/open path
+-- in this module must call this directly.
 ---@param win integer?
 ---@param buf integer?
-local function schedule_enter_terminal_mode(win, buf)
+schedule_enter_terminal_mode = function(win, buf)
   if not win or not buf then
+    dbg(
+      "schedule_enter_terminal_mode DROPPED: nil win/buf",
+      buf,
+      string.format("win=%s buf=%s", tostring(win), tostring(buf))
+    )
     return
   end
   if vim.api.nvim_buf_is_valid(buf) then
     vim.b[buf].harness_terminal_normal_mode = false
   end
+  dbg("schedule_enter_terminal_mode", buf)
+  -- One tick is not always enough: snacks' window/buffer can still be settling when the focus
+  -- path returns, and on Ghostty+tmux the FocusGained event can land a beat after the pane is
+  -- re-focused. Two bounded attempts (next tick, then ~75ms) cover the settle window without the
+  -- churn of an open-ended retry loop. The FocusGained autocmd above is the primary re-entry for
+  -- the tmux-pane-refocus case; this is the fallback for the open/focus-key paths.
   vim.schedule(function()
     enter_terminal_mode(win, buf)
   end)
+  vim.defer_fn(function()
+    enter_terminal_mode(win, buf)
+  end, 75)
 end
 
----The shared per-harness record for `harness`, creating it if absent. Every instance read/write in
--- this module goes through the single accessor in state.lua so term and park never diverge (Task 8).
+---The shared per-harness record for `harness`, creating it if absent.
+-- Every instance read/write in this module goes through the single accessor in state.lua so term
+-- and park never diverge (Task 8).
 ---@param harness string
 ---@return table entry { inst = snacks.terminal|nil, selected = boolean }
 local function entry(harness)
@@ -376,6 +458,17 @@ local function win_opts(harness)
     -- `title`. Set winhighlight after all merging is done so our override sticks.
     on_win = function(self)
       pcall(vim.api.nvim_set_option_value, "winhighlight", "FloatFooter:SnacksFooter", { win = self.win })
+      -- TEMP DEBUG: log every Snacks window (re)creation for this harness.
+      vim.notify(
+        string.format(
+          "%s DBG on_win %s win=%s buf=%s",
+          os.date("%H:%M:%S"),
+          harness,
+          tostring(self.win),
+          tostring(self.buf)
+        ),
+        vim.log.levels.DEBUG
+      )
     end,
     footer_keys = true,
     -- fix_buf disabled (same reason as before): its BufWinEnter swap duplicates buffers during the
