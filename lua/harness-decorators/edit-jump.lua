@@ -126,10 +126,19 @@ local function jump_to_edit(data, file_path)
   -- Switch the target window to show this buffer. Suppress autocmds during the switch:
   -- BufLeave/BufWinEnter from plugins have been observed to exit terminal insert
   -- mode as a side effect, creating a gap where keystrokes trigger normal-mode keybinds.
+  --
+  -- The list is NARROWER than "all" on purpose: an active agent can fire many
+  -- HarnessEdit events back-to-back, and "all" suppresses TermLeave too - which
+  -- is the very event term.lua's re-entry relies on. Under "all" the jump's own
+  -- deferred startinsert gets starved by the next jump's eventignore window
+  -- overlapping it, and the terminal sticks in terminal-normal. Listing only
+  -- the buffer/window events suppresses the plugin churn that motivated this
+  -- guard while leaving TermLeave (and therefore the re-entry path) able to
+  -- fire.
   _jump_active = true
 
   local saved_ei = vim.o.eventignore
-  vim.o.eventignore = "all"
+  vim.o.eventignore = "BufLeave,BufEnter,WinEnter,WinLeave"
   -- Tell term.lua's TermLeave logger to ignore the mode churn this jump causes (the work
   -- window buffer switch and the deferred cursor set both briefly leave/enter insert mode).
   -- The flag is scoped to THIS terminal buffer; term.lua clears it after the matching
@@ -273,6 +282,44 @@ local function store_edit_source(data)
   table.insert(list, new_record)
 end
 
+---Trailing-edge debounce for the edit-jump. An active agent can emit many
+---HarnessEdit events back-to-back (the maki session file is modified on every
+---tool result), so each event used to schedule its own 500ms defer_fn jump,
+---and the jumps queued with overlapping eventignore windows -
+---starving the deferred terminal re-entry and sticking the terminal in
+---terminal-normal. A trailing-edge timer collapses a burst into ONE jump: each
+---event resets the timer, and the jump fires only once the agent pauses.
+---Different-file edits still jump in order (each resets + reschedules, the
+---latest wins); same-file dedup is unchanged (still handled by the watcher's
+---dedup_key before HarnessEdit fires).
+local _pending_jump = nil
+local _pending_args = nil
+
+local function schedule_jump(args)
+  _pending_args = args
+  if _pending_jump then
+    -- A jump is already queued: reset it so the burst collapses into the
+    -- latest event. The queued callback re-reads _pending_args at fire time.
+    _pending_jump:stop()
+  end
+  _pending_jump = vim.defer_fn(function()
+    _pending_jump = nil
+    local data = _pending_args
+    _pending_args = nil
+    if not data then
+      return
+    end
+    -- The edit jump lands focus in the terminal; first point the work window at
+    -- the last normal-mode buffer so it stays visible underneath.
+    local fok, focus = pcall(require, "harness-decorators.focus")
+    if fok then
+      focus.suppress_next_leave()
+      focus.restore()
+    end
+    jump_to_edit(data.data, data.data.file_path)
+  end, 250)
+end
+
 ---Jump to the edited file without stealing focus from the terminal.
 function M.on_edit(args)
   if not args.data then
@@ -285,16 +332,7 @@ function M.on_edit(args)
 
   store_edit_source(args.data)
 
-  vim.defer_fn(function()
-    -- The edit jump lands focus in the terminal; first point the work window at
-    -- the last normal-mode buffer so it stays visible underneath.
-    local fok, focus = pcall(require, "harness-decorators.focus")
-    if fok then
-      focus.suppress_next_leave()
-      focus.restore()
-    end
-    jump_to_edit(args.data, file_path)
-  end, 500)
+  schedule_jump(args)
 end
 
 ---Create the autocmds that trigger jump behavior. Call from init setup.
