@@ -16,13 +16,24 @@ local function animate_resize(self, target, snap_config)
 
   local Animation = require("animation")
   local snapped = false
+  -- These frames run on an async timer. By the time a tick fires the window may be gone (spec
+  -- teardown) or already re-parented by a newer animation, so nvim_win_set_config can raise
+  -- ("Cannot split a floating window", E474). A missed cosmetic frame is harmless - the window
+  -- settles on the next frame or stays put - so both calls are pcall'd rather than letting the
+  -- error propagate into the main loop.
+  local function set(cfg)
+    if not vim.api.nvim_win_is_valid(win) then
+      return
+    end
+    pcall(vim.api.nvim_win_set_config, win, cfg)
+  end
   self._resize_anim = Animation(300, 60, require("animation.easing").in_out_sine, function(f)
     if not vim.api.nvim_win_is_valid(win) then
       return true
     end
     if f == 1 and not snapped then
       snapped = true
-      vim.api.nvim_win_set_config(win, snap_config or {
+      set(snap_config or {
         relative = "editor",
         row = math.floor(target.row),
         col = math.floor(target.col),
@@ -33,7 +44,7 @@ local function animate_resize(self, target, snap_config)
       })
       return
     end
-    vim.api.nvim_win_set_config(win, {
+    set({
       relative = "editor",
       style = "minimal",
       border = border,

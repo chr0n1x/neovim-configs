@@ -381,7 +381,12 @@ describe("agent-state: per-harness adapters (sandboxed HOME)", function()
       -- The regression: the previous session's file has the NEWEST mtime (it was touched last), so a
       -- brand-new terminal must be labelled from its own file, picked out by the open time.
       require("harness-decorators.pi.follow")._reset()
-      local dir = home .. "/.pi/agent/sessions/--proj--"
+      -- Unique cwd + unique session dir: the sibling label spec leaves a 01a0a1c2 file in --proj--,
+      -- and a shared dir would let its mtime tie with this test's fresh file (dt=0), so the
+      -- open-time matcher breaks the tie by readdir order and picks the wrong file. A fresh dir
+      -- contains ONLY this test's two files, which is what the regression is about.
+      local cwd = "/proj-fresh"
+      local dir = home .. "/.pi/agent/sessions/--proj-fresh--"
       vim.fn.mkdir(dir, "p")
       local now = os.time()
       local fresh = dir .. "/2026-01-01T00-00-00-000Z_aaaaaaaa-1111-2222-3333-444444444444.jsonl"
@@ -392,14 +397,21 @@ describe("agent-state: per-harness adapters (sandboxed HOME)", function()
       vim.uv.fs_utime(old, now + 500, now + 500)
       vim.uv.fs_utime(fresh, now, now)
       local term = require("harness-decorators.term")
+      -- Reset the shared per-harness state table first: a live instance left by an earlier spec
+      -- (term/park/switch/picker stub snacks.open and open fakes) would make the real term.opened_at
+      -- return a different timestamp than `now`. We stub opened_at to `now` anyway (the point of the
+      -- test is the matcher, not the clock) - the reset just guarantees no stray live instance can
+      -- shadow the stub or leak into pi.label's fallback.
+      term._reset()
       local orig = term.opened_at
       term.opened_at = function(_h)
         return now
       end
       local ok, err = pcall(function()
-        assert.are.equal("aaaaaaaa", pi.label(1234, "/proj"))
+        assert.are.equal("aaaaaaaa", pi.label(1234, cwd))
       end)
       term.opened_at = orig
+      term._reset()
       if not ok then
         error(err)
       end
