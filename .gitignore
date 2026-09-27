@@ -1,5 +1,5 @@
 nvim/plugin/
-.test-plugins/
+.test-cache/
 docs/*prd.md
 .nvimlog
 *.swp

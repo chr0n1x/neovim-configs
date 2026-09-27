@@ -23,22 +23,32 @@ style:
 fix:
 	@stylua lua/
 
-# Full CI: build the image if needed, then run it once with the codebase + plugin cache
+# Full CI: build the image if needed, then run it once with the codebase + test cache
 # mounted. The container runs tests/ci.sh (lint + style + load check + integration specs) -
 # a single in-container definition of CI. No nested make; the host only mounts and invokes.
+#
+# Two mounts only. The repo mount is the nvim config dir (XDG_CONFIG_HOME=/nvim-config).
+# The .test-cache mount is the nvim DATA dir (~/.local/share/nvim); XDG_DATA_HOME is NOT
+# set, so stdpath("data") resolves to exactly that mount. Every path the config or its
+# plugins create - lazy plugin clones, mason packages, possession state - goes through
+# stdpath("data") and therefore lands in .test-cache, never the repo. No sub-path mounts:
+# mounting at a repo-root path forces podman to create that host dir as the mount
+# destination, leaving empty lazy/mason/possession strays in the tree.
 ci:
 	@test -x "$$(command -v $(PODMAN))" || { echo "podman not found"; exit 1; }
 	@$(PODMAN) images --format '{{.Repository}}:{{.Tag}}' | grep -qF "$(IMAGE_TAG)" || \
 		$(PODMAN) build --file $(DOCKERFILE) --tag "$(IMAGE_TAG)" -q .
 	@# kill any stuck container from a prior run
 	@$(PODMAN) ps -a --filter "ancestor=$(IMAGE_TAG)" --format '{{.ID}}' | xargs -r $(PODMAN) stop 2>/dev/null || true
-	@# plugin cache dir must exist on the host before bind-mount (ci.sh mounts it)
-	@test -d .test-plugins || mkdir -p .test-plugins
+	@# .test-cache must exist on the host before bind-mount (podman creates a missing mount
+	@# source as an empty dir, but pre-creating it keeps intent explicit).
+	@test -d .test-cache || mkdir -p .test-cache
 	@$(PODMAN) run --rm \
 		-e CLAUDE_MODEL \
 		-e ANTHROPIC_BASE_URL \
 		-v $$(pwd):/nvim-config/nvim \
-		-v $$(pwd)/.test-plugins:/root/.local/share/nvim "$(IMAGE_TAG)"
+		-v $$(pwd)/.test-cache:/root/.local/share/nvim \
+		"$(IMAGE_TAG)"
 
 dev:
 	@$(PODMAN) run --rm \
