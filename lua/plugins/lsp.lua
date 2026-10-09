@@ -32,6 +32,28 @@ return {
     config = function()
       local lsp_capabilities = require("cmp_nvim_lsp").default_capabilities()
 
+      vim.lsp.config("*", { capabilities = lsp_capabilities })
+      vim.lsp.config("gopls", {
+        cmd = function(dispatchers, config)
+          local root = config.root_dir or vim.fn.getcwd()
+          local result = vim.system({ "go", "env", "GOROOT" }, { cwd = root, text = true }):wait()
+          if result.code ~= 0 then
+            error(("failed to resolve Go toolchain for gopls: %s"):format(result.stderr))
+          end
+
+          local path_sep = package.config:sub(1, 1) == "\\" and ";" or ":"
+          local toolchain_bin = vim.fs.joinpath(vim.trim(result.stdout), "bin")
+          local env = vim.tbl_extend("force", config.cmd_env or {}, {
+            PATH = table.concat({ toolchain_bin, (config.cmd_env or {}).PATH or vim.env.PATH or "" }, path_sep),
+          })
+
+          return vim.lsp.rpc.start({ "gopls" }, dispatchers, {
+            cwd = root,
+            env = env,
+          })
+        end,
+      })
+
       -- Mason manages LSP server installations.
       require("mason").setup({
         -- https://github.com/williamboman/nvim-lsp-installer/discussions/509
@@ -49,6 +71,7 @@ return {
         ensure_installed = {
           -- 'helm_ls',
           -- 'yamlls',
+          "gopls",
           "lua_ls",
         },
         handlers = {
@@ -90,6 +113,9 @@ return {
             vim.lsp.buf.hover()
           end, { buffer = event.buf, desc = "LSP commands (default: show symbol def)" })
           vim.keymap.set("n", "<leader>ld", function()
+            vim.lsp.buf.definition()
+          end, { buffer = event.buf, desc = "LSP go to definition" })
+          vim.keymap.set("n", "gd", function()
             vim.lsp.buf.definition()
           end, { buffer = event.buf, desc = "LSP go to definition" })
           vim.keymap.set("n", "<leader>lh", function()

@@ -234,6 +234,60 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     pcall(vim.api.nvim_buf_delete, term_buf, { force = true })
   end)
 
+  it("re-enters terminal mode on an involuntary t->nt ModeChanged with no window/buffer change", function()
+    -- The bug: focus never moves at all (same window, same buffer, OS focus never lost) but
+    -- something external still drops mode from terminal-insert to terminal-normal (e.g. an async
+    -- callback touching buffers/windows while the harness terminal just sits there focused).
+    -- WinEnter and FocusGained both require focus to actually move, so neither fires - the float
+    -- was left stuck in "-- (terminal) --" with no re-entry path at all. ModeChanged on t:nt must
+    -- catch this directly.
+    local term = require("harness-decorators.term")
+    term._reset()
+
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if w ~= vim.api.nvim_get_current_win() then
+        pcall(vim.api.nvim_win_close, w, true)
+      end
+    end
+    vim.cmd("vsplit")
+    local ok = pcall(vim.cmd, "terminal cat")
+    assert.is_true(ok, "could not open a terminal window (cat)")
+    local win = vim.api.nvim_get_current_win()
+    vim.wait(100, function() return false end, 25)
+    local term_buf = vim.api.nvim_win_get_buf(win)
+    vim.b[term_buf].harness_terminal = "claude"
+
+    local orig_startinsert = vim.cmd.startinsert
+    local insert_calls = 0
+    vim.cmd.startinsert = function(...)
+      insert_calls = insert_calls + 1
+      return orig_startinsert(...)
+    end
+
+    -- Simulate the involuntary drop: no <C-n>, no window/buffer change, just the mode transition.
+    -- nvim_exec_autocmds matches on either pattern or buffer, not both - `win`/`term_buf` are
+    -- already current (just opened above), so harness_terminal_buf()'s nvim_get_current_buf() read
+    -- resolves correctly against a bare pattern match.
+    vim.api.nvim_exec_autocmds("ModeChanged", { pattern = "t:nt" })
+    vim.wait(200, function()
+      return insert_calls > 0
+    end, 10)
+    assert.is_true(insert_calls > 0, "an involuntary t->nt transition with no focus change must still re-enter insert mode")
+
+    -- Deliberate <C-n> must still be respected - the same transition must NOT re-enter insert once
+    -- the user has explicitly asked to stay in terminal-normal mode.
+    insert_calls = 0
+    vim.b[term_buf].harness_terminal_normal_mode = true
+    vim.api.nvim_exec_autocmds("ModeChanged", { pattern = "t:nt" })
+    vim.wait(100, function() return false end, 10)
+    assert.are.equal(0, insert_calls, "a deliberate <C-n> must not be undone by the ModeChanged re-entry")
+
+    vim.cmd.startinsert = orig_startinsert
+    pcall(vim.cmd.stopinsert)
+    pcall(vim.api.nvim_win_close, win, true)
+    pcall(vim.api.nvim_buf_delete, term_buf, { force = true })
+  end)
+
   it("disables Snacks insert hooks and marks fresh harness terminal buffers", function()
     local term = require("harness-decorators.term")
     term._reset()

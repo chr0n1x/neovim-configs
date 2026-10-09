@@ -267,49 +267,20 @@ local function parse_diff_out(entry, line_number)
   )
 end
 
----Extract change_info from a tool_use msg record (early notification).
----@param entry table The decoded JSON object
----@param line_number? integer The 1-based line number in the JSONL file
-local function parse_tool_use_msg(entry, line_number)
-  local d = entry.d
-  if not d or not d.content then
-    return nil
-  end
-  for _, item in ipairs(d.content) do
-    if item.type == "tool_use" and (item.name == "edit" or item.name == "multiedit") then
-      local fp = item.input and item.input.path
-      if fp and not utils.is_noise(fp) then
-        local delta = ""
-        if item.input.new_string then
-          delta = item.input.new_string:gsub("\n", "\\n"):sub(1, 60)
-        end
-        return parser.make_change_info(
-          fp,
-          "Edit",
-          nil,
-          delta,
-          nil,
-          nil,
-          item.id,
-          "maki-" .. tostring(item.id),
-          line_number
-        )
-      end
-    end
-  end
-  return nil
-end
-
 ---Parse a maki JSONL line for file changes. Returns the normalized change_info
----table or nil. Handles both Diff out records (full-file before/after) and
----tool_use msg records (early notification without line info).
+---table or nil. Handles Diff out records (full-file before/after) only - the
+---early tool_use msg notification for the same edit carries no line number
+---(jump_to_edit can't place a cursor without one, so it never jumped off that
+---event anyway) and shares no dedup_key with the Diff record that follows, so
+---every edit fired TWO separate HarnessEdit events instead of one. Maki
+---already writes its JSONL on every tool result (see schedule_jump's trailing
+---debounce below), so halving the event volume at the source matters more
+---here than for harnesses that only emit one record per edit.
 ---@param line string The JSONL line text
 ---@param line_number? integer The 1-based line number in the JSONL file
 function M.parse_tool_result(line, line_number)
   local has_diff = line:find('"t":"out"') and line:find('"Diff"')
-  local has_tool_use = line:find('"t":"msg"') and line:find('"tool_use"')
-
-  if not has_diff and not has_tool_use then
+  if not has_diff then
     return nil
   end
 
@@ -318,17 +289,7 @@ function M.parse_tool_result(line, line_number)
     return nil
   end
 
-  -- Prefer Diff records (have starting_line from before/after diff).
-  if has_diff then
-    return parse_diff_out(entry, line_number)
-  end
-
-  -- Fallback to tool_use invocation (no line info, but catches edits early).
-  if has_tool_use then
-    return parse_tool_use_msg(entry, line_number)
-  end
-
-  return nil
+  return parse_diff_out(entry, line_number)
 end
 
 return M

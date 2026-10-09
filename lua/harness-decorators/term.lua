@@ -160,6 +160,31 @@ vim.api.nvim_create_autocmd("TermLeave", {
   end,
 })
 
+-- The gap WinEnter/FocusGained cannot cover: focus never moves (same window, same buffer, OS
+-- focus never lost) but something still drops mode from terminal-insert to terminal-normal -
+-- e.g. an async callback (JSONL watcher, LSP progress, any API call touching buffers/windows)
+-- that runs while the harness terminal is sitting there focused. Neither WinEnter nor
+-- FocusGained fires in that case, so the float was left stuck in "-- (terminal) --" until the
+-- user manually re-triggered focus. ModeChanged on the t->nt transition catches it directly.
+-- Still respects harness_terminal_normal_mode (deliberate <C-n>, which also transitions t->nt)
+-- and harness_term_will_leave (edit-jump's own in-flight leave) so neither gets yanked back.
+vim.api.nvim_create_autocmd("ModeChanged", {
+  group = auto_insert_group,
+  pattern = "t:nt",
+  callback = function()
+    local buf = harness_terminal_buf()
+    if not buf then
+      return
+    end
+    if vim.b[buf].harness_term_will_leave or vim.b[buf].harness_terminal_normal_mode then
+      dbg("ModeChanged t:nt autocmd (suppressed: deliberate leave)", buf)
+      return
+    end
+    dbg("ModeChanged t:nt autocmd", buf)
+    schedule_enter_terminal_mode(vim.api.nvim_get_current_win(), buf)
+  end,
+})
+
 ---Deferred to the next tick (same reasoning as the old enter_insert_scheduled: snacks.open and a
 -- re-focus both return before the window/buffer has settled, so a synchronous startinsert does not
 -- reliably stick). Needed IN ADDITION to the autocmds below: the WinEnter/FocusGained handlers only
@@ -181,11 +206,6 @@ schedule_enter_terminal_mode = function(win, buf)
     vim.b[buf].harness_terminal_normal_mode = false
   end
   dbg("schedule_enter_terminal_mode", buf)
-  -- One tick is not always enough: snacks' window/buffer can still be settling when the focus
-  -- path returns, and on Ghostty+tmux the FocusGained event can land a beat after the pane is
-  -- re-focused. Two bounded attempts (next tick, then ~75ms) cover the settle window without the
-  -- churn of an open-ended retry loop. The FocusGained autocmd above is the primary re-entry for
-  -- the tmux-pane-refocus case; this is the fallback for the open/focus-key paths.
   vim.schedule(function()
     enter_terminal_mode(win, buf)
   end)
