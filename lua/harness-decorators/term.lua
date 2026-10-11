@@ -265,6 +265,12 @@ schedule_enter_terminal_mode = function(win, buf)
   end, 75)
 end
 
+---Re-export the re-entry funnel so other modules (edit-jump's in-flight TermLeave restore) can
+-- route through the same grid-resync + bounded polling instead of a bare startinsert. Exposed on
+-- M so it is stubbable from tests; the autocmds above close over the local, which is the same
+-- function.
+M.schedule_enter_terminal_mode = schedule_enter_terminal_mode
+
 ---The shared per-harness record for `harness`, creating it if absent.
 -- Every instance read/write in this module goes through the single accessor in state.lua so term
 -- and park never diverge (Task 8).

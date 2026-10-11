@@ -349,6 +349,81 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     pcall(vim.api.nvim_buf_delete, term_buf, { force = true })
   end)
 
+  it("routes the edit-jump in-flight TermLeave restore through the shared funnel, not a bare startinsert", function()
+    -- The bug: edit-jump.lua's TermLeave handler used to call vim.cmd.startinsert() directly when
+    -- a jump was in flight. A bare startinsert is a no-op when the grid is out of sync (the
+    -- post-resize case enter_terminal_mode's redraw + set_current_win resync exists for), so the
+    -- jump's own restore could leave the float stuck in "-- (terminal) --". The restore must route
+    -- through term.schedule_enter_terminal_mode so it gets the same resync + bounded polling as
+    -- every other re-entry trigger.
+    --
+    -- Drive it the way it fires in production: get the terminal into insert mode, set the
+    -- jump-in-flight flag, then a REAL stopinsert (a genuine t->nt transition that fires TermLeave
+    -- for real - nvim_exec_autocmds("TermLeave") is rejected by the CAPI outside a terminal
+    -- window context, so we cannot synthesize it). The handler's restore is deferred (vim.schedule),
+    -- so we wait for the observable effect.
+    local term = require("harness-decorators.term")
+    term._reset()
+
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if w ~= vim.api.nvim_get_current_win() then
+        pcall(vim.api.nvim_win_close, w, true)
+      end
+    end
+    vim.cmd("vsplit")
+    local ok = pcall(vim.cmd, "terminal cat")
+    assert.is_true(ok, "could not open a terminal window (cat)")
+    local win = vim.api.nvim_get_current_win()
+    vim.wait(100, function() return false end, 25)
+    local term_buf = vim.api.nvim_win_get_buf(win)
+    vim.b[term_buf].harness_terminal = "claude"
+
+    pcall(vim.cmd.stopinsert)
+    assert.are.equal("nt", vim.fn.mode(1), "precondition: terminal in terminal-normal mode")
+
+    -- Stub the funnel so we can observe the jump's restore routed through it, without letting the
+    -- real re-entry change mode underneath the assertion.
+    local funnel_calls = 0
+    local orig_funnel = term.schedule_enter_terminal_mode
+    term.schedule_enter_terminal_mode = function()
+      funnel_calls = funnel_calls + 1
+    end
+
+    local edit_jump = require("harness-decorators.edit-jump")
+    -- Register the jump autocmds into a throwaway group so we can grab the TermLeave callback and
+    -- invoke it directly: a real t->nt TermLeave is not reproducible headlessly (startinsert never
+    -- reaches t mode there), but the callback is the unit under test and it only reads the current
+    -- window/buffer + the _jump_active flag, all of which we set up synchronously.
+    local jgroup = vim.api.nvim_create_augroup("TestJumpRestore", { clear = true })
+    edit_jump.create_jump_autocmds(jgroup)
+    local term_leave_cb
+    for _, a in ipairs(vim.api.nvim_get_autocmds({ group = "TestJumpRestore", event = "TermLeave" })) do
+      term_leave_cb = a.callback
+    end
+    assert.is_not_nil(term_leave_cb, "edit-jump must register a TermLeave autocmd")
+
+    -- Flip the jump-in-flight flag the way jump_to_edit does before its window switch, and mark
+    -- the buffer's own in-flight leave so term.lua's TermLeave logger suppresses it.
+    edit_jump._jump_active = true
+    vim.b[term_buf].harness_term_will_leave = true
+
+    -- Invoke the handler the way a real TermLeave would. Its restore is deferred (vim.schedule),
+    -- so wait for the observable effect.
+    term_leave_cb({})
+    vim.wait(300, function()
+      return funnel_calls > 0
+    end, 10)
+
+    assert.is_true(funnel_calls > 0, "the edit-jump TermLeave restore must route through term.schedule_enter_terminal_mode, not a bare startinsert")
+    assert.are.equal(false, vim.b[term_buf].harness_term_will_leave, "the will-leave flag must be cleared by the restore")
+    edit_jump._jump_active = false
+
+    term.schedule_enter_terminal_mode = orig_funnel
+    pcall(vim.cmd.stopinsert)
+    pcall(vim.api.nvim_win_close, win, true)
+    pcall(vim.api.nvim_buf_delete, term_buf, { force = true })
+  end)
+
   it("disables Snacks insert hooks and marks fresh harness terminal buffers", function()
     local term = require("harness-decorators.term")
     term._reset()

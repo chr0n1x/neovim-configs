@@ -7,7 +7,7 @@ local utils = require("harness-decorators.utils")
 local M = {}
 
 ---Set true while a jump is in flight so the TermLeave guard knows to restore insert mode.
-local _jump_active = false
+M._jump_active = false
 
 ---Dedicated window next to the floating terminal for Claude Code edits.
 M.jump_win = nil
@@ -135,7 +135,7 @@ local function jump_to_edit(data, file_path)
   -- the buffer/window events suppresses the plugin churn that motivated this
   -- guard while leaving TermLeave (and therefore the re-entry path) able to
   -- fire.
-  _jump_active = true
+  M._jump_active = true
 
   local saved_ei = vim.o.eventignore
   vim.o.eventignore = "BufLeave,BufEnter,WinEnter,WinLeave"
@@ -155,7 +155,7 @@ local function jump_to_edit(data, file_path)
   -- If the switch failed (e.g. despite the guard), unwind cleanly: never leave
   -- _jump_active latched, and skip the deferred cursor set below.
   if not ok_switch then
-    _jump_active = false
+    M._jump_active = false
     utils.log("jump window switch failed: " .. tostring(switch_err), vim.log.levels.WARN)
     return
   end
@@ -163,7 +163,7 @@ local function jump_to_edit(data, file_path)
   -- Defer cursor set so we run after any plugin BufWinEnter callbacks that restore
   -- the last-known cursor position and would otherwise override us.
   vim.defer_fn(function()
-    _jump_active = false
+    M._jump_active = false
     -- Clear the will-leave flag no matter what: if the work window is gone (early return
     -- below) or the re-entry bails, a stale flag would make term.lua's ModeChanged t:nt
     -- handler treat a later, unrelated t->nt kick as a "deliberate leave" and skip the
@@ -352,19 +352,29 @@ function M.create_jump_autocmds(group)
   })
 
   -- If something knocks the terminal out of insert mode while a jump is in flight,
-  -- restore it immediately. TermLeave fires the instant insert mode is exited,
-  -- so the gap between the exit and our startinsert() is one vim.schedule tick.
+  -- restore it immediately. TermLeave fires the instant insert mode is exited, so the gap between
+  -- the exit and our re-entry is one vim.schedule tick. Route the restore through the shared
+  -- funnel (term.schedule_enter_terminal_mode) rather than a bare startinsert: a bare startinsert
+  -- is a no-op when the grid is out of sync (the post-resize case), which is exactly the stuck
+  -- "-- (terminal) --" state the funnel's redraw + set_current_win resync and bounded polling
+  -- exist to clear. The funnel is also the only path that respects harness_terminal_normal_mode,
+  -- so a <C-n> pressed during the jump is not yanked back.
   vim.api.nvim_create_autocmd("TermLeave", {
     group = group,
     callback = function()
-      if _jump_active then
+      if M._jump_active then
         local buf = vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win())
         if vim.api.nvim_buf_get_option(buf, "buftype") == "terminal" then
           vim.schedule(function()
-            if _jump_active then
+            if M._jump_active then
               local tbuf = vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win())
               vim.b[tbuf].harness_term_will_leave = false
-              vim.cmd.startinsert()
+              local ok_term, term = pcall(require, "harness-decorators.term")
+              if ok_term and type(term.schedule_enter_terminal_mode) == "function" then
+                term.schedule_enter_terminal_mode(vim.api.nvim_get_current_win(), tbuf)
+              else
+                vim.cmd.startinsert()
+              end
             end
           end)
         end
