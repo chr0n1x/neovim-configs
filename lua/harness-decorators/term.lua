@@ -287,7 +287,7 @@ end
 -- as RATIOS (normalized against the editor size at the time of the first <C-f>), so a pane resize
 -- between the two <C-f> presses is absorbed: the absolute row/col/width/height are recomputed here
 -- against the CURRENT editor size, and the float lands at the same proportional spot it started
--- from. Ported from ai-harness.lua; the animation helper is shared (lua/terminal-animations.lua).
+-- from. Ported from ai-harness.lua; the animation helper is shared (harness-decorators/terminal-animations.lua).
 local function animate_collapse(self)
   if not (self._wide and self._saved_config) then
     return
@@ -302,7 +302,7 @@ local function animate_collapse(self)
     width = (sc.width_ratio or 1) * cols,
     height = (sc.height_ratio or 1) * lines,
   }
-  local anim = require("terminal-animations")
+  local anim = require("harness-decorators.terminal-animations")
   anim.animate_resize(self, target)
 end
 
@@ -395,7 +395,7 @@ function M.fullscreen_key(self)
 
   if not self._wide then
     self._wide = true
-    local anim = require("terminal-animations")
+    local anim = require("harness-decorators.terminal-animations")
     anim.animate_resize(self, {
       row = wide_row_pad * lines,
       col = wide_col_pad * cols,

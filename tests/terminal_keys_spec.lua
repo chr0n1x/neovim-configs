@@ -20,7 +20,7 @@ describe("terminal key legend: one handler per key", function()
     local inst = {
       buf = vim.api.nvim_create_buf(false, true),
       win = opts.win,
-      opts = { border = "rounded" }, -- terminal-animations reads self.opts.border during resize
+      opts = { border = "rounded" }, -- harness-decorators/terminal-animations reads self.opts.border during resize
       _wide = opts._wide,
       _saved_config = opts._saved_config,
       hide_called = false,
