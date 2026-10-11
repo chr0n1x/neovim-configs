@@ -278,21 +278,27 @@ local function set_prev_win()
   find_base_window()
 end
 
----Collapse the float back to its saved (non-wide) config, animated. Ported from ai-harness.lua; the
--- animation helper is shared (lua/terminal-animations.lua).
+---Collapse the float back to its saved (non-wide) geometry, animated. The saved geometry is stored
+-- as RATIOS (normalized against the editor size at the time of the first <C-f>), so a pane resize
+-- between the two <C-f> presses is absorbed: the absolute row/col/width/height are recomputed here
+-- against the CURRENT editor size, and the float lands at the same proportional spot it started
+-- from. Ported from ai-harness.lua; the animation helper is shared (lua/terminal-animations.lua).
 local function animate_collapse(self)
   if not (self._wide and self._saved_config) then
     return
   end
   self._wide = false
   local sc = self._saved_config
+  local lines = vim.o.lines
+  local cols = vim.o.columns
+  local target = {
+    row = (sc.row_ratio or 0) * lines,
+    col = (sc.col_ratio or 0) * cols,
+    width = (sc.width_ratio or 1) * cols,
+    height = (sc.height_ratio or 1) * lines,
+  }
   local anim = require("terminal-animations")
-  anim.animate_resize(self, {
-    row = sc.row or 0,
-    col = sc.col or 0,
-    width = sc.width or vim.o.columns,
-    height = sc.height or vim.o.lines,
-  }, self._saved_config)
+  anim.animate_resize(self, target)
 end
 
 ---The <C-h> go-back key handler: jump to the window we came from while THIS harness's float stays
@@ -364,15 +370,23 @@ function M.fullscreen_key(self)
     return
   end
 
-  -- Save original config only once so we don't drift on each toggle.
-  if not self._saved_config then
-    self._saved_config = vim.api.nvim_win_get_config(win)
-  end
-
   local lines = vim.o.lines
   local cols = vim.o.columns
   local wide_row_pad = 0.05
   local wide_col_pad = 0.1
+
+  -- Save the original geometry as RATIOS (normalized against the current editor size) so the
+  -- collapse re-derives absolute coords against whatever size the editor is at that point -
+  -- a pane resize between the two <C-f> presses does not strand the float at stale absolute coords.
+  if not self._saved_config then
+    local cfg = vim.api.nvim_win_get_config(win)
+    self._saved_config = {
+      row_ratio = (cfg.row or 0) / lines,
+      col_ratio = (cfg.col or 0) / cols,
+      width_ratio = (cfg.width or cols) / cols,
+      height_ratio = (cfg.height or lines) / lines,
+    }
+  end
 
   if not self._wide then
     self._wide = true

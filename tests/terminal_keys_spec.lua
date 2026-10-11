@@ -94,7 +94,7 @@ describe("terminal key legend: one handler per key", function()
     local ok, err = pcall(term_mod.fullscreen_key, fake)
     assert.is_true(ok, "fullscreen_key raised: " .. tostring(err))
     assert.is_true(fake._wide == true, "<C-f> first press must set _wide (fullscreen)")
-    assert.is_not_nil(fake._saved_config, "first <C-f> must save the window config for later collapse")
+    assert.is_not_nil(fake._saved_config, "first <C-f> must save the window geometry (as ratios) for later collapse")
 
     -- Wait until the animation finishes (its timer stops) so the window is at its final size.
     local done = vim.wait(2000, function()
