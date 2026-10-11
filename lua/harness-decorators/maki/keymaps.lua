@@ -2,11 +2,11 @@
 -- lua/plugins/ai-harness.lua. Each entry is a lazy.nvim key spec (lhs, action, desc,
 -- mode/ft). Maki has no @file mention expansion and reads piped stdin as its initial
 -- prompt, so "adding" a file means typing a path reference into the floating terminal.
--- The shared context-injection machinery (find_terminal_win / shorten_path /
--- type_into_terminal / make_add_command / make_tree_add_command / send_visual_selection)
--- lives in context-inject.lua; this file keeps only maki's build_context_text format and
--- its command registrations, plus the MakiAdd / MakiTreeAdd user-commands that replace
--- claudecode's server-backed ones.
+-- The shared context-injection machinery (find_terminal_win / type_into_terminal /
+-- make_add_command / make_tree_add_command / send_visual_selection) lives in
+-- context-inject.lua; this file keeps only maki's build_context_text format (fully
+-- qualified paths, no shortening) and its command registrations, plus the MakiAdd /
+-- MakiTreeAdd user-commands that replace claudecode's server-backed ones.
 
 local ci = require("harness-decorators.context-inject")
 local keymaps = require("harness-decorators.keymaps")
@@ -16,18 +16,20 @@ local keymaps = require("harness-decorators.keymaps")
 -- ==========================================================================
 
 ---Build a path-labeled snippet. Maki reads files itself, so context is always just a path
----reference. Line ranges use the same #L<start>-<end> form claude-code uses (e.g.
----<path>#L31-32), so references look consistent across both harnesses.
+---reference. The path is always sent fully qualified (never cwd-relative or ~-shortened) so
+---the reference is unambiguous regardless of where maki's session was started. Line ranges
+---use the same #L<start>-<end> form claude-code uses (e.g. <path>#L31-32), so references
+---look consistent across both harnesses.
 ---@param file_path string
 ---@param start_line? integer
 ---@param end_line? integer
 ---@return string
 local function build_context_text(file_path, start_line, end_line)
-  local short = ci.shorten_path(file_path)
   if not (start_line and end_line) then
-    return short
+    return file_path
   end
-  return start_line == end_line and (short .. "#L" .. start_line) or (short .. "#L" .. start_line .. "-" .. end_line)
+  return start_line == end_line and (file_path .. "#L" .. start_line)
+    or (file_path .. "#L" .. start_line .. "-" .. end_line)
 end
 
 ---maki appends the trailing space inline (no separate write needed).
