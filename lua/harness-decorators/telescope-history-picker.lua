@@ -27,17 +27,10 @@ local function ensure_hl()
   end
 end
 
----Display form for a picker row: the shared cwd-relative/~ shortener (utils.shorten_path) with
--- a "./" prefix on the cwd-relative tier so it reads as relative to the project root. The other
--- tiers (~ and absolute) are left as-is, matching how a user would read them in the list.
+---Display form for a picker row: the shared ~-collapse/full shortener (utils.shorten_path),
+-- passed through as-is so a row reads the same way the harness terminal would type it.
 local function shorten_path(fp)
-  local cwd = vim.uv.cwd()
-  local short = utils.shorten_path(fp)
-  -- Only add "./" when we actually produced a cwd-relative path (no ~ and not absolute).
-  if cwd and short ~= fp and not short:match("^~") and not short:match("^/") then
-    return "./" .. short
-  end
-  return short
+  return utils.shorten_path(fp)
 end
 
 ---Build a Telescope previewer that renders diffs from the sidecar file.

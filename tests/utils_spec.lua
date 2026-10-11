@@ -104,38 +104,90 @@ describe("utils.command_executable", function()
   end)
 end)
 
-describe("shorten_path (3-tier display rule, shared across callers)", function()
-  local cwd = vim.uv.cwd()
+describe("shorten_path (2-tier display rule, shared across callers)", function()
   local home = vim.env.HOME
 
-  it("returns a cwd-relative path for files under the current dir", function()
-    local f = cwd .. "/lua/harness-decorators/utils.lua"
-    assert.are.equal("lua/harness-decorators/utils.lua", utils.shorten_path(f))
+  it("collapses to ~ when the path is $HOME itself", function()
+    assert.are.equal("~", utils.shorten_path(home))
   end)
 
-  it("returns the full path when the file IS the cwd (no bare './' form)", function()
-    assert.are.equal(cwd, utils.shorten_path(cwd))
-  end)
-
-  it("collapses to ~ for files under $HOME but not under cwd", function()
-    -- Pick a home-relative path that is NOT under cwd. If cwd happens to be under home
-    -- (it is), choose a sibling directory so the cwd-relative tier does not apply.
+  it("collapses to ~/... for files under $HOME", function()
     local f = home .. "/elsewhere/file.lua"
     assert.are.equal("~/elsewhere/file.lua", utils.shorten_path(f))
   end)
 
-  it("returns the full path for files outside both cwd and $HOME", function()
+  it("never collapses a sibling that merely shares a name prefix", function()
+    -- /home/kran2/foo must NOT become ~/2/foo when HOME=/home/kran (the char right after
+    -- home must be a slash).
+    local f = home .. "2/foo.txt"
+    assert.are.equal(f, utils.shorten_path(f))
+  end)
+
+  it("returns the full path for files under the cwd but outside $HOME (no relative tier)", function()
+    -- The cwd-relative tier was dropped: a subdir under nvim's cwd (e.g. /tmp/foo when nvim
+    -- is in /tmp) must stay absolute, otherwise it resolves against the harness's cwd and
+    -- the tree-add types a bare name that points at a nonexistent path.
+    local tmpdir = vim.fn.tempname()
+    local f = tmpdir .. "/subdir"
+    assert.are.equal(f, utils.shorten_path(f))
+  end)
+
+  it("returns the full path for files outside $HOME", function()
     assert.are.equal("/etc/hosts", utils.shorten_path("/etc/hosts"))
+  end)
+
+  it("absolutizes a relative input (as expand('%') returns it for a relative buffer)", function()
+    -- <leader>ca is `MakiAdd %`; make_add_command expands "%" which, when the current
+    -- buffer was opened with a RELATIVE name (e.g. maki opening "foo.txt" while cwd is
+    -- /tmp), returns a relative path like "foo.txt". shorten_path must absolutize it
+    -- against cwd, not pass it through - otherwise the typed reference only resolves if
+    -- the harness's cwd happens to equal nvim's cwd. This is the C-t/<leader>ca "just
+    -- types the file name" bug.
+    local cwd = vim.uv.cwd()
+    local rel = "relsub/file.txt"
+    local abs = cwd .. "/relsub/file.txt"
+    -- The relative input must come back absolute (cwd-prefixed), never as the bare relative.
+    assert.are.equal(abs, utils.shorten_path(rel),
+      ("relative input %q must be absolutized to cwd, got %q"):format(rel, utils.shorten_path(rel)))
+    assert.is_not.equal(rel, utils.shorten_path(rel),
+      "shorten_path must not pass a relative path through unchanged")
+  end)
+
+  it("absolutizes a relative input even when cwd is under $HOME (yields ~ form, not bare)", function()
+    -- When nvim's cwd is under $HOME, a relative buffer name must become a ~-collapsed
+    -- absolute reference, not the bare relative name.
+    local home = vim.env.HOME
+    -- Force cwd to a home-relative temp dir so the relative resolution lands under $HOME.
+    local oldcwd = vim.uv.cwd()
+    local subdir = home .. "/.shorten_test_" .. tostring(vim.uv.cwd():gsub("/", "_"))
+    vim.fn.mkdir(subdir, "p")
+    vim.cmd("cd " .. vim.fn.fnameescape(subdir))
+    local ok, err = pcall(function()
+      local got = utils.shorten_path("somefile.txt")
+      -- Must be absolute-ish: starts with ~ (home-relative cwd) and contains the file name.
+      assert.is_truthy(got:match("^~") or got:match("^/"),
+        ("relative input must be absolutized, got %q"):format(got))
+      assert.is_truthy(got:match("somefile%.txt$"),
+        ("absolutized path must end with the file name, got %q"):format(got))
+      assert.is_not.equal("somefile.txt", got,
+        "must not return the bare relative name when cwd is under $HOME")
+    end)
+    -- Always restore cwd, even on failure.
+    vim.cmd("cd " .. vim.fn.fnameescape(oldcwd))
+    pcall(vim.fn.remove, subdir, "rf")
+    if not ok then
+      error(err)
+    end
   end)
 
   it("context-inject.shorten_path delegates to the shared definition (no divergence)", function()
     -- The four harness keymaps call ci.shorten_path; it must produce exactly what the shared
     -- utils.shorten_path produces, so there is one source of truth for display shortening.
     local samples = {
-      cwd .. "/lua/harness-decorators/utils.lua", -- cwd-relative tier
+      home, -- the $HOME itself
       home .. "/elsewhere/file.lua", -- ~ tier
       "/etc/hosts", -- absolute tier
-      cwd, -- the cwd itself
+      vim.uv.cwd(), -- the cwd itself (no relative tier)
     }
     for _, f in ipairs(samples) do
       assert.are.equal(utils.shorten_path(f), ci.shorten_path(f),

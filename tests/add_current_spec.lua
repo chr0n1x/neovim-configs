@@ -197,10 +197,12 @@ describe("<leader>ca action: resolves % to a real file and reaches the send stag
         local text = payloads[1]
         local fname = path:match("([^/]+)$")
         if harness == "maki" then
-          -- maki sends the bare, FULLY QUALIFIED path (never cwd-relative or ~-shortened) so the
-          -- reference is unambiguous regardless of where the session was started; no @mention.
-          assert.is_truthy(text:find(path, 1, true),
-            ("maki: expected the fully qualified path %s, got %q"):format(path, text))
+          -- maki sends the bare path through the shared shorten_path (~-collapse under
+          -- $HOME, full absolute otherwise) so a tree-add types a resolvable reference;
+          -- no @mention and no cwd-relative remainder.
+          local expected = require("harness-decorators.utils").shorten_path(path)
+          assert.is_truthy(text:find(expected, 1, true),
+            ("maki: expected the shortened path %s, got %q"):format(expected, text))
           assert.is_falsy(text:find("@", 1, true),
             ("maki: unexpectedly sent an @mention, got %q"):format(text))
         else

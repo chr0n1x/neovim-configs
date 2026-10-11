@@ -24,8 +24,8 @@ function M.find_terminal_win()
 end
 
 ---Shorten a path for display in the harness terminal. Delegates to the shared definition in
----utils.shorten_path (cwd-relative, then ~ collapse, then full). The per-harness @/range/decor
----is applied by each keymaps file on top of this result.
+---utils.shorten_path (~ collapse under $HOME, then full absolute). The per-harness @/range/
+---decor is applied by each keymaps file on top of this result.
 ---@param file_path string
 ---@return string
 function M.shorten_path(file_path)

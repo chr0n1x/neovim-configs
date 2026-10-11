@@ -229,36 +229,29 @@ end
 
 ---Shorten a path for display. The harness CLI reads files itself, so the reference just
 ---needs to be unambiguous and short. Preference order:
----  1. cwd-relative (e.g. "lua/harness-decorators/claude/keymaps.lua") when the file is
----     under the current working dir - shortest and matches how you'd type it.
----  2. ~ collapse (e.g. "~/Code/kran/...") when under $HOME but not under cwd.
----  3. the full path otherwise.
----A directory that IS the cwd has no non-empty remainder in either step, so it falls
----through to the full absolute path - never the empty/"./" form that yields a bare "@".
+---  1. ~ collapse (e.g. "~/Code/kran/...") when the path is $HOME itself or lives under it.
+---  2. the full path otherwise.
+---No cwd-relative tier: a reference is only as good as the cwd the HARNESS started in, which
+---differs from nvim's cwd when the user cd's into /tmp (or anywhere else) and tree-adds a
+---subdir - the relative remainder would then point at a nonexistent path. ~ and full paths are
+---absolute, so they resolve correctly no matter where the harness's session lives.
 ---This is the single definition of display shortening; context-inject and the history picker
 ---both delegate here (see tests/utils_spec.lua). Callers apply their own prefix/decoration
 ---(the picker prepends "./", claude/crush append a trailing "/" for dirs) on top of this.
 ---@param file_path string
 ---@return string
 function M.shorten_path(file_path)
-  -- 1. cwd-relative. Strip the cwd prefix when the file lives under it, yielding a short
-  --    relative path. Only accept when there's actually a remainder (a bare filename under
-  --    cwd is fine too).
-  local cwd = vim.uv.cwd()
-  if cwd and cwd ~= "" then
-    local bare_cwd = cwd:gsub("/+$", "")
-    if bare_cwd ~= "" then
-      local prefix = bare_cwd .. "/"
-      if file_path:sub(1, #prefix) == prefix then
-        local rel = file_path:sub(#prefix + 1)
-        if rel ~= "" then
-          return rel
-        end
-      end
-    end
+  -- 0. Absolutize a relative input first. <leader>ca is `MakiAdd %`; make_add_command
+  --    expands "%" which, when the current buffer was opened with a RELATIVE name (e.g.
+  --    maki opening "foo.txt" while cwd is /tmp), returns a relative path. Without this,
+  --    the relative name passes straight through and only resolves if the harness's cwd
+  --    happens to equal nvim's cwd. fnamemodify(":p") absolutizes + resolves ~; it leaves
+  --    an already-absolute path unchanged, so the tiers below are unaffected.
+  if file_path and file_path:sub(1, 1) ~= "/" then
+    file_path = vim.fn.fnamemodify(file_path, ":p")
   end
 
-  -- 2. ~ collapse for anything under $HOME.
+  -- 1. ~ collapse for anything under $HOME.
   local home = vim.env.HOME
   if home and home ~= "" then
     local bare_home = home:gsub("/+$", "")
@@ -275,7 +268,7 @@ function M.shorten_path(file_path)
     end
   end
 
-  -- 3. Full path.
+  -- 2. Full path.
   return file_path
 end
 
