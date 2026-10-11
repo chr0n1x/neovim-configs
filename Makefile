@@ -1,3 +1,5 @@
+# All targets are relative to this dir (.config/nvim/). Run them from there, or direct
+# make at it: `make -C .config/nvim ci`.
 NVIM ?= nvim
 PODMAN ?= $(shell (command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1 && echo podman) || (command -v docker >/dev/null 2>&1 && echo docker) || echo podman)
 DOCKERFILE ?= Dockerfile.test
