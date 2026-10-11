@@ -288,6 +288,67 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     pcall(vim.api.nvim_buf_delete, term_buf, { force = true })
   end)
 
+  it("resyncs the grid (redraw + re-focus) before startinsert so a post-resize stuck nt state settles", function()
+    -- The bug: after an external (tmux) pane resize, the terminal buffer can enter a state where a
+    -- BARE startinsert is a no-op - the grid is out of sync with the new size, so the mode
+    -- transition is silently dropped and the float sticks in "-- (terminal) --". Verified live:
+    -- startinsert alone (even a stopinsert/startinsert cycle) left the mode in nt, while
+    -- redraw + set_current_win(win) + startinsert transitioned it back to t. enter_terminal_mode
+    -- must therefore perform that resync before startinsert, not call startinsert alone. This
+    -- test can't reproduce the real grid-out-of-sync state headlessly (a fresh `terminal cat`
+    -- never gets it), so it asserts the resync is actually issued: stub redraw and set_current_win,
+    -- drive enter_terminal_mode from the nt state, and confirm both ran before startinsert.
+    local term = require("harness-decorators.term")
+    term._reset()
+
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if w ~= vim.api.nvim_get_current_win() then
+        pcall(vim.api.nvim_win_close, w, true)
+      end
+    end
+    vim.cmd("vsplit")
+    local ok = pcall(vim.cmd, "terminal cat")
+    assert.is_true(ok, "could not open a terminal window (cat)")
+    local win = vim.api.nvim_get_current_win()
+    vim.wait(100, function() return false end, 25)
+    local term_buf = vim.api.nvim_win_get_buf(win)
+    vim.b[term_buf].harness_terminal = "claude"
+
+    pcall(vim.cmd.stopinsert)
+    assert.are.equal("nt", vim.fn.mode(1), "precondition: terminal in terminal-normal mode")
+
+    local redraw_calls = 0
+    local refocus_calls = 0
+    local orig_redraw = vim.cmd.redraw
+    local orig_set_cur = vim.api.nvim_set_current_win
+    vim.cmd.redraw = function(...)
+      redraw_calls = redraw_calls + 1
+      return orig_redraw(...)
+    end
+    vim.api.nvim_set_current_win = function(w, ...)
+      refocus_calls = refocus_calls + 1
+      return orig_set_cur(w, ...)
+    end
+
+    -- Drive the re-entry path (same call the ModeChanged t:nt handler makes, minus the schedule
+    -- wrapper) so the resync inside enter_terminal_mode runs synchronously and is observable.
+    vim.b[term_buf].harness_terminal_normal_mode = false
+    term.ensure_terminal_mode()
+    -- ensure_terminal_mode schedules enter_terminal_mode for the next tick; let it run.
+    vim.wait(100, function()
+      return redraw_calls > 0
+    end, 10)
+
+    assert.is_true(redraw_calls > 0, "enter_terminal_mode must redraw to resync the grid before startinsert")
+    assert.is_true(refocus_calls > 0, "enter_terminal_mode must re-set the current window before startinsert")
+
+    vim.cmd.redraw = orig_redraw
+    vim.api.nvim_set_current_win = orig_set_cur
+    pcall(vim.cmd.stopinsert)
+    pcall(vim.api.nvim_win_close, win, true)
+    pcall(vim.api.nvim_buf_delete, term_buf, { force = true })
+  end)
+
   it("disables Snacks insert hooks and marks fresh harness terminal buffers", function()
     local term = require("harness-decorators.term")
     term._reset()

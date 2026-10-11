@@ -96,6 +96,13 @@ local function enter_terminal_mode(win, buf)
     return
   end
   dbg("enter_terminal_mode: startinsert", buf)
+  -- After an external (tmux) pane resize, the terminal buffer can enter a state where a bare
+  -- startinsert is a no-op: the grid is out of sync with the new size, so the mode transition is
+  -- silently dropped and the float sticks in "-- (terminal) --". A redraw resyncs the grid and
+  -- re-setting the current window to itself forces the terminal to reclaim its cursor; together
+  -- they make the startinsert below actually take. Both are no-ops in the common (no-resize) case.
+  vim.cmd.redraw()
+  vim.api.nvim_set_current_win(win)
   vim.cmd.startinsert()
 end
 
@@ -198,6 +205,45 @@ vim.api.nvim_create_autocmd("ModeChanged", {
 -- in this module must call this directly.
 ---@param win integer?
 ---@param buf integer?
+---Bounded retry constants for schedule_enter_terminal_mode. A pane resize is a multi-step
+-- async process (VimResized -> snacks on_resize -> update() -> a follow-up grid resync) and any
+-- one of those steps can drop mode t->nt. Two fixed-delay attempts (the old next-tick + 75ms pair)
+-- are outlasted by a step that lands after them, leaving the float stuck in "-- (terminal) --" with
+-- no transition left to trigger another catch. Instead of betting on two timestamps, poll: keep
+-- re-asserting insert mode as long as we OBSERVE ourselves still in terminal-normal, up to
+-- REENTER_MAX_TRIES attempts REENTER_INTERVAL_MS apart. Total worst case is ~1.5s of polling,
+-- but it is NON-BLOCKING (a deferred-timer chain, never vim.wait) and only runs while the mode is
+-- actually wrong, so the common (already-in-t) case costs one cheap mode() read and stops.
+local REENTER_MAX_TRIES = 20
+local REENTER_INTERVAL_MS = 75
+
+---Re-assert terminal insert mode for (win, buf), re-polling (non-blocking) while the mode is
+-- observed to be terminal-normal (nt). Each tick either settles into t and stops, or re-asserts and
+-- schedules the next tick. Stops when the mode is already terminal (t), when the user has
+-- deliberately pressed <C-n> (harness_terminal_normal_mode), when the window/buffer is gone, or
+-- after REENTER_MAX_TRIES attempts.
+---@param win integer
+---@param buf integer
+---@param tries integer remaining attempts
+local function retry_enter_terminal_mode(win, buf, tries)
+  if tries <= 0 then
+    return
+  end
+  if not vim.api.nvim_win_is_valid(win) or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  if vim.b[buf].harness_terminal_normal_mode then
+    return
+  end
+  if vim.fn.mode(1) == "t" then
+    return
+  end
+  enter_terminal_mode(win, buf)
+  vim.defer_fn(function()
+    retry_enter_terminal_mode(win, buf, tries - 1)
+  end, REENTER_INTERVAL_MS)
+end
+
 schedule_enter_terminal_mode = function(win, buf)
   if not win or not buf then
     dbg(
@@ -212,10 +258,10 @@ schedule_enter_terminal_mode = function(win, buf)
   end
   dbg("schedule_enter_terminal_mode", buf)
   vim.schedule(function()
-    enter_terminal_mode(win, buf)
+    retry_enter_terminal_mode(win, buf, REENTER_MAX_TRIES)
   end)
   vim.defer_fn(function()
-    enter_terminal_mode(win, buf)
+    retry_enter_terminal_mode(win, buf, REENTER_MAX_TRIES)
   end, 75)
 end
 
