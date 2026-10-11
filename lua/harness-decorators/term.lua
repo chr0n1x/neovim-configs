@@ -178,6 +178,11 @@ vim.api.nvim_create_autocmd("ModeChanged", {
     end
     if vim.b[buf].harness_term_will_leave or vim.b[buf].harness_terminal_normal_mode then
       dbg("ModeChanged t:nt autocmd (suppressed: deliberate leave)", buf)
+      -- Consume the will-leave suppression so it cannot block a LATER t->nt
+      -- transition: the flag means "ignore this one jump's own churn", not
+      -- "stay out of insert forever". A stale flag (see edit-jump's deferred
+      -- clear) previously stranded the terminal after a pane resize.
+      vim.b[buf].harness_term_will_leave = false
       return
     end
     dbg("ModeChanged t:nt autocmd", buf)

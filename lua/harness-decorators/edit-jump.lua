@@ -164,6 +164,14 @@ local function jump_to_edit(data, file_path)
   -- the last-known cursor position and would otherwise override us.
   vim.defer_fn(function()
     _jump_active = false
+    -- Clear the will-leave flag no matter what: if the work window is gone (early return
+    -- below) or the re-entry bails, a stale flag would make term.lua's ModeChanged t:nt
+    -- handler treat a later, unrelated t->nt kick as a "deliberate leave" and skip the
+    -- re-entry - the terminal then sticks in "-- (terminal) --" after a pane resize.
+    local cur_buf = vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win())
+    if vim.api.nvim_buf_is_valid(cur_buf) and vim.b[cur_buf].harness_terminal then
+      vim.b[cur_buf].harness_term_will_leave = false
+    end
     if not vim.api.nvim_win_is_valid(win) then
       return
     end
