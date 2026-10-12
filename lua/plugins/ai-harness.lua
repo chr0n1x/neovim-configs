@@ -11,6 +11,14 @@ local harness = os.getenv("NVIM_LLM_HARNESS") or "claude"
 
 if vim.tbl_contains(utils.list_harnesses(), harness) then
   require("harness-decorators").setup(harness)
+  -- Open the harness float on startup so the terminal is already up (the <leader>c behavior,
+  -- without the keystroke). Spawning a harness process in headless (the test suite) never
+  -- settles, so the auto-open is skipped there. Schedules so it runs after the UI is ready.
+  if not vim.fn.has("headless") then
+    vim.schedule(function()
+      require("harness-decorators").open_on_startup()
+    end)
+  end
 end
 
 return {}

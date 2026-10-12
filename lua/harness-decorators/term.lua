@@ -624,7 +624,15 @@ function M.open(harness, opts)
     cmd = cmd .. " " .. opts.args
   end
 
+  -- Spawn in the cwd of the file being edited, so `--continue` resumes THAT project's
+  -- session, not the global getcwd()'s. Falls back to getcwd() for an unnamed/scratch
+  -- buffer (no directory to infer).
   local spawn_cwd = vim.fn.getcwd()
+  local cur_buf = vim.api.nvim_get_current_buf()
+  local cur_file = vim.api.nvim_buf_get_name(cur_buf)
+  if cur_file ~= "" and vim.uv.fs_stat(cur_file) then
+    spawn_cwd = vim.fn.fnamemodify(cur_file, ":h")
+  end
   local inst = snacks.open(cmd, {
     auto_insert = false,
     start_insert = false,

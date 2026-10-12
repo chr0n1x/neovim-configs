@@ -66,9 +66,13 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
   it("records the spawn cwd so session lookup survives later cwd changes", function()
     local term = require("harness-decorators.term")
     term._reset()
+    -- Ensure the current buffer is unnamed so the spawn cwd is getcwd() (not a file's dir).
+    local scratch = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(scratch)
     local spawn_cwd = vim.fn.getcwd()
     term.open("crush")
     assert.are.equal(spawn_cwd, term.cwd("crush"))
+    pcall(vim.api.nvim_buf_delete, scratch, { force = true })
   end)
 
   it("a second open(same_harness) reuses the existing instance (no second Snacks.open)", function()
@@ -545,6 +549,39 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     local entries = assert(ok and term.list())
     assert.equal(1, #entries, "list should include the live harness")
     assert.are.equal(inst.buf, entries[1].bufnr)
+  end)
+
+  it("spawn cwd is the current buffer's dir when it names a real file (project-scoped resume)", function()
+    -- The point of project-scoped resume: when you are editing a file in /proj/a, the harness
+    -- spawns in /proj/a so `--continue` resumes /proj/a's session, not getcwd()'s.
+    local term = require("harness-decorators.term")
+    term._reset()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, "p")
+    local file = dir .. "/main.lua"
+    local f = io.open(file, "w")
+    f:write("local x = 1\n")
+    f:close()
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_buf_set_name(buf, file)
+    vim.api.nvim_set_current_buf(buf)
+    term.open("maki")
+    assert.are.equal(dir, term.cwd("maki"), "spawn cwd must be the edited file's directory")
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    term._reset()
+  end)
+
+  it("spawn cwd falls back to getcwd() when the current buffer is a scratch/unnamed file", function()
+    -- A [No Name] or scratch buffer has no directory; the harness must spawn in getcwd() as before.
+    local term = require("harness-decorators.term")
+    term._reset()
+    local expect = vim.fn.getcwd()
+    local buf = vim.api.nvim_create_buf(false, true) -- unnamed scratch buffer
+    vim.api.nvim_set_current_buf(buf)
+    term.open("maki")
+    assert.are.equal(expect, term.cwd("maki"), "unnamed buffer must fall back to getcwd()")
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    term._reset()
   end)
 
   it("does not require any claudecode module (the whole point of the swap)", function()

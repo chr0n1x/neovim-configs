@@ -72,3 +72,8 @@ commands. Search the spec by the module name before writing a new one.
   the data dir. Everything lazy.nvim / mason / possession writes lands in `.test-cache`, never
   the repo. Don't create or commit anything under the repo that looks like lazy/mason/possession
   state (stray `lazy/`, `mason/`, `possession/` dirs) - it belongs in `.test-cache`.
+- **No process spawns at startup in the test run.** `make ci` runs a headless nvim that loads
+  the full real config; `ai-harness.lua` opens the harness float at startup via
+  `open_on_startup`. That path is gated on `vim.fn.has("headless")` so the suite never spawns a
+  harness process (a spawned agent PTY never settles and hangs the container). If you add other
+  startup work that opens a terminal or external process, guard it the same way.

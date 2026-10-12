@@ -85,6 +85,20 @@ function M.setup_auto_follow()
   watcher.start()
 end
 
+---Open the active harness's float on nvim startup, so the terminal is already up instead of
+---waiting for the first <leader>c. Runs the same steps the <leader>c key does (start the watcher,
+---restore the last normal-mode buffer underneath, then show/spawn the float). Idempotent via
+---setup_auto_follow's initialized flag; a no-op when the harness has no live command to spawn.
+function M.open_on_startup()
+  M.setup_auto_follow()
+  focus.suppress_next_leave()
+  focus.restore()
+  local pok, park = pcall(require, "harness-decorators.park")
+  if pok then
+    park.show_selected()
+  end
+end
+
 ---Public accessor: always reads from the watcher module.
 function M.get_pinned_path()
   return watcher.pinned_jsonl_path
