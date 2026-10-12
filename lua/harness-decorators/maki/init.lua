@@ -2,12 +2,12 @@
 -- harness-decorators.claude (see docs/ai/agents/adapter-structure.md) so the
 -- generic modules (watcher, jsonl-parser) are harness-agnostic.
 --
--- Status: session identification works (the watcher pins the right session and
--- the statusline shows it). Edit parsing is STUBBED - maki's JSONL dialect is
--- not implemented yet, so no notifications or jumps fire for maki edits. The
--- setup warning in harness-decorators.init tells the user this.
+-- Session identification works (the watcher pins the right session and the
+-- statusline shows it). Edit-jump is NOT done here: the maki plugin
+-- (lua/edit-jump-nvim.lua) fires User HarnessEdit on ToolDone, so this
+-- adapter's parse_tool_result returns nil and the watcher does no edit
+-- parsing for maki.
 local utils = require("harness-decorators.utils")
-local parser = require("harness-decorators.jsonl-parser")
 local diff = require("harness-decorators.diff")
 
 local M = {}
@@ -235,61 +235,14 @@ end
 -- TOOL RESULT PARSING
 -- ==========================================================================
 
----Extract change_info from a Diff out record.
----@param entry table The decoded JSON object
----@param line_number? integer The 1-based line number in the JSONL file
-local function parse_diff_out(entry, line_number)
-  local d = entry.d
-  if not d or not d.Diff then
-    return nil
-  end
-  local maki_diff = d.Diff
-  local fp = maki_diff.path
-  if not fp or utils.is_noise(fp) then
-    return nil
-  end
-
-  local starting_line = diff.find_starting_line(maki_diff.before, maki_diff.after)
-  local before_count = #vim.split(maki_diff.before, "\n", { plain = true })
-  local after_count = #vim.split(maki_diff.after, "\n", { plain = true })
-  local delta = string.format("%d -> %d lines", before_count, after_count)
-
-  return parser.make_change_info(
-    fp,
-    "Edit",
-    starting_line,
-    delta,
-    nil,
-    nil,
-    entry.id,
-    "maki-out-" .. tostring(entry.id),
-    line_number
-  )
-end
-
----Parse a maki JSONL line for file changes. Returns the normalized change_info
----table or nil. Handles Diff out records (full-file before/after) only - the
----early tool_use msg notification for the same edit carries no line number
----(jump_to_edit can't place a cursor without one, so it never jumped off that
----event anyway) and shares no dedup_key with the Diff record that follows, so
----every edit fired TWO separate HarnessEdit events instead of one. Maki
----already writes its JSONL on every tool result (see schedule_jump's trailing
----debounce below), so halving the event volume at the source matters more
----here than for harnesses that only emit one record per edit.
+---Parse a maki JSONL line for file changes. Always nil: edit-jump for maki is
+---handled natively by the maki plugin (lua/edit-jump-nvim.lua), which fires
+---User HarnessEdit on ToolDone. The watcher still uses this adapter for session
+---identification (pinning, statusline, history-picker), not for edits.
 ---@param line string The JSONL line text
 ---@param line_number? integer The 1-based line number in the JSONL file
-function M.parse_tool_result(line, line_number)
-  local has_diff = line:find('"t":"out"') and line:find('"Diff"')
-  if not has_diff then
-    return nil
-  end
-
-  local ok, entry = pcall(vim.json.decode, line)
-  if not ok or not entry then
-    return nil
-  end
-
-  return parse_diff_out(entry, line_number)
+function M.parse_tool_result(_line, _line_number)
+  return nil
 end
 
 return M
