@@ -66,20 +66,28 @@ describe("edit-jump.create_jump_autocmds wiring", function()
   it("waits for two seconds after each completed edit jump", function()
     local path = vim.fn.tempname() .. "-edit-jump-delay.txt"
     local file = assert(io.open(path, "w"))
-    file:write("first\\nsecond\\nthird\\n")
+    file:write("first\nsecond\nthird\n")
     file:close()
 
-    local called = false
+    local win = vim.api.nvim_get_current_win()
+    local old_jump_win = edit_jump.jump_win
     local old_defer_fn = vim.defer_fn
+    local old_wait = vim.wait
+    local wait_ms
+    edit_jump.jump_win = win
     vim.defer_fn = function(callback, delay)
-      if delay == 100 then
+      if delay == 250 then
         callback()
-      elseif delay == 2000 then
-        called = true
+      elseif delay == 100 then
+        callback()
       end
     end
+    vim.wait = function(timeout)
+      wait_ms = timeout
+      return true
+    end
 
-    edit_jump.on_edit({
+    local ok, err = pcall(edit_jump.on_edit, {
       data = {
         file_path = path,
         starting_line = 2,
@@ -87,7 +95,10 @@ describe("edit-jump.create_jump_autocmds wiring", function()
     })
 
     vim.defer_fn = old_defer_fn
-    assert.is_true(called, "edit jump should block for two seconds after completion")
+    vim.wait = old_wait
+    edit_jump.jump_win = old_jump_win
+    assert.is_true(ok, tostring(err))
+    assert.are.equal(2000, wait_ms, "edit jump should block for two seconds after completion")
 
     pcall(vim.api.nvim_buf_delete, vim.fn.bufnr(path), { force = true })
     vim.fn.delete(path)
