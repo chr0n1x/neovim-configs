@@ -63,6 +63,36 @@ describe("edit-jump.create_jump_autocmds wiring", function()
     vim.fn.delete(path)
   end)
 
+  it("waits for two seconds after each completed edit jump", function()
+    local path = vim.fn.tempname() .. "-edit-jump-delay.txt"
+    local file = assert(io.open(path, "w"))
+    file:write("first\\nsecond\\nthird\\n")
+    file:close()
+
+    local called = false
+    local old_defer_fn = vim.defer_fn
+    vim.defer_fn = function(callback, delay)
+      if delay == 100 then
+        callback()
+      elseif delay == 2000 then
+        called = true
+      end
+    end
+
+    edit_jump.on_edit({
+      data = {
+        file_path = path,
+        starting_line = 2,
+      },
+    })
+
+    vim.defer_fn = old_defer_fn
+    assert.is_true(called, "edit jump should block for two seconds after completion")
+
+    pcall(vim.api.nvim_buf_delete, vim.fn.bufnr(path), { force = true })
+    vim.fn.delete(path)
+  end)
+
   it("on_diff_closed no longer exists (diff path removed)", function()
     assert.is_nil(edit_jump.on_diff_closed, "on_diff_closed should have been removed with the diff path")
   end)
