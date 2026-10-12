@@ -236,6 +236,7 @@ local function jump_to_edit(data, file_path)
     if ok_term and type(term.ensure_terminal_mode) == "function" then
       term.ensure_terminal_mode()
     end
+    vim.wait(2000)
   end, 100)
 end
 
