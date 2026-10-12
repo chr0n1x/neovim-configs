@@ -197,6 +197,37 @@ vim.api.nvim_create_autocmd("ModeChanged", {
   end,
 })
 
+-- VimResized: a tmux pane resize drag fires many resize ticks in rapid succession, each one
+-- dropping the terminal mode t->nt and triggering the ModeChanged re-entry above. The re-entry
+-- (startinsert) races the next resize tick: the tick resets the mode back to nt before the
+-- startinsert takes effect, so the terminal sticks in "(terminal)" after the drag ends. The
+-- ModeChanged path cannot win this race because every new tick resets the retry loop.
+--
+-- Instead of reacting to every tick, debounce: wait for the resize to settle (no VimResized
+-- for REENTER_SETTLE_MS), then re-enter terminal mode once. By this point the grid has fully
+-- resynced and a single startinsert takes without being interrupted.
+local resize_settle_timer = nil
+vim.api.nvim_create_autocmd("VimResized", {
+  group = auto_insert_group,
+  callback = function()
+    if resize_settle_timer then
+      resize_settle_timer:stop()
+    end
+    resize_settle_timer = vim.defer_fn(function()
+      resize_settle_timer = nil
+      local buf = harness_terminal_buf()
+      if not buf then
+        return
+      end
+      if vim.b[buf].harness_terminal_normal_mode then
+        return
+      end
+      dbg("VimResized settle: re-enter terminal mode", buf)
+      schedule_enter_terminal_mode(vim.api.nvim_get_current_win(), buf)
+    end, 200)
+  end,
+})
+
 ---Deferred to the next tick (same reasoning as the old enter_insert_scheduled: snacks.open and a
 -- re-focus both return before the window/buffer has settled, so a synchronous startinsert does not
 -- reliably stick). Needed IN ADDITION to the autocmds below: the WinEnter/FocusGained handlers only
