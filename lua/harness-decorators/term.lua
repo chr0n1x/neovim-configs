@@ -242,11 +242,11 @@ vim.api.nvim_create_autocmd("VimResized", {
 -- are outlasted by a step that lands after them, leaving the float stuck in "-- (terminal) --" with
 -- no transition left to trigger another catch. Instead of betting on two timestamps, poll: keep
 -- re-asserting insert mode as long as we OBSERVE ourselves still in terminal-normal, up to
--- REENTER_MAX_TRIES attempts REENTER_INTERVAL_MS apart. Total worst case is ~1.5s of polling,
+-- REENTER_MAX_TRIES attempts REENTER_INTERVAL_MS apart. Total worst case is ~4s of polling,
 -- but it is NON-BLOCKING (a deferred-timer chain, never vim.wait) and only runs while the mode is
 -- actually wrong, so the common (already-in-t) case costs one cheap mode() read and stops.
-local REENTER_MAX_TRIES = 20
-local REENTER_INTERVAL_MS = 75
+local REENTER_MAX_TRIES = 40
+local REENTER_INTERVAL_MS = 100
 
 ---Re-assert terminal insert mode for (win, buf), re-polling (non-blocking) while the mode is
 -- observed to be terminal-normal (nt). Each tick either settles into t and stops, or re-asserts and

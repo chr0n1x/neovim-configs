@@ -160,6 +160,26 @@ local function jump_to_edit(data, file_path)
     return
   end
 
+  -- Synchronously re-enter terminal insert mode if the buffer switch dropped us
+  -- out of it. vim.win_set_buf on a non-current window can cause Neovim to fire
+  -- TermLeave on the terminal as a side effect (the terminal is the current
+  -- window). The TermLeave autocmd routes through schedule_enter_terminal_mode
+  -- which is async (vim.schedule + defer_fn 75ms) - by the time it fires the
+  -- mode has already recovered to t, so startinsert is a no-op. The deferred
+  -- cursor-set timer (100ms) then clears _jump_active, and the terminal is left
+  -- stuck in nt with no trigger to re-enter. A synchronous startinsert here
+  -- closes the gap before the async path can miss it.
+  do
+    local cur_win = vim.api.nvim_get_current_win()
+    local cur_buf = vim.api.nvim_win_get_buf(cur_win)
+    if vim.api.nvim_buf_is_valid(cur_buf) and vim.b[cur_buf].harness_terminal then
+      if vim.fn.mode(1) == "nt" then
+        vim.cmd.startinsert()
+      end
+      vim.b[cur_buf].harness_term_will_leave = false
+    end
+  end
+
   -- Defer cursor set so we run after any plugin BufWinEnter callbacks that restore
   -- the last-known cursor position and would otherwise override us.
   vim.defer_fn(function()
