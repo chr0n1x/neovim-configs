@@ -184,26 +184,85 @@ if not IN_PERF_MODE then
     }
   )
 
+  table.insert(uix_plugins, {
+    dependencies = {
+      "stevearc/conform.nvim",
+    },
+    opts = {
+      filetypes = { "markdown", "md" },
+    },
+    "noisesfromspace/touchup.nvim",
+  })
+
+  -- based on https://github.com/MeanderingProgrammer/render-markdown.nvim/discussions/548
   table.insert(
     uix_plugins,
     {
-      dependencies = {
-        "stevearc/conform.nvim",
-      },
+      "MeanderingProgrammer/render-markdown.nvim",
+      dependencies = { "nvim-treesitter/nvim-treesitter", "shaunsingh/nord.nvim" },
       opts = {
-        filetypes = { "markdown", "md" },
+        file_types = { "markdown", "md", "codecompanion" },
+        render_modes = { "n", "no", "c", "t", "i", "ic" },
+        code = {
+          sign = false,
+          border = "thin",
+          position = "right",
+          width = "block",
+          above = "▁",
+          below = "▔",
+          language_left = "█",
+          language_right = "█",
+          language_border = "▁",
+          left_pad = 1,
+          right_pad = 1,
+        },
+        heading = {
+          sign = false,
+          width = "block",
+          -- nord.nvim defines these with a dark fg on a colored bg.
+          backgrounds = {
+            "MiniStatuslineModeVisual",
+            "MiniStatuslineModeCommand",
+            "MiniStatuslineModeReplace",
+            "MiniStatuslineModeNormal",
+            "MiniStatuslineModeOther",
+            "MiniStatuslineModeInsert",
+          },
+          left_pad = 1,
+          right_pad = 0,
+          position = "right",
+          icons = function(ctx)
+            return ("\u{e0be}\u{e0b8}"):rep(ctx.level) .. "\u{e0be}"
+          end,
+        },
       },
-      "noisesfromspace/touchup.nvim",
+      config = function(_, opts)
+        require("render-markdown").setup(opts)
+        local function apply()
+          local c = require("nord.colors")
+          local hl = function(name, val)
+            vim.api.nvim_set_hl(0, name, val)
+          end
+          local heads = { c.nord7_gui, c.nord15_gui, c.nord11_gui, c.nord9_gui, c.nord13_gui, c.nord4_gui }
+          hl("RenderMarkdownCode", { bg = c.nord1_gui })
+          hl("RenderMarkdownCodeBorder", { bg = c.nord2_gui })
+          hl("RenderMarkdownCodeInline", { fg = c.nord8_gui, bg = c.nord1_gui })
+          for i, color in ipairs(heads) do
+            hl("RenderMarkdownH" .. i, { fg = color })
+            hl("RenderMarkdownH" .. i .. "Bg", { fg = c.nord0_gui, bg = color })
+            hl("@markup.heading." .. i, { fg = color, bold = true })
+          end
+          hl("@markup.heading", { fg = c.nord9_gui, bold = true })
+          hl("@markup.strong", { fg = c.nord9_gui, bold = true })
+          hl("@markup.italic", { fg = c.nord9_gui, italic = true })
+          hl("@markup.list", { fg = c.nord14_gui })
+          hl("@markup.raw", { fg = c.nord8_gui, bg = c.nord1_gui })
+          hl("@markup.quote", { fg = c.nord15_gui, italic = true })
+        end
+        apply()
+        vim.api.nvim_create_autocmd("ColorScheme", { callback = apply })
+      end,
     }
-    -- {
-    --   'MeanderingProgrammer/render-markdown.nvim',
-    --   dependencies = { 'nvim-treesitter/nvim-treesitter' },
-    --   opts = {
-    --     heading = {
-    --       enabled = false
-    --     }
-    --   }
-    -- }
   )
 
   table.insert(uix_plugins, {
@@ -216,8 +275,8 @@ if not IN_PERF_MODE then
     init = function()
       vim.o.winwidth = 10
       vim.o.winminwidth = 10
-      vim.o.equalalways = false
-      require("windows").setup()
+      -- No automatic resizing; <leader><space> (key-bindings.lua) runs it on demand.
+      require("windows").setup({ autowidth = { enable = false } })
     end,
   })
 end

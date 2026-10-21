@@ -63,6 +63,47 @@ describe("edit-jump.create_jump_autocmds wiring", function()
     vim.fn.delete(path)
   end)
 
+  it("Given an edit jump, When it completes, Then it does not block Neovim with vim.wait", function()
+    local path = vim.fn.tempname() .. "-edit-jump-noblock.txt"
+    local file = assert(io.open(path, "w"))
+    file:write("first\nsecond\nthird\n")
+    file:close()
+
+    local win = vim.api.nvim_get_current_win()
+    local old_jump_win = edit_jump.jump_win
+    local old_defer_fn = vim.defer_fn
+    local old_wait = vim.wait
+    local wait_calls = 0
+    edit_jump.jump_win = win
+    vim.defer_fn = function(callback, delay)
+      if delay == 250 then
+        callback()
+      elseif delay == 100 then
+        callback()
+      end
+    end
+    vim.wait = function()
+      wait_calls = wait_calls + 1
+      return true
+    end
+
+    local ok, err = pcall(edit_jump.on_edit, {
+      data = {
+        file_path = path,
+        starting_line = 2,
+      },
+    })
+
+    vim.defer_fn = old_defer_fn
+    vim.wait = old_wait
+    edit_jump.jump_win = old_jump_win
+    assert.is_true(ok, tostring(err))
+    assert.are.equal(0, wait_calls, "an edit jump must not block the editor (vim.wait)")
+
+    pcall(vim.api.nvim_buf_delete, vim.fn.bufnr(path), { force = true })
+    vim.fn.delete(path)
+  end)
+
   it("on_diff_closed no longer exists (diff path removed)", function()
     assert.is_nil(edit_jump.on_diff_closed, "on_diff_closed should have been removed with the diff path")
   end)

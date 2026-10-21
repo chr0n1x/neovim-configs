@@ -58,7 +58,33 @@ local function dbg(tag, buf, detail)
   return line
 end
 
-local function enter_terminal_mode(win, buf)
+---True while windows.nvim is animating a split resize. Its animation runs `feedkeys("ze", "nx")` in
+-- the CURRENT window on every frame; when that window is a harness terminal with a startinsert
+-- pending, the feedkeys drops the terminal to terminal-normal on every frame and can leave Neovim
+-- stuck there. This happens when the float opens right after focus returns to a split (closing the
+-- <C-q> picker restarts the animation in the split it lands on).
+---@return boolean
+local function windows_resize_animating()
+  local R = package.loaded["windows.lib.resize-windows-animated"]
+  local anim = type(R) == "table" and R._instance
+  return anim ~= nil and anim ~= false and anim:is_running()
+end
+
+-- Longest enter_terminal_mode waits on a windows.nvim resize. Its animation is 300ms, but a window
+-- closed mid-animation makes the animation's callback error, which leaves it reporting running
+-- forever; past this the wait gives up and enters terminal mode anyway.
+local RESIZE_WAIT_MAX_MS = 1000
+
+---@param waited? integer ms already spent waiting on a windows.nvim resize
+local function enter_terminal_mode(win, buf, waited)
+  waited = waited or 0
+  if waited < RESIZE_WAIT_MAX_MS and windows_resize_animating() then
+    dbg("enter_terminal_mode WAIT: windows.nvim resize animating", buf)
+    vim.defer_fn(function()
+      enter_terminal_mode(win, buf, waited + 20)
+    end, 20)
+    return
+  end
   if not vim.api.nvim_win_is_valid(win) then
     dbg("enter_terminal_mode DROPPED: win invalid", buf, "win=" .. tostring(win))
     return
@@ -96,13 +122,6 @@ local function enter_terminal_mode(win, buf)
     return
   end
   dbg("enter_terminal_mode: startinsert", buf)
-  -- After an external (tmux) pane resize, the terminal buffer can enter a state where a bare
-  -- startinsert is a no-op: the grid is out of sync with the new size, so the mode transition is
-  -- silently dropped and the float sticks in "-- (terminal) --". A redraw resyncs the grid and
-  -- re-setting the current window to itself forces the terminal to reclaim its cursor; together
-  -- they make the startinsert below actually take. Both are no-ops in the common (no-resize) case.
-  vim.cmd.redraw()
-  vim.api.nvim_set_current_win(win)
   vim.cmd.startinsert()
 end
 
@@ -146,135 +165,25 @@ vim.api.nvim_create_autocmd("FocusGained", {
   end,
 })
 
--- Log every TermLeave from a harness terminal so we can see what kicks us out of insert mode
--- and whether the user's <C-n> (harness_terminal_normal_mode) is what suppresses the re-entry.
--- edit-jump sets harness_term_will_leave on the terminal buffer when a jump is in flight (the
--- buffer switch + deferred cursor set churn the mode briefly); we consume it here so the jump's
--- own leave does not get logged as a spurious kick-out.
+-- Log every TermLeave from a harness terminal so the debug log shows what kicks it out of terminal
+-- mode.
 vim.api.nvim_create_autocmd("TermLeave", {
   group = auto_insert_group,
   callback = function()
     local buf = harness_terminal_buf()
-    if not buf then
-      return
+    if buf then
+      dbg("TermLeave autocmd", buf)
     end
-    if vim.b[buf].harness_term_will_leave then
-      vim.b[buf].harness_term_will_leave = false
-      dbg("TermLeave autocmd (suppressed: edit-jump in flight)", buf)
-      return
-    end
-    dbg("TermLeave autocmd", buf)
   end,
 })
 
--- The gap WinEnter/FocusGained cannot cover: focus never moves (same window, same buffer, OS
--- focus never lost) but something still drops mode from terminal-insert to terminal-normal -
--- e.g. an async callback (JSONL watcher, LSP progress, any API call touching buffers/windows)
--- that runs while the harness terminal is sitting there focused. Neither WinEnter nor
--- FocusGained fires in that case, so the float was left stuck in "-- (terminal) --" until the
--- user manually re-triggered focus. ModeChanged on the t->nt transition catches it directly.
--- Still respects harness_terminal_normal_mode (deliberate <C-n>, which also transitions t->nt)
--- and harness_term_will_leave (edit-jump's own in-flight leave) so neither gets yanked back.
-vim.api.nvim_create_autocmd("ModeChanged", {
-  group = auto_insert_group,
-  pattern = "t:nt",
-  callback = function()
-    local buf = harness_terminal_buf()
-    if not buf then
-      return
-    end
-    if vim.b[buf].harness_term_will_leave or vim.b[buf].harness_terminal_normal_mode then
-      dbg("ModeChanged t:nt autocmd (suppressed: deliberate leave)", buf)
-      -- Consume the will-leave suppression so it cannot block a LATER t->nt
-      -- transition: the flag means "ignore this one jump's own churn", not
-      -- "stay out of insert forever". A stale flag (see edit-jump's deferred
-      -- clear) previously stranded the terminal after a pane resize.
-      vim.b[buf].harness_term_will_leave = false
-      return
-    end
-    dbg("ModeChanged t:nt autocmd", buf)
-    schedule_enter_terminal_mode(vim.api.nvim_get_current_win(), buf)
-  end,
-})
-
--- VimResized: a tmux pane resize drag fires many resize ticks in rapid succession, each one
--- dropping the terminal mode t->nt and triggering the ModeChanged re-entry above. The re-entry
--- (startinsert) races the next resize tick: the tick resets the mode back to nt before the
--- startinsert takes effect, so the terminal sticks in "(terminal)" after the drag ends. The
--- ModeChanged path cannot win this race because every new tick resets the retry loop.
---
--- Instead of reacting to every tick, debounce: wait for the resize to settle (no VimResized
--- for REENTER_SETTLE_MS), then re-enter terminal mode once. By this point the grid has fully
--- resynced and a single startinsert takes without being interrupted.
-local resize_settle_timer = nil
-vim.api.nvim_create_autocmd("VimResized", {
-  group = auto_insert_group,
-  callback = function()
-    if resize_settle_timer then
-      resize_settle_timer:stop()
-    end
-    resize_settle_timer = vim.defer_fn(function()
-      resize_settle_timer = nil
-      local buf = harness_terminal_buf()
-      if not buf then
-        return
-      end
-      if vim.b[buf].harness_terminal_normal_mode then
-        return
-      end
-      dbg("VimResized settle: re-enter terminal mode", buf)
-      schedule_enter_terminal_mode(vim.api.nvim_get_current_win(), buf)
-    end, 200)
-  end,
-})
-
----Deferred to the next tick (same reasoning as the old enter_insert_scheduled: snacks.open and a
--- re-focus both return before the window/buffer has settled, so a synchronous startinsert does not
--- reliably stick). Needed IN ADDITION to the autocmds below: the WinEnter/FocusGained handlers only
--- fire when focus actually moves, so re-selecting a harness whose float already has focus (e.g.
--- pressing <leader>c a second time while sitting in it) never triggers them. Every focus/open path
--- in this module must call this directly.
+---Enter terminal mode for (win, buf) on the next tick: snacks.open and a re-focus both return before
+-- the window/buffer has settled, so a synchronous startinsert does not reliably stick. The
+-- WinEnter/FocusGained autocmds only fire when focus actually moves, so re-selecting a harness whose
+-- float already has focus (e.g. pressing <leader>c a second time while sitting in it) never triggers
+-- them; every focus/open path in this module calls this directly.
 ---@param win integer?
 ---@param buf integer?
----Bounded retry constants for schedule_enter_terminal_mode. A pane resize is a multi-step
--- async process (VimResized -> snacks on_resize -> update() -> a follow-up grid resync) and any
--- one of those steps can drop mode t->nt. Two fixed-delay attempts (the old next-tick + 75ms pair)
--- are outlasted by a step that lands after them, leaving the float stuck in "-- (terminal) --" with
--- no transition left to trigger another catch. Instead of betting on two timestamps, poll: keep
--- re-asserting insert mode as long as we OBSERVE ourselves still in terminal-normal, up to
--- REENTER_MAX_TRIES attempts REENTER_INTERVAL_MS apart. Total worst case is ~4s of polling,
--- but it is NON-BLOCKING (a deferred-timer chain, never vim.wait) and only runs while the mode is
--- actually wrong, so the common (already-in-t) case costs one cheap mode() read and stops.
-local REENTER_MAX_TRIES = 40
-local REENTER_INTERVAL_MS = 100
-
----Re-assert terminal insert mode for (win, buf), re-polling (non-blocking) while the mode is
--- observed to be terminal-normal (nt). Each tick either settles into t and stops, or re-asserts and
--- schedules the next tick. Stops when the mode is already terminal (t), when the user has
--- deliberately pressed <C-n> (harness_terminal_normal_mode), when the window/buffer is gone, or
--- after REENTER_MAX_TRIES attempts.
----@param win integer
----@param buf integer
----@param tries integer remaining attempts
-local function retry_enter_terminal_mode(win, buf, tries)
-  if tries <= 0 then
-    return
-  end
-  if not vim.api.nvim_win_is_valid(win) or not vim.api.nvim_buf_is_valid(buf) then
-    return
-  end
-  if vim.b[buf].harness_terminal_normal_mode then
-    return
-  end
-  if vim.fn.mode(1) == "t" then
-    return
-  end
-  enter_terminal_mode(win, buf)
-  vim.defer_fn(function()
-    retry_enter_terminal_mode(win, buf, tries - 1)
-  end, REENTER_INTERVAL_MS)
-end
-
 schedule_enter_terminal_mode = function(win, buf)
   if not win or not buf then
     dbg(
@@ -289,17 +198,12 @@ schedule_enter_terminal_mode = function(win, buf)
   end
   dbg("schedule_enter_terminal_mode", buf)
   vim.schedule(function()
-    retry_enter_terminal_mode(win, buf, REENTER_MAX_TRIES)
+    enter_terminal_mode(win, buf)
   end)
-  vim.defer_fn(function()
-    retry_enter_terminal_mode(win, buf, REENTER_MAX_TRIES)
-  end, 75)
 end
 
----Re-export the re-entry funnel so other modules (edit-jump's in-flight TermLeave restore) can
--- route through the same grid-resync + bounded polling instead of a bare startinsert. Exposed on
--- M so it is stubbable from tests; the autocmds above close over the local, which is the same
--- function.
+-- Exposed on M so it is stubbable from tests; the autocmds above close over the local, which is the
+-- same function.
 M.schedule_enter_terminal_mode = schedule_enter_terminal_mode
 
 ---The shared per-harness record for `harness`, creating it if absent.
@@ -407,16 +311,20 @@ function M.go_back_key(self)
   vim.cmd("noh")
 end
 
----The <Esc> close key handler: exit terminal insert mode and HIDE this harness's float (the panel
--- disappears). Unlike go_back_key, hiding is the point - but we still do NOT kill the process:
--- Snacks' :hide() closes only the window, leaving the buffer/PTY alive so the same session resumes on
--- the next <leader>c / re-pick (that is "parking"). Exposed on M so tests/go_back_key_spec.lua can
--- drive it with a fake instance and assert the float IS hidden.
+---The <Esc> close key handler: exit terminal insert mode and minimize this harness's float into its
+-- docked bar (same as the float's minimize button). The process keeps running, so the same session
+-- resumes from the bar, <leader>c or a re-pick. An instance with no open float to minimize is hidden
+-- instead. Exposed on M so tests/go_back_key_spec.lua can drive it with a fake instance.
 ---@param self table the Snacks terminal instance (has :hide(), :show())
 function M.close_key(self)
   -- stopinsert is a no-op unless we're in terminal insert mode; guard it so the handler is safe to
   -- drive from a headless normal-mode context (tests) and never errors if already out of insert.
   pcall(vim.cmd.stopinsert)
+  for harness, e in pairs(state.table) do
+    if e.inst == self and M.minimize(harness) then
+      return
+    end
+  end
   pcall(function()
     self:hide()
   end)
@@ -503,9 +411,9 @@ function M.terminal_keys()
     {
       "<Esc>",
       function(self)
-        -- Exit insert and CLOSE (hide) the float - the panel goes away but the PTY keeps running,
-        -- so it resumes on the next <leader>c. Distinct from <C-h>, which just moves focus back
-        -- while leaving the panel visible.
+        -- Exit insert and minimize the float into its docked bar - the PTY keeps running, so it
+        -- resumes from the bar or the next <leader>c. Distinct from <C-h>, which just moves focus
+        -- back while leaving the panel visible.
         M.close_key(self)
       end,
       mode = "t",
@@ -565,16 +473,57 @@ function M.terminal_keys()
   }
 end
 
+---The harness title with a grip glyph prepended, marking the top border as the move handle.
+---@param harness string
+---@return table chunks
+local function grip_title(harness)
+  local t = title.title(harness)
+  return vim.list_extend({ { " ✥", "Special" } }, type(t) == "string" and { { t, "FloatTitle" } } or t)
+end
+
 ---Build the Snacks window opts for a harness's float: position/border/title + the shared terminal
 -- keys (terminal_keys). The title is harness-aware (title.title); everything else in the legend is
 -- common to all harnesses and defined once in terminal_keys.
 ---@param harness string
 ---@return table win_opts
+-- Rows a minimized bar takes on screen: its one line of text plus the top and bottom border.
+local BAR_HEIGHT = 3
+-- Minimum width of a minimized bar's text, so bars for short harness names match the longer ones.
+local BAR_MIN_TEXT = 18
+
+-- Default float size and spot, as fractions of the editor.
+local FLOAT_COL, FLOAT_WIDTH = 0.58, 0.35
+
+---The default float column: the usual 58% of the editor, moved left when that would put the float's
+-- right border under the minimized-bar dock in the top-right corner (narrow editors).
+---@return integer col
+local function default_float_col()
+  local cols = vim.o.columns
+  local dock_left = cols - (BAR_MIN_TEXT + 2)
+  return math.max(0, math.min(math.floor(cols * FLOAT_COL), dock_left - 1 - math.floor(cols * FLOAT_WIDTH)))
+end
+
 local function win_opts(harness)
   return {
     position = "float",
-    border = "rounded",
-    title = title.title(harness),
+    -- Drag handles for the mouse move/resize below: a grip glyph in the title marks the move bar,
+    -- heavy side/bottom lines mark the resizable edges, and the bottom corners are resize grips.
+    -- The top-right corner is the minimize button (double-click).
+    border = {
+      "┎",
+      "─",
+      { "⊟", "Special" },
+      "┃",
+      { "◢", "Special" },
+      "━",
+      { "◣", "Special" },
+      "┃",
+    },
+    -- Border-line caps frame the title as a tab on the top border.
+    title = vim.list_extend(
+      { { "┤", "FloatBorder" } },
+      vim.list_extend(grip_title(harness), { { "├", "FloatBorder" } })
+    ),
     b = { harness_terminal = harness },
     -- Snacks' style default maps FloatTitle:SnacksTitle, which overrides the per-segment groups in
     -- `title`. Set winhighlight after all merging is done so our override sticks.
@@ -590,12 +539,224 @@ local function win_opts(harness)
 
     keys = M.terminal_keys(),
 
-    -- TODO: make these...more relative
     row = 0.01,
-    col = 0.58,
-    width = 0.35,
+    col = default_float_col,
+    width = FLOAT_WIDTH,
     height = 0.9,
   }
+end
+
+local BAR_ANIM_MS = 300
+
+---Animate a bar from its current position/size to `to` ({ row, col, width, height }), snapping to
+-- `to` on the last frame and then calling on_done. An animation already running on the same bar is
+-- stopped first, so the new one starts from wherever the bar is now. Without animation.nvim it snaps
+-- immediately.
+---@param inst table the Snacks terminal instance that owns the bar
+---@param win integer the bar window
+---@param to { row: integer, col: integer, width: integer, height: integer }
+---@param on_done? fun()
+local function animate_win(inst, win, to, on_done)
+  if inst._bar_anim then
+    inst._bar_anim:finish()
+    inst._bar_anim = nil
+  end
+  local function set(cfg)
+    if vim.api.nvim_win_is_valid(win) then
+      pcall(vim.api.nvim_win_set_config, win, vim.tbl_extend("force", { relative = "editor" }, cfg))
+    end
+  end
+  local ok_anim, Animation = pcall(require, "animation")
+  if not ok_anim then
+    set(to)
+    if on_done then
+      on_done()
+    end
+    return
+  end
+  local cur = vim.api.nvim_win_get_config(win)
+  local from = { row = math.floor(cur.row), col = math.floor(cur.col), width = cur.width, height = cur.height }
+  local finished = false
+  inst._bar_anim = Animation(BAR_ANIM_MS, 60, require("animation.easing").in_out_sine, function(f)
+    if not vim.api.nvim_win_is_valid(win) then
+      return true
+    end
+    if f >= 1 then
+      if not finished then
+        finished = true
+        set(to)
+        if on_done then
+          on_done()
+        end
+      end
+      return
+    end
+    set({
+      row = math.floor(from.row + f * (to.row - from.row)),
+      col = math.floor(from.col + f * (to.col - from.col)),
+      width = math.max(1, math.floor(from.width + f * (to.width - from.width))),
+      height = math.max(1, math.floor(from.height + f * (to.height - from.height))),
+    })
+  end)
+  inst._bar_anim:run()
+end
+
+---Minimized bars dock in the top-right corner of the editor and stack downward: slot 1 sits at the
+-- top (below the tabline when one is shown), slot 2 below it, and so on. A bar the user drags away
+-- leaves the dock (its _bar_slot is cleared).
+---@param slot integer
+---@return integer row
+local function dock_row(slot)
+  local stal = vim.o.showtabline
+  local top = (stal == 2 or (stal == 1 and #vim.api.nvim_list_tabpages() > 1)) and 1 or 0
+  return top + BAR_HEIGHT * (slot - 1)
+end
+
+---The column a docked bar whose text is `width` columns wide starts at, so its right border sits on
+-- the editor's last column.
+---@param width integer
+---@return integer col
+local function dock_col(width)
+  return math.max(0, vim.o.columns - width - 2)
+end
+
+---The lowest dock slot no other harness's bar holds.
+---@return integer slot
+local function free_slot()
+  local used = {}
+  for _, e in pairs(state.table) do
+    local i = e.inst
+    if i and i._bar_slot and i._pill_win and vim.api.nvim_win_is_valid(i._pill_win) then
+      used[i._bar_slot] = true
+    end
+  end
+  local slot = 1
+  while used[slot] do
+    slot = slot + 1
+  end
+  return slot
+end
+
+---Close the gaps in the dock: renumber the docked bars from the bottom in their current order and
+-- animate any bar whose slot changed (or whose row is stale after an editor resize) into place.
+local function repack_dock()
+  local docked = {}
+  for _, e in pairs(state.table) do
+    local i = e.inst
+    if i and i._bar_slot and i._pill_win and vim.api.nvim_win_is_valid(i._pill_win) then
+      table.insert(docked, i)
+    end
+  end
+  table.sort(docked, function(a, b)
+    return a._bar_slot < b._bar_slot
+  end)
+  for slot, i in ipairs(docked) do
+    i._bar_slot = slot
+    -- Target the bar's final size, not its current one: it may still be shrinking from its float.
+    local cfg = vim.api.nvim_win_get_config(i._pill_win)
+    local col = dock_col(i._bar_width)
+    if math.floor(cfg.row) ~= dock_row(slot) or math.floor(cfg.col) ~= col or cfg.width ~= i._bar_width then
+      animate_win(i, i._pill_win, { row = dock_row(slot), col = col, width = i._bar_width, height = 1 })
+    end
+  end
+end
+
+vim.api.nvim_create_autocmd("VimResized", {
+  group = auto_insert_group,
+  callback = function()
+    vim.schedule(repack_dock)
+  end,
+})
+
+---Close the one-line minimized bar for this instance, if it has one.
+---@param inst table the Snacks terminal instance
+local function close_pill(inst)
+  if inst._bar_anim then
+    inst._bar_anim:finish()
+    inst._bar_anim = nil
+  end
+  if inst._pill_win and vim.api.nvim_win_is_valid(inst._pill_win) then
+    pcall(vim.api.nvim_win_close, inst._pill_win, true)
+  end
+  inst._pill_win = nil
+  if inst._bar_slot then
+    inst._bar_slot = nil
+    repack_dock()
+  end
+end
+
+local flash_ns = vim.api.nvim_create_namespace("harness_flash")
+
+---Blink the float's border (or its minimized bar) a few times with HarnessFlash. The border blinks
+-- through winhighlight; the bar's text carries its own per-chunk highlights, so it also gets a
+-- higher-priority extmark over the whole line. Overlapping calls are dropped, and the
+-- window is put back as it was after the last blink.
+---@param inst table the Snacks terminal instance
+local function flash(inst)
+  local pill = inst._pill_win and vim.api.nvim_win_is_valid(inst._pill_win) and inst._pill_win
+  local win = pill or (inst.win and vim.api.nvim_win_is_valid(inst.win) and inst.win)
+  if not win or inst._flashing then
+    return
+  end
+  vim.api.nvim_set_hl(0, "HarnessFlash", { default = true, link = "IncSearch" })
+  inst._flashing = true
+  local buf = vim.api.nvim_win_get_buf(win)
+  local base = vim.wo[win].winhighlight
+  local on = (base ~= "" and base .. "," or "") .. "FloatBorder:HarnessFlash"
+  local function set(lit)
+    vim.api.nvim_set_option_value("winhighlight", lit and on or base, { win = win })
+    if pill then
+      vim.api.nvim_buf_clear_namespace(buf, flash_ns, 0, -1)
+      if lit then
+        local len = #(vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] or "")
+        vim.api.nvim_buf_set_extmark(buf, flash_ns, 0, 0, { end_col = len, hl_group = "HarnessFlash", priority = 200 })
+      end
+    end
+  end
+  local steps = 6
+  local function step()
+    if not vim.api.nvim_win_is_valid(win) or steps == 0 then
+      pcall(set, false)
+      inst._flashing = false
+      return
+    end
+    pcall(set, steps % 2 == 0)
+    steps = steps - 1
+    vim.defer_fn(step, 150)
+  end
+  step()
+end
+
+-- How long the terminal must stay quiet before the flash fires. On M so specs can shorten it.
+M.flash_quiet_ms = 1500
+
+---Flash the panel when its terminal gets new text while the panel is unfocused or minimized. The
+-- flash fires once the output has been quiet for M.flash_quiet_ms, so a streaming reply flashes once
+-- when it finishes rather than on every redraw. Terminal reflow right after a mouse resize is ignored.
+---@param inst table the Snacks terminal instance
+local function watch_output(inst)
+  if not (inst and inst.buf and vim.api.nvim_buf_is_valid(inst.buf)) or inst._flash_timer then
+    return
+  end
+  inst._flash_timer = vim.uv.new_timer()
+  vim.api.nvim_buf_attach(inst.buf, false, {
+    on_lines = function()
+      local focused = inst.win and vim.api.nvim_get_current_win() == inst.win
+      if focused or vim.uv.now() - (inst._resized_at or 0) < 500 then
+        return
+      end
+      inst._flash_timer:start(
+        M.flash_quiet_ms,
+        0,
+        vim.schedule_wrap(function()
+          flash(inst)
+        end)
+      )
+    end,
+    on_detach = function()
+      inst._flash_timer:close()
+    end,
+  })
 end
 
 ---Bring the given instance's float to the front and move focus onto it. This is what "show / refocus"
@@ -607,7 +768,8 @@ end
 --     <C-h> would do nothing - the exact "it doesn't refocus" bug.
 --   * window closed but buffer alive (after :hide(), i.e. parked) -> use :show() to reopen it.
 ---@param inst table the Snacks terminal instance (has .win, :focus(), :show())
-local function focus_instance(inst)
+local function show_instance(inst)
+  close_pill(inst)
   for harness, e in pairs(state.table) do
     if e.inst == inst then
       mark_harness_buffer(harness, inst)
@@ -625,6 +787,63 @@ local function focus_instance(inst)
     end)
   end
   schedule_enter_terminal_mode(inst.win, inst.buf)
+end
+
+---Show / refocus the given instance (see show_instance). A minimized one first animates its bar back
+-- out to the float's size and spot (the reverse of minimize), then the float opens in its place. The
+-- terminal window itself is never resized, so the harness does not redraw at every frame.
+---@param inst table the Snacks terminal instance
+local function focus_instance(inst)
+  local bar = inst._pill_win
+  if bar and vim.api.nvim_win_is_valid(bar) and inst._restore_rect then
+    animate_win(inst, bar, inst._restore_rect, function()
+      -- The bar may have been closed (or reused) while it was growing.
+      if inst._pill_win == bar then
+        show_instance(inst)
+      end
+    end)
+    return
+  end
+  show_instance(inst)
+end
+
+-- True after the active harness's process exited and session following was stopped for it; the next
+-- fresh start of that harness restarts following.
+local follow_paused = false
+
+---Tie session following (the JSONL watcher) to the active harness's process. When it exits (close
+-- button, /exit, crash) the watcher stops and forgets its pinned session, so it does not go on to
+-- pin some other session in the same project ("<harness> session detected"). A later fresh start of
+-- that harness restarts the watcher for the new session.
+---@param harness string
+---@param inst table the Snacks terminal instance just spawned
+local function follow_lifecycle(harness, inst)
+  local ok, watcher = pcall(require, "harness-decorators.watcher")
+  if not ok then
+    return
+  end
+  local function active()
+    return require("harness-decorators.utils").harness == harness
+  end
+  if follow_paused and active() then
+    follow_paused = false
+    watcher.reset_pin_state()
+    watcher.start()
+  end
+  if not (inst.buf and vim.api.nvim_buf_is_valid(inst.buf)) then
+    return
+  end
+  vim.api.nvim_create_autocmd("TermClose", {
+    buffer = inst.buf,
+    once = true,
+    callback = function()
+      if active() then
+        watcher.stop()
+        watcher.reset_pin_state()
+        follow_paused = true
+      end
+    end,
+  })
 end
 
 ---Open (or focus, if already open) the given harness's floating terminal. If the harness has a live
@@ -672,6 +891,8 @@ function M.open(harness, opts)
   local e = entry(harness)
   e.inst = inst
   mark_harness_buffer(harness, inst)
+  watch_output(inst)
+  follow_lifecycle(harness, inst)
   schedule_enter_terminal_mode(inst.win, inst.buf)
   e.cwd = spawn_cwd
   -- Wall-clock open time for THIS instance. The cwd-keyed label adapters (maki/pi) match the live
@@ -685,6 +906,415 @@ end
 for harness, e in pairs(state.table) do
   mark_harness_buffer(harness, e.inst)
 end
+
+-- Mouse drag on a harness float's border: the top border (the title bar) moves the float, and the
+-- left, right and bottom borders resize it from that edge (bottom corners resize both ways). The
+-- mappings are global expr maps because the click can come from any window/mode; anything that is
+-- not a border drag is passed through unchanged. Requires 'mouse' to include n/t (see <leader>M).
+local drag = nil
+local MIN_WIDTH, MIN_HEIGHT = 20, 5
+
+---The 0-based screen row/col of a float's outer top-left corner (border included) as drawn.
+-- Neovim shifts a float that would not fit back onto the screen, so after an editor resize or a
+-- restore near the edge the drawn spot can differ from the row/col in its config.
+---@return integer row
+---@return integer col
+local function drawn_pos(win)
+  local pos = vim.api.nvim_win_get_position(win)
+  return pos[1], pos[2]
+end
+
+---The live harness instance whose border contains the given 1-based screen pos, and which edges
+-- of it were grabbed.
+--
+-- A grab on the bottom-right corner returns:
+-- ```lua
+-- inst, { move = false, left = false, right = true, bottom = true }
+-- ```
+--
+-- Clicks inside the float's text area return nil.
+---@return table? inst
+---@return table? edges
+local function border_hit(screenrow, screencol)
+  for _, e in pairs(state.table) do
+    local inst = e.inst
+    if is_live(inst) and inst.win and vim.api.nvim_win_is_valid(inst.win) then
+      local cfg = vim.api.nvim_win_get_config(inst.win)
+      if cfg.relative == "editor" then
+        local top, left = drawn_pos(inst.win)
+        top, left = top + 1, left + 1
+        local bottom, right = top + cfg.height + 1, left + cfg.width + 1
+        if screenrow >= top and screenrow <= bottom and screencol >= left and screencol <= right then
+          local edges = {
+            move = screenrow == top,
+            left = screenrow ~= top and screencol == left,
+            right = screenrow ~= top and screencol == right,
+            bottom = screenrow == bottom,
+          }
+          if edges.move or edges.left or edges.right or edges.bottom then
+            return inst, edges
+          end
+        end
+      end
+    end
+  end
+end
+
+---Apply the in-progress drag to the float: move it, or resize it from the grabbed edges, clamped to
+-- the editor. The new geometry is also written to inst.opts so Snacks keeps it across hide/show and
+-- VimResized, and the fullscreen baseline is dropped so the next <C-f> collapse returns here instead
+-- of the pre-drag geometry. Dragging a minimized bar moves the bar, and the float reopens there.
+local function drag_to(mouse)
+  if not drag then
+    return
+  end
+  local inst = drag.inst
+  local dr, dc = mouse.screenrow - drag.screenrow, mouse.screencol - drag.screencol
+  if drag.pill_win and vim.api.nvim_win_is_valid(drag.pill_win) then
+    if inst._bar_slot then
+      inst._bar_slot = nil
+      repack_dock()
+    end
+    local row = math.max(0, math.min(drag.row + dr, vim.o.lines - vim.o.cmdheight - BAR_HEIGHT))
+    local col = math.max(0, math.min(drag.col + dc, vim.o.columns - drag.width))
+    pcall(vim.api.nvim_win_set_config, drag.pill_win, { relative = "editor", row = row, col = col })
+    local rect = inst._restore_rect or { width = 0, height = 0 }
+    inst.opts.row = math.max(0, math.min(row, vim.o.lines - vim.o.cmdheight - rect.height - 2))
+    inst.opts.col = math.max(0, math.min(col, vim.o.columns - rect.width - 2))
+    rect.row, rect.col = inst.opts.row, inst.opts.col
+    return
+  end
+  if not (inst and inst.win and vim.api.nvim_win_is_valid(inst.win)) then
+    drag = nil
+    return
+  end
+  local row, col, width, height = drag.row, drag.col, drag.width, drag.height
+  local edges = drag.edges
+  if edges.move then
+    row = math.max(0, math.min(row + dr, vim.o.lines - vim.o.cmdheight - height - 2))
+    col = math.max(0, math.min(col + dc, vim.o.columns - width - 2))
+  end
+  if edges.bottom then
+    height = math.max(MIN_HEIGHT, math.min(height + dr, vim.o.lines - vim.o.cmdheight - row - 2))
+  end
+  if edges.right then
+    width = math.max(MIN_WIDTH, math.min(width + dc, vim.o.columns - col - 2))
+  end
+  if edges.left then
+    col = math.max(0, math.min(col + dc, drag.col + drag.width - MIN_WIDTH))
+    width = drag.width + drag.col - col
+  end
+  inst._resized_at = vim.uv.now()
+  pcall(vim.api.nvim_win_set_config, inst.win, {
+    relative = "editor",
+    row = row,
+    col = col,
+    width = width,
+    height = height,
+  })
+  inst.opts.row, inst.opts.col, inst.opts.width, inst.opts.height = row, col, width, height
+  if not inst._wide then
+    inst._saved_config = nil
+  end
+end
+
+---Minimize the float: hide its window (the PTY keeps running, same as <Esc>) and put a one-line bar
+-- with the harness title in the top-right dock. The bar opens at the float's size and position and
+-- animates down into its dock slot; the terminal window itself is never resized, so the harness does
+-- not redraw at every frame. Double-clicking the bar (see
+-- restore_from_bar), <leader>c or a re-pick restores it through focus_instance, which closes the bar.
+-- Clicking the bar's close icon ends the harness (see close_harness); clicking its restore icon
+-- restores it (see bar_button).
+---@param inst table the Snacks terminal instance
+local function minimize(inst)
+  local harness
+  for h, e in pairs(state.table) do
+    if e.inst == inst then
+      harness = h
+    end
+  end
+  if not (harness and inst.win and vim.api.nvim_win_is_valid(inst.win)) then
+    return
+  end
+  local cfg = vim.api.nvim_win_get_config(inst.win)
+  -- Name on the left, the restore/close icons together at the right end. Every bar is padded to at
+  -- least BAR_MIN_TEXT columns so stacked bars line up and their icons sit in one column.
+  local chunks = grip_title(harness)
+  local name_width = 0
+  for _, c in ipairs(chunks) do
+    name_width = name_width + vim.fn.strdisplaywidth(c[1])
+  end
+  local icons = "⛶  ⊘ "
+  local pad = math.max(1, BAR_MIN_TEXT - name_width - vim.fn.strdisplaywidth(icons))
+  vim.list_extend(chunks, { { string.rep(" ", pad), "Normal" }, { icons, "Special" } })
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].bufhidden = "wipe"
+  local text = table.concat(vim.tbl_map(function(c)
+    return c[1]
+  end, chunks))
+  -- Display column of the close icon within the bar's text, for the button hit test (bar_button).
+  inst._bar_close_col = vim.fn.strdisplaywidth(text) - 2
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { text })
+  local ns = vim.api.nvim_create_namespace("harness_minimized")
+  local byte = 0
+  for _, c in ipairs(chunks) do
+    vim.api.nvim_buf_set_extmark(buf, ns, 0, byte, { end_col = byte + #c[1], hl_group = c[2] })
+    byte = byte + #c[1]
+  end
+  local row, col = drawn_pos(inst.win)
+  local width = vim.fn.strdisplaywidth(text)
+  -- Where the float was, so restoring can grow the bar back to it.
+  inst._restore_rect = { row = row, col = col, width = cfg.width, height = cfg.height }
+  inst._bar_slot = free_slot()
+  pcall(function()
+    inst:hide()
+  end)
+  inst._pill_win = vim.api.nvim_open_win(buf, false, {
+    relative = "editor",
+    row = row,
+    col = col,
+    width = cfg.width,
+    height = cfg.height,
+    style = "minimal",
+    border = "rounded",
+    zindex = 60,
+  })
+  inst._bar_width = width
+  animate_win(
+    inst,
+    inst._pill_win,
+    { row = dock_row(inst._bar_slot), col = dock_col(width), width = width, height = 1 }
+  )
+end
+
+---The instance whose minimized bar (border included) contains the given 1-based screen pos, and
+-- that bar's window.
+---@return table? inst
+---@return integer? bar
+local function bar_hit(screenrow, screencol)
+  for _, e in pairs(state.table) do
+    local bar = e.inst and e.inst._pill_win
+    if bar and vim.api.nvim_win_is_valid(bar) then
+      local top, left = drawn_pos(bar)
+      local width = vim.api.nvim_win_get_width(bar) + 2
+      if screenrow > top and screenrow <= top + BAR_HEIGHT and screencol > left and screencol <= left + width then
+        return e.inst, bar
+      end
+    end
+  end
+end
+
+---Restore a minimized harness the same way picking it in <C-q> would: every other open harness
+-- float is minimized, then the switch rebinds keymaps/watcher to this harness and shows it.
+---@param inst table the Snacks terminal instance
+local function restore_from_bar(inst)
+  local harness
+  for h, e in pairs(state.table) do
+    if e.inst == inst then
+      harness = h
+    end
+  end
+  if not harness then
+    focus_instance(inst)
+    return
+  end
+  for h in pairs(state.table) do
+    if h ~= harness then
+      M.minimize(h)
+    end
+  end
+  require("harness-decorators.switch").switch(harness)
+  require("harness-decorators.park").set_selected(harness)
+  require("harness-decorators.park").show_selected()
+end
+
+---Minimize the given harness's float into its bar. Returns false when the harness has no open
+-- float to minimize (never opened, closed with <Esc>, or already minimized).
+---@param harness string
+---@return boolean minimized
+function M.minimize(harness)
+  local inst = entry(harness).inst
+  if not (is_live(inst) and inst.win and vim.api.nvim_win_is_valid(inst.win)) then
+    return false
+  end
+  minimize(inst)
+  return true
+end
+
+---Which of a minimized bar's buttons the given 1-based screen column hits: "restore" for the restore
+-- icon and the cell on either side of it, "close" for the close icon, the cell on either side of it
+-- and the bar's right border, nil anywhere else.
+---@return "restore"|"close"|nil
+local function bar_button(inst, bar, screencol)
+  local _, left = drawn_pos(bar)
+  -- The bar's text starts one column in from its left border; screencol is 1-based.
+  local x = screencol - (left + 2)
+  local close = inst._bar_close_col
+  if x >= close - 1 and x <= close + 2 then
+    return "close"
+  end
+  if x >= close - 4 and x <= close - 2 then
+    return "restore"
+  end
+end
+
+---Close a minimized harness: remove its bar and send SIGTERM to the process in its terminal. Snacks
+-- keeps a terminal buffer open after a non-zero exit (SIGTERM exits with 143), so the buffer is wiped
+-- here once the process has exited; park.list then drops the harness and the next <leader>c or <C-q>
+-- pick starts a fresh session.
+---@param inst table the Snacks terminal instance
+local function close_harness(inst)
+  close_pill(inst)
+  local buf = inst.buf
+  local chan = buf and vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].channel or 0
+  if chan > 0 then
+    vim.api.nvim_create_autocmd("TermClose", {
+      buffer = buf,
+      once = true,
+      callback = function()
+        vim.schedule(function()
+          if vim.api.nvim_buf_is_valid(buf) then
+            pcall(vim.api.nvim_buf_delete, buf, { force = true })
+          end
+        end)
+      end,
+    })
+    local ok, pid = pcall(vim.fn.jobpid, chan)
+    if ok and pid and pid > 0 then
+      vim.uv.kill(pid, "sigterm")
+    end
+  end
+end
+
+---Mouse handlers for the harness floats and their minimized bars. Each takes a getmousepos()-shaped
+-- position and returns the keys the mapping should produce: "" when the event was handled here, or
+-- the original mouse key to pass it through. The mappings below call these with vim.fn.getmousepos();
+-- specs call them directly with made-up positions, since headless Neovim gets no real mouse input.
+M.mouse = {}
+
+-- True from a press these handlers consumed until its release. The drag and release events of that
+-- click are swallowed too: passed through, Neovim would move the cursor to the window under the
+-- mouse, which after a restore or close is the editor window the bar was floating over.
+local press_consumed = false
+
+---@param mouse { screenrow: integer, screencol: integer }
+---@return string keys
+function M.mouse.press(mouse)
+  press_consumed = true
+  local minimized, bar = bar_hit(mouse.screenrow, mouse.screencol)
+  local button = minimized and bar_button(minimized, bar, mouse.screencol)
+  if button then
+    drag = nil
+    vim.schedule(function()
+      if button == "close" then
+        close_harness(minimized)
+      else
+        restore_from_bar(minimized)
+      end
+    end)
+    return ""
+  end
+  if minimized then
+    if minimized._bar_anim then
+      minimized._bar_anim:finish()
+      minimized._bar_anim = nil
+    end
+    local row, col = drawn_pos(bar)
+    drag = {
+      inst = minimized,
+      pill_win = bar,
+      screenrow = mouse.screenrow,
+      screencol = mouse.screencol,
+      row = row,
+      col = col,
+      width = vim.api.nvim_win_get_width(bar) + 2,
+    }
+    return ""
+  end
+  local inst, edges = border_hit(mouse.screenrow, mouse.screencol)
+  if not inst then
+    drag = nil
+    press_consumed = false
+    return "<LeftMouse>"
+  end
+  local cfg = vim.api.nvim_win_get_config(inst.win)
+  local row, col = drawn_pos(inst.win)
+  drag = {
+    inst = inst,
+    edges = edges,
+    screenrow = mouse.screenrow,
+    screencol = mouse.screencol,
+    row = row,
+    col = col,
+    width = cfg.width,
+    height = cfg.height,
+  }
+  return ""
+end
+
+---@param mouse { screenrow: integer, screencol: integer }
+---@return string keys
+function M.mouse.drag(mouse)
+  if not drag then
+    return press_consumed and "" or "<LeftDrag>"
+  end
+  vim.schedule(function()
+    drag_to(mouse)
+  end)
+  return ""
+end
+
+---@return string keys
+function M.mouse.release()
+  local consumed = press_consumed or drag ~= nil
+  press_consumed = false
+  drag = nil
+  return consumed and "" or "<LeftRelease>"
+end
+
+---@param mouse { screenrow: integer, screencol: integer }
+---@return string keys
+function M.mouse.double(mouse)
+  local minimized, bar = bar_hit(mouse.screenrow, mouse.screencol)
+  if minimized then
+    press_consumed = true
+    -- The buttons already fired on the first click of the double-click.
+    if not bar_button(minimized, bar, mouse.screencol) then
+      vim.schedule(function()
+        restore_from_bar(minimized)
+      end)
+    end
+    return ""
+  end
+  local inst, edges = border_hit(mouse.screenrow, mouse.screencol)
+  if inst and edges.move then
+    local _, col = drawn_pos(inst.win)
+    if mouse.screencol == col + vim.api.nvim_win_get_config(inst.win).width + 2 then
+      drag = nil
+      press_consumed = true
+      vim.schedule(function()
+        minimize(inst)
+      end)
+      return ""
+    end
+  end
+  return "<2-LeftMouse>"
+end
+
+local drag_modes = { "n", "t" }
+local drag_desc = "Move/resize harness float by its border"
+vim.keymap.set(drag_modes, "<LeftMouse>", function()
+  return M.mouse.press(vim.fn.getmousepos())
+end, { expr = true, desc = drag_desc })
+vim.keymap.set(drag_modes, "<LeftDrag>", function()
+  return M.mouse.drag(vim.fn.getmousepos())
+end, { expr = true, desc = drag_desc })
+vim.keymap.set(drag_modes, "<LeftRelease>", function()
+  return M.mouse.release()
+end, { expr = true, desc = drag_desc })
+vim.keymap.set(drag_modes, "<2-LeftMouse>", function()
+  return M.mouse.double(vim.fn.getmousepos())
+end, { expr = true, desc = "Minimize/restore harness float" })
 
 ---Wall-clock unix time the given harness's CURRENT terminal instance was opened, or nil when it has
 --no live instance. Used by cwd-keyed label adapters to pick the session that matches this open rather

@@ -2,13 +2,11 @@ local deps = {
   "nvim-web-devicons",
 }
 
--- The spinner frames are shared with the agent overview (harness-decorators.agent-display) so both
--- the session slot's waiting spinner and the working-state dot animate through the same list.
+-- Static working glyph shared with the agent overview (harness-decorators.agent-display), used by
+-- the session slot and lsp_status so nothing in the statusline animates.
 local ok_display, display_mod = pcall(require, "harness-decorators.agent-display")
-local spinner = (ok_display and display_mod.spinner)
-  or { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+local spinner = (ok_display and display_mod.spinner) or { "●" }
 
--- Timer-driven spinner frame for smooth animation.
 local spinner_frame = spinner[1]
 
 LUALINE_SECTIONS = {
@@ -67,21 +65,6 @@ return {
       globalstatus = true,
     }
 
-    -- Start spinner timer inside opts() where the event loop is ready.
-    local frame_idx = 1
-    local t = vim.uv.new_timer()
-    if t then
-      t:start(
-        0,
-        120,
-        vim.schedule_wrap(function()
-          spinner_frame = spinner[frame_idx]
-          frame_idx = (frame_idx % #spinner) + 1
-          pcall(vim.cmd.statusline)
-        end)
-      )
-    end
-
     -- Custom component: show pinned Claude session slug or spinner. The display logic lives in
     -- harness-decorators.session_component (a plain module function) so it is unit-testable
     -- without a live statusline - see tests/lualine_spec.lua.
@@ -117,7 +100,7 @@ return {
       padding = { left = 1, right = 1 },
     })
 
-    -- Start the poll timer here where the event loop is ready (same place the spinner timer starts),
+    -- Start the poll timer here where the event loop is ready,
     -- and define the summary status-dot highlight groups (working = blue pulse, idle = green,
     -- unknown = dim ring). The setup is scheduled so it runs after lualine + the theme have finished
     -- defining their statusline groups. A ColorScheme switch re-runs it (see ai-harness.lua).

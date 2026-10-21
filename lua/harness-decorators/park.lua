@@ -47,9 +47,10 @@ function M.selected_harness()
   return nil
 end
 
----Background the current harness's terminal: hide ITS OWN float (term.hide closes only the window,
----keeping the buffer/PTY alive so it keeps executing) and mark it unselected in the table. Never
----deletes the buffer - that is what makes resume work. A no-op if the harness has no live terminal.
+---Background the current harness's terminal: minimize ITS OWN float into a one-line bar if it is
+---open, otherwise hide it (term.hide closes only the window), keeping the buffer/PTY alive so it
+---keeps executing, and mark it unselected in the table. Never deletes the buffer - that is what makes
+---resume work. A no-op if the harness has no live terminal.
 ---Returns true if a live terminal was actually backgrounded (so callers can report it), false otherwise.
 ---@param harness string
 ---@return boolean parked
@@ -57,7 +58,9 @@ function M.park(harness)
   if not term.is_open(harness) then
     return false
   end
-  term.hide(harness)
+  if not term.minimize(harness) then
+    term.hide(harness)
+  end
   entry(harness).selected = false
   return true
 end
@@ -68,7 +71,13 @@ end
 ---name shown, or nil if nothing is selected.
 ---@return string? shown
 function M.show_selected()
+  -- With nothing selected (the selection bit is dropped along with an exited harness's record), fall
+  -- back to the current harness so <leader>c still opens something.
   local selected = M.selected_harness()
+  if not selected then
+    local ok, switch = pcall(require, "harness-decorators.switch")
+    selected = ok and switch.current() or nil
+  end
   if not selected then
     return nil
   end

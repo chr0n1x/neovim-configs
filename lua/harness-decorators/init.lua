@@ -114,6 +114,10 @@ end
 function M.session_component(frame)
   local path = M.get_pinned_path()
   if not path then
+    local ok_c, display_c = pcall(require, "harness-decorators.agent-display")
+    if ok_c and display_c.count() == 0 then
+      return "0 agents"
+    end
     local ok_a, adapter = pcall(require, "harness-decorators." .. utils.harness)
     if ok_a and adapter and not adapter.projects_dir() then
       local ok_d, display = pcall(require, "harness-decorators.agent-display")

@@ -22,7 +22,38 @@ nmap("n", "<leader>Z", ":set scrolloff=999<CR>", { noremap = true, desc = "Cente
 
 -- misc
 nmap("n", "<leader>w", ":w<CR>", { noremap = true, desc = "Save buff." })
-nmap("n", "<leader><space>", ":noh <bar> e<CR>", { noremap = true, desc = "Close any highlights." })
+-- windows.nvim's autowidth runs only from here (its automatic resizing is disabled in plugins/uix.lua).
+-- It has no one-shot command, so this drives its layout calculation and animation directly.
+local function autowidth_once()
+  local ok_api, api = pcall(require, "windows.lib.api")
+  local ok_calc, calc_layout = pcall(require, "windows.calculate-layout")
+  if not (ok_api and ok_calc) then
+    return
+  end
+  local win = api.Window(0)
+  if win:is_floating() or win:is_ignored() then
+    return
+  end
+  local winsdata = calc_layout.autowidth(win)
+  if vim.tbl_isempty(winsdata) then
+    return
+  end
+  local animation = require("windows.lib.resize-windows-animated")._instance
+  if animation then
+    animation:load(winsdata)
+    animation:run()
+  else
+    require("windows.lib.resize-windows").resize_windows(winsdata)
+  end
+end
+nmap("n", "<leader><space>", "", {
+  noremap = true,
+  desc = "Close any highlights and resize windows for the current one.",
+  callback = function()
+    vim.cmd("noh | e")
+    autowidth_once()
+  end,
+})
 nmap("n", "<leader>q", ":q<CR>", { noremap = true, desc = "Save & close buffer (:wq)." })
 nmap("n", "<leader>qq", ":qa!<CR>", { noremap = true, desc = "Force close all. (:qa!)" })
 nmap("n", "<leader>md", ":delm! | delm A-Z0-9<CR>", { noremap = true, desc = "Marks: Delete all." })

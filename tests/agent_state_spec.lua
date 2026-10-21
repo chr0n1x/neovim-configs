@@ -418,6 +418,52 @@ describe("agent-state: per-harness adapters (sandboxed HOME)", function()
     end)
   end)
 
+  describe("pig", function()
+    local pig
+    setup(function()
+      pig = require("harness-decorators.pig.state")
+    end)
+
+    it("Given pig has no session for the cwd, When status is polled, Then it is unknown (no child check: pig keeps a node child)", function()
+      assert.are.equal("unknown", pig.status(1234, "/x"))
+      assert.is_true(pig.no_child_check, "pig's always-alive node child would read as working")
+    end)
+
+    it("Given pig's last message is an assistant that stopped, When status is polled, Then it is idle", function()
+      local dir = home .. "/.pig/agent/sessions/--pig-turn--"
+      vim.fn.mkdir(dir, "p")
+      local f = dir .. "/2026-01-01T00-00-00-000Z_aaaa0000-5d71-72af-bafe-f08b1ecb862f.jsonl"
+      write_file(f, '{"type":"message","message":{"role":"user"}}\n{"type":"message","message":{"role":"assistant","stopReason":"aborted"}}\n')
+      assert.are.equal("idle", pig.status(1234, "/pig-turn"))
+      write_file(f, '{"type":"message","message":{"role":"assistant","stopReason":"toolUse"}}\n')
+      assert.are.equal("working", pig.status(1234, "/pig-turn"))
+      write_file(f, '{"type":"message","message":{"role":"assistant","stopReason":"stop"}}\n{"type":"message","message":{"role":"user"}}\n')
+      assert.are.equal("working", pig.status(1234, "/pig-turn"))
+    end)
+
+    it("Given a session under ~/.pig, When label is read, Then it is the short uuid from that file", function()
+      local dir = home .. "/.pig/agent/sessions/--pig-proj--"
+      vim.fn.mkdir(dir, "p")
+      write_file(dir .. "/2026-01-01T00-00-00-000Z_c0ffee00-5d71-72af-bafe-f08b1ecb862f.jsonl", "{}\n")
+      assert.are.equal("c0ffee00", pig.label(1234, "/pig-proj"))
+    end)
+
+    it("Given a session only under ~/.pi, When pig label is read, Then it is nil (pig never reads ~/.pi)", function()
+      local dir = home .. "/.pi/agent/sessions/--pi-only--"
+      vim.fn.mkdir(dir, "p")
+      write_file(dir .. "/2026-01-01T00-00-00-000Z_deadbeef-5d71-72af-bafe-f08b1ecb862f.jsonl", "{}\n")
+      assert.is_nil(pig.label(1234, "/pi-only"))
+    end)
+
+    it("Given a session only under ~/.pig, When pi label is read, Then it is nil (pi never reads ~/.pig)", function()
+      require("harness-decorators.pi.follow")._reset()
+      local dir = home .. "/.pig/agent/sessions/--pig-only--"
+      vim.fn.mkdir(dir, "p")
+      write_file(dir .. "/2026-01-01T00-00-00-000Z_feedface-5d71-72af-bafe-f08b1ecb862f.jsonl", "{}\n")
+      assert.is_nil(require("harness-decorators.pi.state").label(1234, "/pig-only"))
+    end)
+  end)
+
   describe("term.opened_at", function()
     it("returns nil when the harness has no live instance", function()
       local term = require("harness-decorators.term")

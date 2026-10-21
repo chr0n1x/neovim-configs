@@ -10,6 +10,7 @@ local colors = {
   copilot = "#aa78ff", -- purple
   crush = "#ff60ff", -- charm magenta
   pi = "#ffffff", -- white (pi.dev logo)
+  pig = "#3ddc6e", -- green, same as the idle checkmark (agent-display AgentDotIdle)
 }
 
 ---Define the HarnessTitle<Name> hl group for a harness. Uses `default` so a

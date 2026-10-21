@@ -135,11 +135,14 @@ describe("park: unified harness terminal table (Task 6/7)", function()
     assert.are_not.equal(maki_buf, shown_buf, "showing the selected harness must NOT reuse another harness's buffer")
   end)
 
-  it("show_selected is a no-op when nothing is selected", function()
+  it("show_selected falls back to the current harness when nothing is selected", function()
+    -- An exited harness's record (and its selection bit) is dropped by park.list, which used to leave
+    -- <leader>c doing nothing. With no selection, the current harness is shown instead.
     local park = require("harness-decorators.park")
-    state._reset()
+    require("harness-decorators.switch").init(original_harness)
     require("harness-decorators.state")._reset()
     local shown = park.show_selected()
-    assert.is_nil(shown, "no selection means show_selected does nothing")
+    assert.are.equal(original_harness, shown, "no selection should fall back to the current harness")
+    assert.is_not_nil(term_mod.bufnr(original_harness), "the current harness's float must be open")
   end)
 end)

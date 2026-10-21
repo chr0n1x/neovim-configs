@@ -168,7 +168,9 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     vim.api.nvim_set_current_win(work_win)
     vim.api.nvim_set_current_win(term_win)
     assert.are.equal(0, insert_calls, "WinEnter must defer startinsert until navigation has settled")
-    vim.wait(200, function()
+    -- The window switches above start a windows.nvim resize animation (300ms); terminal-mode entry
+    -- waits for it to finish, so allow longer than that.
+    vim.wait(800, function()
       return insert_calls > 0
     end, 10)
     assert.is_true(insert_calls > 0, "focusing a harness terminal must enter terminal mode")
@@ -233,196 +235,6 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     assert.is_true(insert_calls > 0, "re-selecting an already-focused harness terminal must still enter insert mode")
 
     vim.cmd.startinsert = orig_startinsert
-    pcall(vim.cmd.stopinsert)
-    pcall(vim.api.nvim_win_close, win, true)
-    pcall(vim.api.nvim_buf_delete, term_buf, { force = true })
-  end)
-
-  it("re-enters terminal mode on an involuntary t->nt ModeChanged with no window/buffer change", function()
-    -- The bug: focus never moves at all (same window, same buffer, OS focus never lost) but
-    -- something external still drops mode from terminal-insert to terminal-normal (e.g. an async
-    -- callback touching buffers/windows while the harness terminal just sits there focused).
-    -- WinEnter and FocusGained both require focus to actually move, so neither fires - the float
-    -- was left stuck in "-- (terminal) --" with no re-entry path at all. ModeChanged on t:nt must
-    -- catch this directly.
-    local term = require("harness-decorators.term")
-    term._reset()
-
-    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-      if w ~= vim.api.nvim_get_current_win() then
-        pcall(vim.api.nvim_win_close, w, true)
-      end
-    end
-    vim.cmd("vsplit")
-    local ok = pcall(vim.cmd, "terminal cat")
-    assert.is_true(ok, "could not open a terminal window (cat)")
-    local win = vim.api.nvim_get_current_win()
-    vim.wait(100, function() return false end, 25)
-    local term_buf = vim.api.nvim_win_get_buf(win)
-    vim.b[term_buf].harness_terminal = "claude"
-
-    local orig_startinsert = vim.cmd.startinsert
-    local insert_calls = 0
-    vim.cmd.startinsert = function(...)
-      insert_calls = insert_calls + 1
-      return orig_startinsert(...)
-    end
-
-    -- Simulate the involuntary drop: no <C-n>, no window/buffer change, just the mode transition.
-    -- nvim_exec_autocmds matches on either pattern or buffer, not both - `win`/`term_buf` are
-    -- already current (just opened above), so harness_terminal_buf()'s nvim_get_current_buf() read
-    -- resolves correctly against a bare pattern match.
-    vim.api.nvim_exec_autocmds("ModeChanged", { pattern = "t:nt" })
-    vim.wait(200, function()
-      return insert_calls > 0
-    end, 10)
-    assert.is_true(insert_calls > 0, "an involuntary t->nt transition with no focus change must still re-enter insert mode")
-
-    -- Deliberate <C-n> must still be respected - the same transition must NOT re-enter insert once
-    -- the user has explicitly asked to stay in terminal-normal mode.
-    insert_calls = 0
-    vim.b[term_buf].harness_terminal_normal_mode = true
-    vim.api.nvim_exec_autocmds("ModeChanged", { pattern = "t:nt" })
-    vim.wait(100, function() return false end, 10)
-    assert.are.equal(0, insert_calls, "a deliberate <C-n> must not be undone by the ModeChanged re-entry")
-
-    vim.cmd.startinsert = orig_startinsert
-    pcall(vim.cmd.stopinsert)
-    pcall(vim.api.nvim_win_close, win, true)
-    pcall(vim.api.nvim_buf_delete, term_buf, { force = true })
-  end)
-
-  it("resyncs the grid (redraw + re-focus) before startinsert so a post-resize stuck nt state settles", function()
-    -- The bug: after an external (tmux) pane resize, the terminal buffer can enter a state where a
-    -- BARE startinsert is a no-op - the grid is out of sync with the new size, so the mode
-    -- transition is silently dropped and the float sticks in "-- (terminal) --". Verified live:
-    -- startinsert alone (even a stopinsert/startinsert cycle) left the mode in nt, while
-    -- redraw + set_current_win(win) + startinsert transitioned it back to t. enter_terminal_mode
-    -- must therefore perform that resync before startinsert, not call startinsert alone. This
-    -- test can't reproduce the real grid-out-of-sync state headlessly (a fresh `terminal cat`
-    -- never gets it), so it asserts the resync is actually issued: stub redraw and set_current_win,
-    -- drive enter_terminal_mode from the nt state, and confirm both ran before startinsert.
-    local term = require("harness-decorators.term")
-    term._reset()
-
-    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-      if w ~= vim.api.nvim_get_current_win() then
-        pcall(vim.api.nvim_win_close, w, true)
-      end
-    end
-    vim.cmd("vsplit")
-    local ok = pcall(vim.cmd, "terminal cat")
-    assert.is_true(ok, "could not open a terminal window (cat)")
-    local win = vim.api.nvim_get_current_win()
-    vim.wait(100, function() return false end, 25)
-    local term_buf = vim.api.nvim_win_get_buf(win)
-    vim.b[term_buf].harness_terminal = "claude"
-
-    pcall(vim.cmd.stopinsert)
-    assert.are.equal("nt", vim.fn.mode(1), "precondition: terminal in terminal-normal mode")
-
-    local redraw_calls = 0
-    local refocus_calls = 0
-    local orig_redraw = vim.cmd.redraw
-    local orig_set_cur = vim.api.nvim_set_current_win
-    vim.cmd.redraw = function(...)
-      redraw_calls = redraw_calls + 1
-      return orig_redraw(...)
-    end
-    vim.api.nvim_set_current_win = function(w, ...)
-      refocus_calls = refocus_calls + 1
-      return orig_set_cur(w, ...)
-    end
-
-    -- Drive the re-entry path (same call the ModeChanged t:nt handler makes, minus the schedule
-    -- wrapper) so the resync inside enter_terminal_mode runs synchronously and is observable.
-    vim.b[term_buf].harness_terminal_normal_mode = false
-    term.ensure_terminal_mode()
-    -- ensure_terminal_mode schedules enter_terminal_mode for the next tick; let it run.
-    vim.wait(100, function()
-      return redraw_calls > 0
-    end, 10)
-
-    assert.is_true(redraw_calls > 0, "enter_terminal_mode must redraw to resync the grid before startinsert")
-    assert.is_true(refocus_calls > 0, "enter_terminal_mode must re-set the current window before startinsert")
-
-    vim.cmd.redraw = orig_redraw
-    vim.api.nvim_set_current_win = orig_set_cur
-    pcall(vim.cmd.stopinsert)
-    pcall(vim.api.nvim_win_close, win, true)
-    pcall(vim.api.nvim_buf_delete, term_buf, { force = true })
-  end)
-
-  it("routes the edit-jump in-flight TermLeave restore through the shared funnel, not a bare startinsert", function()
-    -- The bug: edit-jump.lua's TermLeave handler used to call vim.cmd.startinsert() directly when
-    -- a jump was in flight. A bare startinsert is a no-op when the grid is out of sync (the
-    -- post-resize case enter_terminal_mode's redraw + set_current_win resync exists for), so the
-    -- jump's own restore could leave the float stuck in "-- (terminal) --". The restore must route
-    -- through term.schedule_enter_terminal_mode so it gets the same resync + bounded polling as
-    -- every other re-entry trigger.
-    --
-    -- Drive it the way it fires in production: get the terminal into insert mode, set the
-    -- jump-in-flight flag, then a REAL stopinsert (a genuine t->nt transition that fires TermLeave
-    -- for real - nvim_exec_autocmds("TermLeave") is rejected by the CAPI outside a terminal
-    -- window context, so we cannot synthesize it). The handler's restore is deferred (vim.schedule),
-    -- so we wait for the observable effect.
-    local term = require("harness-decorators.term")
-    term._reset()
-
-    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-      if w ~= vim.api.nvim_get_current_win() then
-        pcall(vim.api.nvim_win_close, w, true)
-      end
-    end
-    vim.cmd("vsplit")
-    local ok = pcall(vim.cmd, "terminal cat")
-    assert.is_true(ok, "could not open a terminal window (cat)")
-    local win = vim.api.nvim_get_current_win()
-    vim.wait(100, function() return false end, 25)
-    local term_buf = vim.api.nvim_win_get_buf(win)
-    vim.b[term_buf].harness_terminal = "claude"
-
-    pcall(vim.cmd.stopinsert)
-    assert.are.equal("nt", vim.fn.mode(1), "precondition: terminal in terminal-normal mode")
-
-    -- Stub the funnel so we can observe the jump's restore routed through it, without letting the
-    -- real re-entry change mode underneath the assertion.
-    local funnel_calls = 0
-    local orig_funnel = term.schedule_enter_terminal_mode
-    term.schedule_enter_terminal_mode = function()
-      funnel_calls = funnel_calls + 1
-    end
-
-    local edit_jump = require("harness-decorators.edit-jump")
-    -- Register the jump autocmds into a throwaway group so we can grab the TermLeave callback and
-    -- invoke it directly: a real t->nt TermLeave is not reproducible headlessly (startinsert never
-    -- reaches t mode there), but the callback is the unit under test and it only reads the current
-    -- window/buffer + the _jump_active flag, all of which we set up synchronously.
-    local jgroup = vim.api.nvim_create_augroup("TestJumpRestore", { clear = true })
-    edit_jump.create_jump_autocmds(jgroup)
-    local term_leave_cb
-    for _, a in ipairs(vim.api.nvim_get_autocmds({ group = "TestJumpRestore", event = "TermLeave" })) do
-      term_leave_cb = a.callback
-    end
-    assert.is_not_nil(term_leave_cb, "edit-jump must register a TermLeave autocmd")
-
-    -- Flip the jump-in-flight flag the way jump_to_edit does before its window switch, and mark
-    -- the buffer's own in-flight leave so term.lua's TermLeave logger suppresses it.
-    edit_jump._jump_active = true
-    vim.b[term_buf].harness_term_will_leave = true
-
-    -- Invoke the handler the way a real TermLeave would. Its restore is deferred (vim.schedule),
-    -- so wait for the observable effect.
-    term_leave_cb({})
-    vim.wait(300, function()
-      return funnel_calls > 0
-    end, 10)
-
-    assert.is_true(funnel_calls > 0, "the edit-jump TermLeave restore must route through term.schedule_enter_terminal_mode, not a bare startinsert")
-    assert.are.equal(false, vim.b[term_buf].harness_term_will_leave, "the will-leave flag must be cleared by the restore")
-    edit_jump._jump_active = false
-
-    term.schedule_enter_terminal_mode = orig_funnel
     pcall(vim.cmd.stopinsert)
     pcall(vim.api.nvim_win_close, win, true)
     pcall(vim.api.nvim_buf_delete, term_buf, { force = true })
@@ -600,5 +412,770 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
         fail("term.lua must not load claudecode modules; it loaded: " .. k)
       end
     end
+  end)
+end)
+
+-- Spec for the float's mouse handling, minimized bars and output flash. Headless Neovim gets no real
+-- mouse input, so these drive term.mouse.press/drag/release/double (the same functions the mouse
+-- mappings call) with made-up getmousepos()-shaped positions.
+--
+-- The fake Snacks instance here owns a REAL float window over a scratch buffer, so geometry is real.
+-- With the default 80x24 headless editor and opts { row = 2, col = 10, width = 40, height = 10 } the
+-- float's border spans 1-based screen rows 3..14 and columns 11..52:
+--
+-- ```lua
+-- { top = 3, bottom = 14, left = 11, right = 52 } -- title bar is row 3, minimize corner is (3, 52)
+-- ```
+--
+-- Positions in the specs below are derived from that box.
+describe("term: float mouse handling, minimized bars and flash", function()
+  local term = require("harness-decorators.term")
+  local state = require("harness-decorators.state")
+  local sw = require("harness-decorators.switch")
+  local keymaps = require("harness-decorators.keymaps")
+  local utils = require("harness-decorators.utils")
+  local snacks
+  local orig_open
+  local orig_notify
+  local original_harness
+  local orig_env
+
+  ---A fake Snacks instance whose show() opens a real bordered float at its opts geometry.
+  local function make_float_fake(buf)
+    local inst = { buf = buf, opts = { border = "rounded", row = 2, col = 10, width = 40, height = 10 } }
+    function inst:buf_valid()
+      return self.buf ~= nil and vim.api.nvim_buf_is_valid(self.buf)
+    end
+    function inst:show()
+      self.win = vim.api.nvim_open_win(self.buf, true, {
+        relative = "editor",
+        row = self.opts.row,
+        col = self.opts.col,
+        width = self.opts.width,
+        height = self.opts.height,
+        border = "rounded",
+      })
+    end
+    function inst:hide()
+      if self.win and vim.api.nvim_win_is_valid(self.win) then
+        vim.api.nvim_win_close(self.win, true)
+      end
+      self.win = nil
+    end
+    function inst:focus()
+      vim.api.nvim_set_current_win(self.win)
+    end
+    function inst.close() end
+    return inst
+  end
+
+  local function wait_for(pred, ms)
+    return vim.wait(ms or 1000, pred, 10)
+  end
+
+  local function bar_of(harness)
+    local e = state.table[harness]
+    local bar = e and e.inst and e.inst._pill_win
+    return (bar and vim.api.nvim_win_is_valid(bar)) and bar or nil
+  end
+
+  ---The row a docked bar in `slot` settles on (1 is the top of the dock, under any tabline).
+  local function dock_row(slot)
+    local stal = vim.o.showtabline
+    local top = (stal == 2 or (stal == 1 and #vim.api.nvim_list_tabpages() > 1)) and 1 or 0
+    return top + 3 * (slot - 1)
+  end
+
+  ---1-based screen position of a bar's text cell `x` (0-based column within its text).
+  local function bar_text_pos(bar, x)
+    local pos = vim.api.nvim_win_get_position(bar)
+    return { screenrow = pos[1] + 2, screencol = pos[2] + 2 + x }
+  end
+
+  local function cleanup()
+    for _, e in pairs(state.table) do
+      local i = e.inst
+      if i then
+        if i._bar_anim then
+          i._bar_anim:finish()
+        end
+        if i._pill_win and vim.api.nvim_win_is_valid(i._pill_win) then
+          vim.api.nvim_win_close(i._pill_win, true)
+        end
+        if i.win and vim.api.nvim_win_is_valid(i.win) then
+          vim.api.nvim_win_close(i.win, true)
+        end
+      end
+    end
+    term._reset()
+    term.mouse.release()
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if w ~= vim.api.nvim_get_current_win() then
+        pcall(vim.api.nvim_win_close, w, true)
+      end
+    end
+  end
+
+  setup(function()
+    original_harness = helper.active_harness()
+    orig_env = os.getenv("NVIM_LLM_HARNESS")
+    snacks = require("snacks.terminal")
+    orig_open = snacks.open
+    snacks.open = function()
+      local inst = make_float_fake(vim.api.nvim_create_buf(false, true))
+      inst:show()
+      return inst
+    end
+    orig_notify = vim.notify
+    vim.notify = function() end
+  end)
+
+  teardown(function()
+    snacks.open = orig_open
+    vim.notify = orig_notify
+    cleanup()
+    -- The restore-button spec switches harness; put the config's default back the way switch_spec does.
+    if orig_env then
+      vim.fn.setenv("NVIM_LLM_HARNESS", orig_env)
+    end
+    utils.harness = original_harness
+    sw.init(original_harness)
+    keymaps.clear()
+    keymaps.apply(keymaps.build(original_harness))
+  end)
+
+  before_each(cleanup)
+
+  it("Given an open harness float, When its title bar is dragged, Then the float moves and keeps the spot for the next show", function()
+    local inst = term.open("claude")
+    assert.are.equal("", term.mouse.press({ screenrow = 3, screencol = 20 }), "title bar press must start a drag")
+    term.mouse.drag({ screenrow = 6, screencol = 25 })
+    assert.is_true(wait_for(function()
+      return vim.api.nvim_win_get_config(inst.win).row == 5
+    end), "float should follow the drag down 3 rows")
+    term.mouse.release()
+    local cfg = vim.api.nvim_win_get_config(inst.win)
+    assert.are.same({ 5, 15 }, { cfg.row, cfg.col })
+    assert.are.same({ 5, 15 }, { inst.opts.row, inst.opts.col }, "new position must be kept in opts for show()")
+  end)
+
+  it("Given an open harness float, When its bottom-right corner is dragged, Then it grows and the <C-f> baseline is dropped", function()
+    local inst = term.open("claude")
+    inst._saved_config = { row_ratio = 0, col_ratio = 0, width_ratio = 1, height_ratio = 1 }
+    term.mouse.press({ screenrow = 14, screencol = 52 })
+    term.mouse.drag({ screenrow = 16, screencol = 60 })
+    assert.is_true(wait_for(function()
+      return vim.api.nvim_win_get_config(inst.win).width == 48
+    end), "float should widen by the 8-column drag")
+    term.mouse.release()
+    local cfg = vim.api.nvim_win_get_config(inst.win)
+    assert.are.same({ 48, 12 }, { cfg.width, cfg.height })
+    assert.is_nil(inst._saved_config, "the <C-f> collapse target must be the resized geometry")
+  end)
+
+  it("Given a float Neovim draws away from its config position, When its drawn title bar is pressed, Then the press starts a drag", function()
+    local inst = term.open("claude")
+    -- Neovim shifts a float that does not fit; stand in for that by reporting a drawn spot 5 columns left.
+    local orig_pos = vim.api.nvim_win_get_position
+    vim.api.nvim_win_get_position = function(w)
+      if w == inst.win then
+        return { 2, 5 }
+      end
+      return orig_pos(w)
+    end
+    local keys = term.mouse.press({ screenrow = 3, screencol = 7 })
+    vim.api.nvim_win_get_position = orig_pos
+    term.mouse.release()
+    assert.are.equal("", keys, "column 7 is on the drawn title bar (config says it starts at 11)")
+  end)
+
+  it("Given an open harness float, When its minimize corner is double-clicked, Then the window hides, the buffer stays and a bar docks top-right", function()
+    local inst = term.open("claude")
+    assert.are.equal("", term.mouse.double({ screenrow = 3, screencol = 52 }))
+    assert.is_true(wait_for(function()
+      local bar = bar_of("claude")
+      local cfg = bar and vim.api.nvim_win_get_config(bar)
+      return cfg ~= nil and cfg.row == dock_row(1) and cfg.height == 1 and cfg.width == inst._bar_width
+        and cfg.col == vim.o.columns - cfg.width - 2
+    end), "a bar should finish shrinking into the first dock slot, its right border on the last column")
+    assert.is_nil(inst.win, "the float window must be hidden")
+    assert.is_true(vim.api.nvim_buf_is_valid(inst.buf), "the harness buffer (its process) must survive")
+    local bar = bar_of("claude")
+    local text = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(bar), 0, 1, false)[1]
+    assert.is_truthy(text:find("Claude", 1, true), "the bar must show the harness name: " .. text)
+  end)
+
+  it("Given a docked bar, When its harness is restored, Then the bar grows back to the float's spot before the float opens", function()
+    local inst = term.open("claude")
+    term.minimize("claude")
+    assert.is_true(wait_for(function()
+      local bar = bar_of("claude")
+      return bar ~= nil and vim.api.nvim_win_get_config(bar).height == 1
+    end))
+    local bar = bar_of("claude")
+    local docked_width = vim.api.nvim_win_get_config(bar).width
+    term.show("claude")
+    assert.is_nil(inst.win, "the float must wait for the bar to finish growing")
+    local grew = wait_for(function()
+      return vim.api.nvim_win_is_valid(bar) and vim.api.nvim_win_get_config(bar).width > docked_width
+    end, 400)
+    assert.is_true(grew, "the bar should grow toward the float's size")
+    assert.is_true(wait_for(function()
+      return inst.win ~= nil and vim.api.nvim_win_is_valid(inst.win) and bar_of("claude") == nil
+    end), "the float should open and the bar close once the animation ends")
+    local cfg = vim.api.nvim_win_get_config(inst.win)
+    assert.are.same({ 2, 10, 40, 10 }, { cfg.row, cfg.col, cfg.width, cfg.height }, "the float returns to its spot")
+  end)
+
+  it("Given an open harness float, When <Esc> is pressed in it, Then it minimizes into a docked bar instead of vanishing", function()
+    local inst = term.open("claude")
+    term.close_key(inst)
+    assert.is_true(wait_for(function()
+      return bar_of("claude") ~= nil
+    end), "<Esc> should leave a minimized bar in the dock")
+    assert.is_nil(inst.win, "the float window must be hidden")
+    assert.is_true(vim.api.nvim_buf_is_valid(inst.buf), "the harness buffer (its process) must survive")
+  end)
+
+  it("Given two docked bars, When the slot-1 bar's close button is clicked, Then it closes and the other slides into slot 1", function()
+    term.open("claude")
+    term.open("maki")
+    term.minimize("claude")
+    term.minimize("maki")
+    assert.is_true(wait_for(function()
+      local a, b = bar_of("claude"), bar_of("maki")
+      return a and b and vim.api.nvim_win_get_config(a).row == dock_row(1)
+        and vim.api.nvim_win_get_config(b).row == dock_row(2)
+    end), "claude should dock in slot 1 and maki below it in slot 2")
+    local inst = state.table.claude.inst
+    term.mouse.press(bar_text_pos(bar_of("claude"), inst._bar_close_col))
+    assert.is_true(wait_for(function()
+      local b = bar_of("maki")
+      return bar_of("claude") == nil and b ~= nil and vim.api.nvim_win_get_config(b).row == dock_row(1)
+    end), "claude's bar should close and maki's should slide up to slot 1")
+  end)
+
+  it("Given a bar still shrinking from its float, When the dock repacks, Then the bar ends at its final width", function()
+    term.open("claude")
+    term.open("maki")
+    term.minimize("claude")
+    assert.is_true(wait_for(function()
+      local a = bar_of("claude")
+      return a ~= nil and vim.api.nvim_win_get_config(a).row == dock_row(1)
+    end))
+    -- maki starts shrinking; closing claude's bar repacks the dock in the middle of that animation.
+    term.minimize("maki")
+    local claude = state.table.claude.inst
+    term.mouse.press(bar_text_pos(bar_of("claude"), claude._bar_close_col))
+    local maki = state.table.maki.inst
+    assert.is_true(wait_for(function()
+      local b = bar_of("maki")
+      return b ~= nil and vim.api.nvim_win_get_config(b).row == dock_row(1)
+    end))
+    vim.wait(500)
+    assert.are.equal(maki._bar_width, vim.api.nvim_win_get_config(bar_of("maki")).width,
+      "the repack must target the bar's final width, not its width mid-animation")
+  end)
+
+  it("Given a docked bar, When its restore button is clicked, Then that harness becomes current and its float opens", function()
+    term.open("copilot")
+    term.minimize("copilot")
+    assert.is_true(wait_for(function()
+      return bar_of("copilot") ~= nil
+    end))
+    local inst = state.table.copilot.inst
+    -- The restore icon sits 3 columns left of the close icon.
+    term.mouse.press(bar_text_pos(bar_of("copilot"), inst._bar_close_col - 3))
+    assert.is_true(wait_for(function()
+      return bar_of("copilot") == nil and inst.win ~= nil and vim.api.nvim_win_is_valid(inst.win)
+    end), "copilot's float should reopen and its bar close")
+    assert.are.equal("copilot", sw.current(), "restoring from the bar must switch to that harness")
+  end)
+
+  it("Given a docked bar, When its restore button is pressed and released, Then the release is swallowed so focus stays in the restored float", function()
+    term.open("copilot")
+    term.minimize("copilot")
+    assert.is_true(wait_for(function()
+      return bar_of("copilot") ~= nil
+    end))
+    local inst = state.table.copilot.inst
+    local pos = bar_text_pos(bar_of("copilot"), inst._bar_close_col - 3)
+    assert.are.equal("", term.mouse.press(pos))
+    -- A drag or release passed through to Neovim would move the cursor to the window under the mouse.
+    assert.are.equal("", term.mouse.drag(pos), "a drag after a button press must not reach Neovim")
+    assert.are.equal("", term.mouse.release(), "the release after a button press must not reach Neovim")
+    assert.is_true(wait_for(function()
+      return inst.win ~= nil and vim.api.nvim_win_is_valid(inst.win)
+    end))
+    assert.are.equal(inst.win, vim.api.nvim_get_current_win(), "the restored float must have focus")
+    assert.are.equal("<LeftRelease>", term.mouse.release(), "a later, unrelated release passes through")
+  end)
+
+  it("Given a docked bar of a running harness, When its close button is clicked, Then the harness process gets SIGTERM, the bar closes and the harness is gone", function()
+    local exit_code
+    -- This harness's buffer runs a real process, so the signal can be observed through its exit code.
+    snacks.open = function()
+      local inst = make_float_fake(vim.api.nvim_create_buf(false, true))
+      vim.api.nvim_buf_call(inst.buf, function()
+        vim.fn.jobstart({ "sleep", "60" }, {
+          term = true,
+          on_exit = function(_, code)
+            exit_code = code
+          end,
+        })
+      end)
+      inst:show()
+      return inst
+    end
+    term.open("claude")
+    snacks.open = function()
+      local inst = make_float_fake(vim.api.nvim_create_buf(false, true))
+      inst:show()
+      return inst
+    end
+    term.minimize("claude")
+    assert.is_true(wait_for(function()
+      return bar_of("claude") ~= nil
+    end))
+    local inst = state.table.claude.inst
+    term.mouse.press(bar_text_pos(bar_of("claude"), inst._bar_close_col))
+    term.mouse.release()
+    assert.is_true(wait_for(function()
+      return exit_code ~= nil
+    end, 2000), "the harness process should exit")
+    assert.are.equal(128 + 15, exit_code, "the harness process must be ended by SIGTERM")
+    assert.is_nil(bar_of("claude"), "the bar must close")
+    -- Snacks keeps a terminal buffer open after a non-zero exit; the harness must not linger as "open",
+    -- or the next <leader>c would re-show the dead terminal instead of starting a fresh session.
+    assert.is_true(wait_for(function()
+      return not term.is_open("claude")
+    end), "the ended harness must no longer count as open")
+  end)
+
+  it("Given the default placement, When a harness float opens, Then its right border stays left of the minimized-bar dock", function()
+    local win_opts
+    snacks.open = function(_, opts)
+      win_opts = opts.win
+      local inst = make_float_fake(vim.api.nvim_create_buf(false, true))
+      inst:show()
+      return inst
+    end
+    term.open("claude")
+    snacks.open = function()
+      local inst = make_float_fake(vim.api.nvim_create_buf(false, true))
+      inst:show()
+      return inst
+    end
+    -- Snacks resolves a ratio as floor(columns * ratio) and calls a function value for the absolute column.
+    local cols = vim.o.columns
+    local col = type(win_opts.col) == "function" and win_opts.col() or math.floor(cols * win_opts.col)
+    local outer_width = math.floor(cols * win_opts.width)
+    -- A docked bar is at least 18 text columns plus its 2 border columns, flush with the last column.
+    local dock_left = cols - 20
+    assert.is_true(col + outer_width <= dock_left - 1,
+      string.format("float spans columns %d..%d, the dock starts at %d", col, col + outer_width - 1, dock_left))
+  end)
+
+  it("Given a float dragged under the dock, When harnesses are minimized, Then the bars draw above the float", function()
+    local open = term.open("claude")
+    term.open("maki")
+    term.minimize("maki")
+    assert.is_true(wait_for(function()
+      return bar_of("maki") ~= nil
+    end))
+    local claude = state.table.claude.inst
+    claude:show()
+    local float_z = vim.api.nvim_win_get_config(claude.win).zindex or 50
+    assert.is_true(vim.api.nvim_win_get_config(bar_of("maki")).zindex > float_z, "bars must stack above harness floats")
+    assert.is_not_nil(open)
+  end)
+
+  it("Given the active harness's process exits, When it is started again, Then session following stops on exit and restarts on the new start", function()
+    local watcher = require("harness-decorators.watcher")
+    local orig_stop, orig_start, orig_harness = watcher.stop, watcher.start, utils.harness
+    local stops, starts = 0, 0
+    watcher.stop = function()
+      stops = stops + 1
+    end
+    watcher.start = function()
+      starts = starts + 1
+    end
+    utils.harness = "claude"
+    local exited = false
+    snacks.open = function()
+      local inst = make_float_fake(vim.api.nvim_create_buf(false, true))
+      vim.api.nvim_buf_call(inst.buf, function()
+        vim.fn.jobstart({ "sleep", "60" }, {
+          term = true,
+          on_exit = function()
+            exited = true
+          end,
+        })
+      end)
+      inst:show()
+      return inst
+    end
+    local inst = term.open("claude")
+    vim.fn.jobstop(vim.bo[inst.buf].channel)
+    local stopped = wait_for(function()
+      return exited and stops > 0
+    end, 2000)
+    local starts_before_reopen = starts
+    term._reset()
+    term.open("claude")
+    local restarted = starts > starts_before_reopen
+    watcher.stop, watcher.start, utils.harness = orig_stop, orig_start, orig_harness
+    snacks.open = function()
+      local fake = make_float_fake(vim.api.nvim_create_buf(false, true))
+      fake:show()
+      return fake
+    end
+    assert.is_true(stopped, "the watcher must stop when the active harness's process exits")
+    assert.is_true(restarted, "starting the harness again must restart the watcher")
+  end)
+
+  it("Given an unfocused harness float, When its terminal gets new text and then goes quiet, Then the border flashes", function()
+    local work_win = vim.api.nvim_get_current_win()
+    local inst = term.open("claude")
+    local orig_quiet = term.flash_quiet_ms
+    term.flash_quiet_ms = 50
+    vim.api.nvim_set_current_win(work_win)
+    vim.api.nvim_buf_set_lines(inst.buf, 0, -1, false, { "new output" })
+    local flashed = wait_for(function()
+      return vim.wo[inst.win].winhighlight:find("HarnessFlash", 1, true) ~= nil
+    end)
+    term.flash_quiet_ms = orig_quiet
+    assert.is_true(flashed, "the float's border should flash after the output settles")
+  end)
+
+  it("Given windows.nvim is animating a split resize, When terminal mode is re-entered, Then startinsert waits for the animation to end", function()
+    vim.cmd("vsplit")
+    assert.is_true(pcall(vim.cmd, "terminal cat"), "could not open a terminal window (cat)")
+    local term_buf = vim.api.nvim_get_current_buf()
+    vim.b[term_buf].harness_terminal = "claude"
+    vim.wait(100, function()
+      return false
+    end, 25)
+    pcall(vim.cmd.stopinsert)
+
+    local module = "windows.lib.resize-windows-animated"
+    local real = package.loaded[module]
+    local running = true
+    package.loaded[module] = { _instance = { is_running = function() return running end } }
+    local orig_startinsert = vim.cmd.startinsert
+    local calls = 0
+    vim.cmd.startinsert = function(...)
+      calls = calls + 1
+      return orig_startinsert(...)
+    end
+
+    term.ensure_terminal_mode()
+    vim.wait(200)
+    local calls_while_animating = calls
+    running = false
+    local entered = wait_for(function()
+      return calls > 0
+    end)
+
+    vim.cmd.startinsert = orig_startinsert
+    package.loaded[module] = real
+    pcall(vim.cmd.stopinsert)
+    assert.are.equal(0, calls_while_animating, "startinsert must not run while the resize animation runs")
+    assert.is_true(entered, "startinsert must run once the animation has ended")
+  end)
+
+  it("Given a running harness float, When another harness is picked, Then the running one is minimized into a docked bar", function()
+    sw.init("claude")
+    local inst = term.open("claude")
+    sw.switch("copilot")
+    sw.after_pick()
+    assert.is_true(wait_for(function()
+      return bar_of("claude") ~= nil
+    end), "claude should be minimized into a bar")
+    assert.is_nil(inst.win, "claude's float must be hidden")
+    assert.is_true(vim.api.nvim_buf_is_valid(inst.buf), "claude's process must keep running")
+    local picked = state.table.copilot and state.table.copilot.inst
+    assert.is_true(picked ~= nil and picked.win ~= nil and vim.api.nvim_win_is_valid(picked.win),
+      "the picked harness's float should be open")
+  end)
+  ---Drive a full press/drag/release through the mouse handlers, letting the scheduled drag apply.
+  local function drag_mouse(from, to)
+    local keys = term.mouse.press(from)
+    term.mouse.drag(to)
+    vim.wait(50)
+    term.mouse.release()
+    return keys
+  end
+
+  ---True once the given window's border shows the flash highlight, within ms.
+  local function flashes(win, ms)
+    return wait_for(function()
+      return vim.api.nvim_win_is_valid(win) and vim.wo[win].winhighlight:find("HarnessFlash", 1, true) ~= nil
+    end, ms)
+  end
+
+  ---Wait until a harness's bar has finished animating into its dock slot.
+  local function docked(harness, slot)
+    return wait_for(function()
+      local bar = bar_of(harness)
+      local inst = state.table[harness] and state.table[harness].inst
+      if not (bar and inst) then
+        return false
+      end
+      local cfg = vim.api.nvim_win_get_config(bar)
+      return cfg.row == dock_row(slot) and cfg.height == 1 and cfg.width == inst._bar_width
+        and cfg.col == vim.o.columns - cfg.width - 2
+    end)
+  end
+
+  it("Given windows.nvim reports a resize animation that never ends, When terminal mode is re-entered, Then startinsert still runs after the 1s cap", function()
+    vim.cmd("vsplit")
+    assert.is_true(pcall(vim.cmd, "terminal cat"), "could not open a terminal window (cat)")
+    local term_buf = vim.api.nvim_get_current_buf()
+    vim.b[term_buf].harness_terminal = "claude"
+    vim.wait(100, function()
+      return false
+    end, 25)
+    pcall(vim.cmd.stopinsert)
+
+    local module = "windows.lib.resize-windows-animated"
+    local real = package.loaded[module]
+    -- A window closed mid-animation leaves windows.nvim's animation reporting running forever.
+    package.loaded[module] = { _instance = { is_running = function() return true end } }
+    local orig_startinsert = vim.cmd.startinsert
+    local calls = 0
+    vim.cmd.startinsert = function(...)
+      calls = calls + 1
+      return orig_startinsert(...)
+    end
+
+    term.ensure_terminal_mode()
+    vim.wait(600)
+    local calls_before_cap = calls
+    local entered = wait_for(function()
+      return calls > 0
+    end, 1500)
+
+    vim.cmd.startinsert = orig_startinsert
+    package.loaded[module] = real
+    pcall(vim.cmd.stopinsert)
+    assert.are.equal(0, calls_before_cap, "startinsert should still wait inside the cap")
+    assert.is_true(entered, "startinsert must run once the 1s cap is reached")
+  end)
+
+  it("Given two docked bars, When the slot-1 bar is dragged away, Then it leaves the dock, the other repacks, and its float reopens on screen", function()
+    term.open("claude")
+    term.open("maki")
+    term.minimize("claude")
+    term.minimize("maki")
+    assert.is_true(docked("claude", 1) and docked("maki", 2), "both bars should settle in the dock")
+    local claude = state.table.claude.inst
+    -- Grab claude's bar by its name and drag it far down and to the right.
+    drag_mouse(bar_text_pos(bar_of("claude"), 3), { screenrow = 40, screencol = 200 })
+    assert.is_nil(claude._bar_slot, "a dragged bar leaves the dock")
+    assert.is_true(docked("maki", 1), "the remaining bar should slide into slot 1")
+    -- The float reopens where the bar was, clamped so the whole 40x10 float fits the 80x24 editor.
+    term.show("claude")
+    assert.is_true(wait_for(function()
+      return claude.win ~= nil and vim.api.nvim_win_is_valid(claude.win)
+    end))
+    local cfg = vim.api.nvim_win_get_config(claude.win)
+    assert.is_true(cfg.col + cfg.width + 2 <= vim.o.columns, "the reopened float must fit horizontally")
+    assert.is_true(cfg.row + cfg.height + 2 <= vim.o.lines - vim.o.cmdheight, "the reopened float must fit vertically")
+  end)
+
+  it("Given an open harness float, When its left edge is dragged left, Then it widens leftward and its right edge stays put", function()
+    local inst = term.open("claude")
+    drag_mouse({ screenrow = 8, screencol = 11 }, { screenrow = 8, screencol = 6 })
+    assert.is_true(wait_for(function()
+      return vim.api.nvim_win_get_config(inst.win).width == 45
+    end))
+    assert.are.equal(5, vim.api.nvim_win_get_config(inst.win).col)
+  end)
+
+  it("Given an open harness float, When its bottom edge is dragged down, Then only its height grows", function()
+    local inst = term.open("claude")
+    drag_mouse({ screenrow = 14, screencol = 30 }, { screenrow = 17, screencol = 30 })
+    assert.is_true(wait_for(function()
+      return vim.api.nvim_win_get_config(inst.win).height == 13
+    end))
+    local cfg = vim.api.nvim_win_get_config(inst.win)
+    assert.are.same({ 2, 10, 40 }, { cfg.row, cfg.col, cfg.width })
+  end)
+
+  it("Given an open harness float, When its left edge is dragged past the right edge, Then it stops at the 20-column minimum", function()
+    local inst = term.open("claude")
+    drag_mouse({ screenrow = 8, screencol = 11 }, { screenrow = 8, screencol = 70 })
+    assert.is_true(wait_for(function()
+      return vim.api.nvim_win_get_config(inst.win).width == 20
+    end))
+    assert.are.equal(30, vim.api.nvim_win_get_config(inst.win).col, "the right edge (col 50) must not move")
+  end)
+
+  it("Given an open harness float, When its title bar is dragged past the editor's corner, Then it stops fully on screen", function()
+    local inst = term.open("claude")
+    drag_mouse({ screenrow = 3, screencol = 20 }, { screenrow = 60, screencol = 300 })
+    local max_row = vim.o.lines - vim.o.cmdheight - 10 - 2
+    assert.is_true(wait_for(function()
+      return vim.api.nvim_win_get_config(inst.win).row == max_row
+    end))
+    assert.are.equal(vim.o.columns - 40 - 2, vim.api.nvim_win_get_config(inst.win).col)
+  end)
+
+  it("Given a focused harness float, When its terminal gets new text, Then it does not flash", function()
+    local inst = term.open("claude")
+    local orig_quiet = term.flash_quiet_ms
+    term.flash_quiet_ms = 50
+    vim.api.nvim_buf_set_lines(inst.buf, 0, -1, false, { "new output" })
+    local flashed = flashes(inst.win, 400)
+    term.flash_quiet_ms = orig_quiet
+    assert.is_false(flashed, "a float you are looking at must not flash")
+  end)
+
+  it("Given an unfocused float just resized with the mouse, When the terminal redraws for the new size, Then it does not flash", function()
+    local work_win = vim.api.nvim_get_current_win()
+    local inst = term.open("claude")
+    vim.api.nvim_set_current_win(work_win)
+    local orig_quiet = term.flash_quiet_ms
+    term.flash_quiet_ms = 50
+    drag_mouse({ screenrow = 14, screencol = 52 }, { screenrow = 15, screencol = 55 })
+    -- The terminal's reflow for the new size shows up as new lines right after the resize.
+    vim.api.nvim_buf_set_lines(inst.buf, 0, -1, false, { "reflowed" })
+    local flashed = flashes(inst.win, 400)
+    term.flash_quiet_ms = orig_quiet
+    assert.is_false(flashed, "the redraw after a mouse resize is not new output")
+  end)
+
+  it("Given a minimized harness, When its terminal gets new text, Then its bar flashes", function()
+    local inst = term.open("claude")
+    term.minimize("claude")
+    assert.is_true(docked("claude", 1))
+    local orig_quiet = term.flash_quiet_ms
+    term.flash_quiet_ms = 50
+    vim.api.nvim_buf_set_lines(inst.buf, 0, -1, false, { "new output" })
+    local ns = vim.api.nvim_get_namespaces().harness_flash
+    local lit = wait_for(function()
+      local bar = bar_of("claude")
+      return bar ~= nil and #vim.api.nvim_buf_get_extmarks(vim.api.nvim_win_get_buf(bar), ns, 0, -1, {}) > 0
+    end)
+    term.flash_quiet_ms = orig_quiet
+    assert.is_true(lit, "the bar's text should light up")
+  end)
+
+  it("Given another harness's float is open, When a bar's restore button is clicked, Then the open float is minimized first", function()
+    local claude = term.open("claude")
+    term.open("copilot")
+    term.minimize("copilot")
+    assert.is_true(docked("copilot", 1))
+    claude:show()
+    local copilot = state.table.copilot.inst
+    term.mouse.press(bar_text_pos(bar_of("copilot"), copilot._bar_close_col - 3))
+    term.mouse.release()
+    assert.is_true(wait_for(function()
+      return copilot.win ~= nil and vim.api.nvim_win_is_valid(copilot.win) and bar_of("claude") ~= nil
+    end), "copilot should open and claude should be minimized into a bar")
+    assert.is_nil(claude.win, "claude's float must be hidden")
+  end)
+
+  it("Given a press outside every float and bar, When it is dragged and released, Then all three events pass through to Neovim", function()
+    term.open("claude")
+    assert.are.equal("<LeftMouse>", term.mouse.press({ screenrow = 20, screencol = 5 }))
+    assert.are.equal("<LeftDrag>", term.mouse.drag({ screenrow = 21, screencol = 6 }))
+    assert.are.equal("<LeftRelease>", term.mouse.release())
+  end)
+
+  it("Given a docked bar, When it is pressed on its name and dragged, Then the bar moves instead of firing a button", function()
+    term.open("claude")
+    term.minimize("claude")
+    assert.is_true(docked("claude", 1))
+    local inst = state.table.claude.inst
+    local bar = bar_of("claude")
+    local start = vim.api.nvim_win_get_position(bar)
+    drag_mouse(bar_text_pos(bar, 3), { screenrow = 10, screencol = 40 })
+    assert.is_true(wait_for(function()
+      return vim.api.nvim_win_get_position(bar)[1] ~= start[1]
+    end), "the bar should follow the drag")
+    assert.is_true(vim.api.nvim_win_is_valid(bar), "pressing the name must not close the bar")
+    assert.is_nil(inst.win, "pressing the name must not restore the float")
+  end)
+
+  it("Given a float moved with the mouse, When <C-f> is pressed twice, Then it collapses back to the moved geometry", function()
+    local inst = term.open("claude")
+    drag_mouse({ screenrow = 3, screencol = 20 }, { screenrow = 6, screencol = 25 })
+    assert.is_true(wait_for(function()
+      return vim.api.nvim_win_get_config(inst.win).row == 5
+    end))
+    term.fullscreen_key(inst)
+    vim.wait(500)
+    term.fullscreen_key(inst)
+    assert.is_true(wait_for(function()
+      local cfg = vim.api.nvim_win_get_config(inst.win)
+      return math.abs(cfg.row - 5) <= 1 and math.abs(cfg.col - 15) <= 1 and math.abs(cfg.width - 40) <= 1
+    end, 1500), "the collapse should land where the float was dragged, not where it started")
+  end)
+
+  it("Given a docked bar, When the editor is resized, Then the bar re-docks against the new right edge", function()
+    term.open("claude")
+    term.minimize("claude")
+    assert.is_true(docked("claude", 1))
+    local cols = vim.o.columns
+    vim.o.columns = cols - 10
+    local redocked = docked("claude", 1)
+    vim.o.columns = cols
+    vim.wait(400)
+    assert.is_true(redocked, "the bar should move to the new last column")
+  end)
+
+  it("Given a wide editor, When a harness float opens, Then it keeps its usual 58% column", function()
+    local cols = vim.o.columns
+    vim.o.columns = 343
+    local win_opts
+    snacks.open = function(_, opts)
+      win_opts = opts.win
+      local inst = make_float_fake(vim.api.nvim_create_buf(false, true))
+      inst:show()
+      return inst
+    end
+    term.open("claude")
+    local col = type(win_opts.col) == "function" and win_opts.col() or nil
+    snacks.open = function()
+      local inst = make_float_fake(vim.api.nvim_create_buf(false, true))
+      inst:show()
+      return inst
+    end
+    vim.o.columns = cols
+    assert.are.equal(math.floor(343 * 0.58), col, "the float only moves when it would reach the dock")
+  end)
+
+  it("Given harnesses with different name lengths, When they are minimized, Then the bars share one width with the icons right-aligned", function()
+    term.open("pi")
+    term.open("copilot")
+    term.minimize("pi")
+    term.minimize("copilot")
+    assert.is_true(docked("pi", 1) and docked("copilot", 2))
+    local widths = {}
+    for _, h in ipairs({ "pi", "copilot" }) do
+      local bar = bar_of(h)
+      local text = vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(bar), 0, 1, false)[1]
+      widths[h] = vim.fn.strdisplaywidth(text)
+      assert.is_truthy(text:find("⛶  ⊘ $"), h .. "'s icons must end the bar: " .. text)
+      assert.are.equal(widths[h] - 2, state.table[h].inst._bar_close_col, h .. "'s close icon column")
+    end
+    assert.are.equal(widths.pi, widths.copilot, "short and long names must give the same bar width")
+  end)
+
+  it("Given two running harness floats, When a third harness is picked, Then both are minimized into separate dock slots", function()
+    sw.init("claude")
+    term.open("claude")
+    term.open("maki")
+    sw.switch("copilot")
+    sw.after_pick()
+    assert.is_true(wait_for(function()
+      local a, b = state.table.claude.inst, state.table.maki.inst
+      return bar_of("claude") ~= nil and bar_of("maki") ~= nil and a._bar_slot ~= b._bar_slot
+    end), "claude and maki should each get their own dock slot")
+    local picked = state.table.copilot and state.table.copilot.inst
+    assert.is_true(picked ~= nil and picked.win ~= nil and vim.api.nvim_win_is_valid(picked.win),
+      "the picked harness's float should be open")
   end)
 end)

@@ -4,7 +4,7 @@
 --   * <C-f> -> term.fullscreen_key : toggles the float's _wide flag (fullscreen <-> collapse)
 --   * <C-h> -> term.go_back_key    : moves focus back WITHOUT hiding the float (see go_back_key_spec)
 --   * <C-n> -> term.normal_mode_key: drops into normal mode (stopinsert), float stays open
---   * <Esc> -> term.close_key      : hides the float (panel closes, PTY kept alive)
+--   * <Esc> -> term.close_key      : minimizes the float (here: hides it, the fakes have no window)
 local helper = require("tests.helper")
 
 describe("terminal key legend: one handler per key", function()

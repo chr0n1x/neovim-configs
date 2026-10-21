@@ -27,9 +27,21 @@ describe("lualine session component", function()
     utils.harness = "claude"
     watcher.pinned_jsonl_path = nil
     local display = require("harness-decorators.agent-display")
+    display._set_agents({ claude = { status = "idle", pid = 1 } })
     local out = decorators.session_component("⠋")
+    display._set_agents({})
     -- Only the robot emoji carries the section fill; the waiting spinner uses the working-state blue.
     assert.are.equal("%#lualine_x_normal#🤖%* %#" .. display.HL_WORKING .. "#⠋%*", out, "no-pin claude should show the blue spinner frame")
+  end)
+
+  it("Given no harness has been started, When the statusline renders, Then the slot reads '0 agents'", function()
+    local display = require("harness-decorators.agent-display")
+    display._set_agents({})
+    watcher.pinned_jsonl_path = nil
+    for _, h in ipairs({ "claude", "crush" }) do
+      utils.harness = h
+      assert.are.equal("0 agents", decorators.session_component("⠋"), h .. ": no live harness must read '0 agents'")
+    end
   end)
 
   it("shows the pinned session slug (claude stem)", function()

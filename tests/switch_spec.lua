@@ -204,6 +204,23 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
     assert.is_true(term_mod.is_open(target), "after_pick must open the selected harness's terminal")
   end)
 
+  it("Given a harness started from the <C-q> picker, When after_pick runs, Then edit-following is set up like <leader>c does", function()
+    -- setup_auto_follow registers the HarnessEdit jump autocmds and starts the watcher; only <leader>c
+    -- called it, so a harness started from the picker never followed its edits.
+    local decorators = require("harness-decorators")
+    local orig_setup = decorators.setup_auto_follow
+    local calls = 0
+    decorators.setup_auto_follow = function()
+      calls = calls + 1
+    end
+    sw.init(original_harness)
+    require("harness-decorators.state")._reset()
+    pcall(sw.switch, target)
+    sw.after_pick()
+    decorators.setup_auto_follow = orig_setup
+    assert.is_true(calls > 0, "after_pick must call setup_auto_follow")
+  end)
+
   it("waits for Telescope's mapping to return before focusing the terminal", function()
     local called = false
     local original = sw.after_pick

@@ -80,12 +80,14 @@ describe("agent-display: component rendering", function()
     assert.is_not_nil(out:find("%#" .. display.HL_BACKGROUND .. "#⚙ %* %#" .. display.HL_WORKING .. "#" .. display.spinner[1] .. "%*", 1, true), "working aggregate must use the blue spinner after the gear")
   end)
 
-  it("advances the spinner when only the active agent is working", function()
+  it("Given a working agent, When the statusline renders, Then the working glyph is static (no spin timer)", function()
     display._set_agents({ claude = { status = "working", label = "auth", pid = 1 } })
     display._set_active("claude")
-    local before = display.dot_for("working")
-    display.tick()
-    assert.are_not.equal(before, display.dot_for("working"))
+    assert.is_nil(display.tick, "agent-display must not expose a spinner tick")
+    assert.is_nil(display.SPIN_MS, "agent-display must not run a spin timer")
+    assert.are.equal(8000, display.POLL_MS, "status poll runs every 8s")
+    assert.are.equal("%#" .. display.HL_WORKING .. "#●%*", display.dot_for("working"))
+    assert.are.same({ "●" }, display.spinner, "statusline glyph list must be a single static dot")
   end)
 
   it("shows a steady green dot when none are working and at least one is known-idle", function()
@@ -184,5 +186,63 @@ describe("agent-display: toggle()", function()
     assert.is_true(display.enabled())
     assert.are.equal(false, display.toggle())
     assert.are.equal(true, display.toggle())
+  end)
+end)
+
+describe("agent-display: long-idle agents dim", function()
+  local agent_state = require("harness-decorators.agent-state")
+  local real_all = agent_state.all
+  local now = 0
+  local polled
+
+  before_each(function()
+    display._reset()
+    now = 0
+    display._set_now(function()
+      return now
+    end)
+    agent_state.all = function()
+      return polled
+    end
+    display._set_active("claude")
+  end)
+
+  after_each(function()
+    agent_state.all = real_all
+    display._reset()
+  end)
+
+  local function poll_at(ms, maki_status)
+    now = ms
+    polled = { maki = { status = maki_status, pid = 2 } }
+    display.refresh()
+  end
+
+  it("Given an idle agent, When it has been idle under 2 minutes, Then it shows the green checkmark", function()
+    poll_at(0, "idle")
+    poll_at(119000, "idle")
+    assert.is_not_nil(display.component():find("%#" .. display.HL_IDLE .. "#✓%*", 1, true))
+    assert.are.equal("idle", display.status("maki").status)
+  end)
+
+  it("Given an idle agent, When it has been idle for 2 minutes, Then it shows the dim ring", function()
+    poll_at(0, "idle")
+    poll_at(120000, "idle")
+    assert.is_not_nil(display.component():find("%#" .. display.HL_UNKNOWN .. "#○%*", 1, true))
+    assert.are.equal("%#" .. display.HL_UNKNOWN .. "#○%*", display.dot_for(display.status("maki").status))
+  end)
+
+  it("Given a long-idle agent, When it works and goes idle again, Then the 2 minute clock restarts", function()
+    poll_at(0, "idle")
+    poll_at(130000, "working")
+    poll_at(140000, "idle")
+    poll_at(200000, "idle")
+    assert.is_not_nil(display.component():find("%#" .. display.HL_IDLE .. "#✓%*", 1, true))
+  end)
+
+  it("Given an idle agent, When it crosses 2 minutes with no other change, Then refresh reports a change", function()
+    poll_at(0, "idle")
+    now = 120000
+    assert.is_true(display.refresh())
   end)
 end)

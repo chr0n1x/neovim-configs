@@ -4,8 +4,9 @@
 --   * <C-h> -> term.go_back_key(self): move focus back to the work buffer WITHOUT hiding the float -
 --     the panel stays open and its process keeps running. This is the exact regression the user hit
 --     ("when I <C-h> the terminal gets hidden"). We assert go_back_key does NOT call self:hide().
---   * <Esc> -> term.close_key(self): exit insert and HIDE the float (the panel closes), but keep the
---     PTY alive so it resumes on the next <leader>c. We assert close_key DOES call self:hide().
+--   * <Esc> -> term.close_key(self): exit insert and minimize the float into its docked bar, keeping
+--     the PTY alive. A fake with no open float falls back to hiding; we assert that fallback calls
+--     self:hide(). The minimize path is covered in tests/term_spec.lua.
 -- Both handlers are exposed on M so they can be driven headless with a fake instance (terminal-mode
 -- keys can't be fed in a headless nvim, which is why focus_spec tests the mechanics directly).
 

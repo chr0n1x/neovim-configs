@@ -95,6 +95,13 @@ function M.switch(new_harness)
     require("harness-decorators.focus").suppress_next_leave()
   end)
   local backgrounded = current_harness ~= nil and park.park(current_harness)
+  -- Every other running harness is backgrounded too, so only the incoming one is expanded and the
+  -- rest sit as minimized bars.
+  for _, e in ipairs(park.list()) do
+    if e.harness ~= new_harness and e.harness ~= current_harness then
+      park.park(e.harness)
+    end
+  end
 
   -- Re-point the harness identity. The spawn command is NOT re-pointed on any global anymore: term.lua
   -- resolves each harness's command from its env module at open time, so there is no claudecode
@@ -159,6 +166,11 @@ end
 ---the harness was already running, or spawns fresh otherwise. Exposed on M so tests/switch_spec.lua
 ---can drive it without opening a telescope picker.
 function M.after_pick()
+  -- Same first step as <leader>c: register the edit-jump autocmds and start the watcher (once per
+  -- session), so a harness started from the picker follows its edits too.
+  pcall(function()
+    require("harness-decorators").setup_auto_follow()
+  end)
   park.show_selected()
 end
 

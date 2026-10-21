@@ -6,9 +6,6 @@ local utils = require("harness-decorators.utils")
 -- consumes the normalized change events the watcher fires.
 local M = {}
 
----Set true while a jump is in flight so the TermLeave guard knows to restore insert mode.
-M._jump_active = false
-
 ---Dedicated window next to the floating terminal for Claude Code edits.
 M.jump_win = nil
 
@@ -100,8 +97,7 @@ local function jump_to_edit(data, file_path)
   -- changes, or a stale <file>.swp may linger. Loading such a file (checktime/
   -- bufload/win_set_buf) raises E325 ATTENTION and pops an interactive swap
   -- prompt mid-jump — which, uncaught, escaped this scheduled callback and left
-  -- eventignore pinned to "all" (every autocmd globally suppressed) with
-  -- _jump_active stuck true. Auto-answer SwapExists with "edit anyway" so the
+  -- eventignore pinned (autocmds globally suppressed). Auto-answer SwapExists with "edit anyway" so the
   -- jump stays silent and non-blocking; the on-disk (agent) version is exactly
   -- what we want to display.
   local swap_grp = vim.api.nvim_create_augroup("HarnessJumpSwap", { clear = true })
@@ -127,71 +123,24 @@ local function jump_to_edit(data, file_path)
   -- BufLeave/BufWinEnter from plugins have been observed to exit terminal insert
   -- mode as a side effect, creating a gap where keystrokes trigger normal-mode keybinds.
   --
-  -- The list is NARROWER than "all" on purpose: an active agent can fire many
-  -- HarnessEdit events back-to-back, and "all" suppresses TermLeave too - which
-  -- is the very event term.lua's re-entry relies on. Under "all" the jump's own
-  -- deferred startinsert gets starved by the next jump's eventignore window
-  -- overlapping it, and the terminal sticks in terminal-normal. Listing only
-  -- the buffer/window events suppresses the plugin churn that motivated this
-  -- guard while leaving TermLeave (and therefore the re-entry path) able to
-  -- fire.
-  M._jump_active = true
-
+  -- Only the buffer/window events are suppressed, so the jump's own churn does not run plugin
+  -- BufEnter/WinEnter handlers.
   local saved_ei = vim.o.eventignore
   vim.o.eventignore = "BufLeave,BufEnter,WinEnter,WinLeave"
-  -- Tell term.lua's TermLeave logger to ignore the mode churn this jump causes (the work
-  -- window buffer switch and the deferred cursor set both briefly leave/enter insert mode).
-  -- The flag is scoped to THIS terminal buffer; term.lua clears it after the matching
-  -- TermLeave fires (or on the next startinsert restore below).
-  local term_buf = vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win())
-  if vim.api.nvim_buf_is_valid(term_buf) and vim.b[term_buf].harness_terminal then
-    vim.b[term_buf].harness_term_will_leave = true
-  end
   local ok_switch, switch_err = pcall(vim.api.nvim_win_set_buf, win, bufnr)
   vim.o.eventignore = saved_ei
 
   pcall(vim.api.nvim_del_augroup_by_id, swap_grp)
 
-  -- If the switch failed (e.g. despite the guard), unwind cleanly: never leave
-  -- _jump_active latched, and skip the deferred cursor set below.
+  -- If the switch failed (e.g. despite the guard), skip the deferred cursor set below.
   if not ok_switch then
-    M._jump_active = false
     utils.log("jump window switch failed: " .. tostring(switch_err), vim.log.levels.WARN)
     return
-  end
-
-  -- Synchronously re-enter terminal insert mode if the buffer switch dropped us
-  -- out of it. vim.win_set_buf on a non-current window can cause Neovim to fire
-  -- TermLeave on the terminal as a side effect (the terminal is the current
-  -- window). The TermLeave autocmd routes through schedule_enter_terminal_mode
-  -- which is async (vim.schedule + defer_fn 75ms) - by the time it fires the
-  -- mode has already recovered to t, so startinsert is a no-op. The deferred
-  -- cursor-set timer (100ms) then clears _jump_active, and the terminal is left
-  -- stuck in nt with no trigger to re-enter. A synchronous startinsert here
-  -- closes the gap before the async path can miss it.
-  do
-    local cur_win = vim.api.nvim_get_current_win()
-    local cur_buf = vim.api.nvim_win_get_buf(cur_win)
-    if vim.api.nvim_buf_is_valid(cur_buf) and vim.b[cur_buf].harness_terminal then
-      if vim.fn.mode(1) == "nt" then
-        vim.cmd.startinsert()
-      end
-      vim.b[cur_buf].harness_term_will_leave = false
-    end
   end
 
   -- Defer cursor set so we run after any plugin BufWinEnter callbacks that restore
   -- the last-known cursor position and would otherwise override us.
   vim.defer_fn(function()
-    M._jump_active = false
-    -- Clear the will-leave flag no matter what: if the work window is gone (early return
-    -- below) or the re-entry bails, a stale flag would make term.lua's ModeChanged t:nt
-    -- handler treat a later, unrelated t->nt kick as a "deliberate leave" and skip the
-    -- re-entry - the terminal then sticks in "-- (terminal) --" after a pane resize.
-    local cur_buf = vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win())
-    if vim.api.nvim_buf_is_valid(cur_buf) and vim.b[cur_buf].harness_terminal then
-      vim.b[cur_buf].harness_term_will_leave = false
-    end
     if not vim.api.nvim_win_is_valid(win) then
       return
     end
@@ -369,37 +318,6 @@ function M.create_jump_autocmds(group)
     group = group,
     pattern = "HarnessEdit",
     callback = M.on_edit,
-  })
-
-  -- If something knocks the terminal out of insert mode while a jump is in flight,
-  -- restore it immediately. TermLeave fires the instant insert mode is exited, so the gap between
-  -- the exit and our re-entry is one vim.schedule tick. Route the restore through the shared
-  -- funnel (term.schedule_enter_terminal_mode) rather than a bare startinsert: a bare startinsert
-  -- is a no-op when the grid is out of sync (the post-resize case), which is exactly the stuck
-  -- "-- (terminal) --" state the funnel's redraw + set_current_win resync and bounded polling
-  -- exist to clear. The funnel is also the only path that respects harness_terminal_normal_mode,
-  -- so a <C-n> pressed during the jump is not yanked back.
-  vim.api.nvim_create_autocmd("TermLeave", {
-    group = group,
-    callback = function()
-      if M._jump_active then
-        local buf = vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win())
-        if vim.api.nvim_buf_get_option(buf, "buftype") == "terminal" then
-          vim.schedule(function()
-            if M._jump_active then
-              local tbuf = vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win())
-              vim.b[tbuf].harness_term_will_leave = false
-              local ok_term, term = pcall(require, "harness-decorators.term")
-              if ok_term and type(term.schedule_enter_terminal_mode) == "function" then
-                term.schedule_enter_terminal_mode(vim.api.nvim_get_current_win(), tbuf)
-              else
-                vim.cmd.startinsert()
-              end
-            end
-          end)
-        end
-      end
-    end,
   })
 end
 
