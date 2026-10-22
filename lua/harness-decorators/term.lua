@@ -270,27 +270,134 @@ local function set_prev_win()
   find_base_window()
 end
 
----Collapse the float back to its saved (non-wide) geometry, animated. The saved geometry is stored
--- as RATIOS (normalized against the editor size at the time of the first <C-f>), so a pane resize
--- between the two <C-f> presses is absorbed: the absolute row/col/width/height are recomputed here
--- against the CURRENT editor size, and the float lands at the same proportional spot it started
--- from. Ported from ai-harness.lua; the animation helper is shared (harness-decorators/terminal-animations.lua).
+-- Rows a minimized bar takes on screen: its one line of text plus the top and bottom border.
+local BAR_HEIGHT = 3
+-- Minimum width of a minimized bar's text, so bars for short harness names match the longer ones.
+local BAR_MIN_TEXT = 18
+
+-- Default float size and spot, as fractions of the editor.
+local FLOAT_ROW, FLOAT_COL, FLOAT_WIDTH, FLOAT_HEIGHT = 0.01, 0.58, 0.35, 0.9
+
+---The default float column: the usual 58% of the editor, moved left when that would put the float's
+-- right border under the minimized-bar dock in the top-right corner (narrow editors).
+---@return integer col
+local function default_float_col()
+  local cols = vim.o.columns
+  local dock_left = cols - (BAR_MIN_TEXT + 2)
+  return math.max(0, math.min(math.floor(cols * FLOAT_COL), dock_left - 1 - math.floor(cols * FLOAT_WIDTH)))
+end
+
+---The default right-side float's rect, resolved the way Snacks resolves win_opts: a fractional size
+-- includes the border and a fractional row is counted below the top border.
+---@return { row: integer, col: integer, width: integer, height: integer }
+local function default_float_rect()
+  local lines, cols = vim.o.lines, vim.o.columns
+  return {
+    row = math.floor(lines * FLOAT_ROW) + 1,
+    col = default_float_col(),
+    width = math.floor(cols * FLOAT_WIDTH) - 2,
+    height = math.floor(lines * FLOAT_HEIGHT) - 2,
+  }
+end
+
+-- <C-f> fullscreen padding, as fractions of the editor.
+local FULL_ROW_PAD, FULL_COL_PAD = 0.05, 0.1
+
+---The <C-f> fullscreen rect for the current editor size.
+---@return { row: integer, col: integer, width: integer, height: integer }
+local function fullscreen_rect()
+  local lines, cols = vim.o.lines, vim.o.columns
+  return {
+    row = math.floor(FULL_ROW_PAD * lines),
+    col = math.floor(FULL_COL_PAD * cols),
+    width = math.floor((1 - 2 * FULL_COL_PAD) * cols),
+    height = math.floor((1 - 2 * FULL_ROW_PAD) * lines),
+  }
+end
+
+-- Text rows a shelved float keeps (see shelve). On M so specs can read it.
+M.shelf_rows = 10
+
+---The shelf: M.shelf_rows rows at the very top of the editor, at the fullscreen rect's width.
+---@return { row: integer, col: integer, width: integer, height: integer }
+local function shelf_rect()
+  local full = fullscreen_rect()
+  local rows = math.min(M.shelf_rows, full.height)
+  return { row = 0, col = full.col, width = full.width, height = rows }
+end
+
+---True when the window is an editor float sitting exactly on `rect`.
+---@return boolean
+local function at_rect(win, rect)
+  local cfg = vim.api.nvim_win_get_config(win)
+  return cfg.relative == "editor"
+    and math.floor(cfg.row) == rect.row
+    and math.floor(cfg.col) == rect.col
+    and cfg.width == rect.width
+    and cfg.height == rect.height
+end
+
+---Animate the float to `rect` and keep that geometry in inst.opts, so Snacks reopens it there after
+-- hide/show. _resized_at is stamped at both ends so the terminal's reflow for the new size is not
+-- taken for new output (watch_output).
+---@param inst table the Snacks terminal instance
+---@param rect { row: integer, col: integer, width: integer, height: integer }
+---@param on_done? fun() runs once the animation lands (not when a newer resize cuts it off)
+local function resize_to(inst, rect, on_done)
+  inst._resized_at = vim.uv.now()
+  inst.opts.row, inst.opts.col, inst.opts.width, inst.opts.height = rect.row, rect.col, rect.width, rect.height
+  require("harness-decorators.terminal-animations").animate_resize(inst, rect, nil, function()
+    inst._resized_at = vim.uv.now()
+    if on_done then
+      on_done()
+    end
+  end)
+end
+
+---Save the float's current geometry as the <C-f> retract target, unless one is saved already (so
+-- repeated toggles don't drift it). Stored as RATIOS of the editor size, so an editor resize before
+-- the retract is absorbed: retract_rect re-derives absolute coords against the size at that point.
+---@param self table the Snacks terminal instance
+local function save_baseline(self)
+  if self._saved_config then
+    return
+  end
+  local lines, cols = vim.o.lines, vim.o.columns
+  local cfg = vim.api.nvim_win_get_config(self.win)
+  self._saved_config = {
+    row_ratio = (cfg.row or 0) / lines,
+    col_ratio = (cfg.col or 0) / cols,
+    width_ratio = (cfg.width or cols) / cols,
+    height_ratio = (cfg.height or lines) / lines,
+  }
+end
+
+---Where a fullscreen float retracts to: the geometry saved before it went fullscreen (save_baseline),
+-- or the default right-side float when none was saved.
+---@param self table the Snacks terminal instance
+---@return { row: integer, col: integer, width: integer, height: integer }
+local function retract_rect(self)
+  local sc = self._saved_config
+  if not sc then
+    return default_float_rect()
+  end
+  local lines, cols = vim.o.lines, vim.o.columns
+  return {
+    row = math.floor((sc.row_ratio or 0) * lines),
+    col = math.floor((sc.col_ratio or 0) * cols),
+    width = math.floor((sc.width_ratio or 1) * cols),
+    height = math.floor((sc.height_ratio or 1) * lines),
+  }
+end
+
+---Collapse a <C-f>-widened float (_wide) back to its saved geometry, animated. Ported from
+-- ai-harness.lua; the animation helper is shared (harness-decorators/terminal-animations.lua).
 local function animate_collapse(self)
   if not (self._wide and self._saved_config) then
     return
   end
   self._wide = false
-  local sc = self._saved_config
-  local lines = vim.o.lines
-  local cols = vim.o.columns
-  local target = {
-    row = (sc.row_ratio or 0) * lines,
-    col = (sc.col_ratio or 0) * cols,
-    width = (sc.width_ratio or 1) * cols,
-    height = (sc.height_ratio or 1) * lines,
-  }
-  local anim = require("harness-decorators.terminal-animations")
-  anim.animate_resize(self, target)
+  resize_to(self, retract_rect(self))
 end
 
 ---The <C-h> go-back key handler: jump to the window we came from while THIS harness's float stays
@@ -354,57 +461,36 @@ function M.normal_mode_key()
   vim.cmd("noautocmd stopinsert")
 end
 
----The <C-f> key handler: toggle FULLSCREEN for this float. First press saves the current window
--- config and animates the float out to a near-fullscreen rect (5% vertical / 10% horizontal padding);
--- a second press collapses it back to the saved config via animate_collapse. The save-once guard means
--- repeated toggles don't drift the baseline. Exposed on M so tests can drive it headless with a fake
--- instance and assert the _wide flag flips (the resize itself goes through terminal-animations).
+---The <C-f> key handler: toggle FULLSCREEN for this float, decided from the window's actual geometry.
+-- A float anywhere other than the fullscreen rect (5% vertical / 10% horizontal padding) - its normal
+-- spot, resized with the mouse, shelved - animates out to fullscreen; one already on it retracts to
+-- retract_rect. Exposed on M so tests can drive it headless with a fake instance; _wide mirrors
+-- "fullscreen via <C-f>" for animate_collapse (<C-h>).
 ---@param self table the Snacks terminal instance (has .win, ._wide, ._saved_config)
 function M.fullscreen_key(self)
   local win = self.win
   if not win or not vim.api.nvim_win_is_valid(win) then
     return
   end
-
-  local lines = vim.o.lines
-  local cols = vim.o.columns
-  local wide_row_pad = 0.05
-  local wide_col_pad = 0.1
-
-  -- Save the original geometry as RATIOS (normalized against the current editor size) so the
-  -- collapse re-derives absolute coords against whatever size the editor is at that point -
-  -- a pane resize between the two <C-f> presses does not strand the float at stale absolute coords.
-  if not self._saved_config then
-    local cfg = vim.api.nvim_win_get_config(win)
-    self._saved_config = {
-      row_ratio = (cfg.row or 0) / lines,
-      col_ratio = (cfg.col or 0) / cols,
-      width_ratio = (cfg.width or cols) / cols,
-      height_ratio = (cfg.height or lines) / lines,
-    }
+  if at_rect(win, fullscreen_rect()) then
+    self._wide = false
+    self._shelf_mode = false
+    resize_to(self, retract_rect(self))
+    return
   end
-
-  if not self._wide then
-    self._wide = true
-    local anim = require("harness-decorators.terminal-animations")
-    anim.animate_resize(self, {
-      row = wide_row_pad * lines,
-      col = wide_col_pad * cols,
-      width = (1 - 2 * wide_col_pad) * cols,
-      height = (1 - 2 * wide_row_pad) * lines,
-    })
-  else
-    animate_collapse(self)
-  end
+  save_baseline(self)
+  self._wide = true
+  self._shelved = false
+  self._shelf_mode = false
+  resize_to(self, fullscreen_rect())
 end
 
 ---The shared terminal-mode key legend for EVERY harness float. This is the single home for the
 -- keys shown in the float's footer - no per-harness keymap file defines or copies these; all five
 -- harnesses get them from here (via win_opts), so a change to one key changes it everywhere. Each
 -- entry's handler is a module-level function (close_key / normal_mode_key / go_back_key /
--- fullscreen_key) so tests can drive any of them headless with a fake instance. Exposed on M
--- (as M.terminal_keys) so specs can assert on the legend itself - e.g. that <C-l> is present and
--- bound to the same handler as <C-h>.
+-- fullscreen_key / shelf_key) so tests can drive any of them headless with a fake instance. Exposed on
+-- M (as M.terminal_keys) so specs can assert on the legend itself.
 ---@return table[] keys
 function M.terminal_keys()
   return {
@@ -453,14 +539,12 @@ function M.terminal_keys()
       desc = "↩",
     },
     {
-      -- Same go-back behavior as <C-h> (move focus back to the work buffer, leave the float visible);
-      -- a second binding for people who prefer the right-hand side. Mirrored glyph pairs with <C-h>.
       "<C-l>",
       function(self)
-        M.go_back_key(self)
+        M.shelf_key(self)
       end,
       mode = "t",
-      desc = "↪",
+      desc = "⬓",
     },
     {
       "<C-f>",
@@ -486,31 +570,15 @@ end
 -- common to all harnesses and defined once in terminal_keys.
 ---@param harness string
 ---@return table win_opts
--- Rows a minimized bar takes on screen: its one line of text plus the top and bottom border.
-local BAR_HEIGHT = 3
--- Minimum width of a minimized bar's text, so bars for short harness names match the longer ones.
-local BAR_MIN_TEXT = 18
-
--- Default float size and spot, as fractions of the editor.
-local FLOAT_COL, FLOAT_WIDTH = 0.58, 0.35
-
----The default float column: the usual 58% of the editor, moved left when that would put the float's
--- right border under the minimized-bar dock in the top-right corner (narrow editors).
----@return integer col
-local function default_float_col()
-  local cols = vim.o.columns
-  local dock_left = cols - (BAR_MIN_TEXT + 2)
-  return math.max(0, math.min(math.floor(cols * FLOAT_COL), dock_left - 1 - math.floor(cols * FLOAT_WIDTH)))
-end
-
 local function win_opts(harness)
   return {
     position = "float",
     -- Drag handles for the mouse move/resize below: a grip glyph in the title marks the move bar,
     -- heavy side/bottom lines mark the resizable edges, and the bottom corners are resize grips.
-    -- The top-right corner is the minimize button (double-click).
+    -- The top-left corner is the shelf button and the top-right corner the minimize button (both
+    -- double-click).
     border = {
-      "┎",
+      { "⬓", "Special" },
       "─",
       { "⊟", "Special" },
       "┃",
@@ -539,10 +607,10 @@ local function win_opts(harness)
 
     keys = M.terminal_keys(),
 
-    row = 0.01,
+    row = FLOAT_ROW,
     col = default_float_col,
     width = FLOAT_WIDTH,
-    height = 0.9,
+    height = FLOAT_HEIGHT,
   }
 end
 
@@ -730,9 +798,54 @@ end
 -- How long the terminal must stay quiet before the flash fires. On M so specs can shorten it.
 M.flash_quiet_ms = 1500
 
----Flash the panel when its terminal gets new text while the panel is unfocused or minimized. The
--- flash fires once the output has been quiet for M.flash_quiet_ms, so a streaming reply flashes once
--- when it finishes rather than on every redraw. Terminal reflow right after a mouse resize is ignored.
+local BOUNCE_ROWS, BOUNCE_MS = 2, 400
+
+---Bounce a shelved float: drop it BOUNCE_ROWS rows and lift it back. Only the row moves, so the
+-- terminal is not resized. Skipped while a bounce or resize animation is running.
+---@param inst table the Snacks terminal instance
+local function bounce(inst)
+  local win = inst.win
+  local ok_anim, Animation = pcall(require, "animation")
+  if not ok_anim or inst._bouncing or (inst._resize_anim and inst._resize_anim:is_running()) then
+    return
+  end
+  local cfg = vim.api.nvim_win_get_config(win)
+  local row, col = math.floor(cfg.row), math.floor(cfg.col)
+  inst._bouncing = true
+  Animation(BOUNCE_MS, 60, function(r)
+    return r
+  end, function(f)
+    if not vim.api.nvim_win_is_valid(win) then
+      inst._bouncing = false
+      return true
+    end
+    local drop = f >= 1 and 0 or math.floor(BOUNCE_ROWS * math.sin(math.pi * f) + 0.5)
+    pcall(vim.api.nvim_win_set_config, win, { relative = "editor", row = row + drop, col = col })
+    if f >= 1 then
+      inst._bouncing = false
+    end
+  end):run()
+end
+
+---Tell the user an unfocused harness has new output: a shelved float bounces, anything else (an open
+-- float or a minimized bar) flashes.
+---@param inst table the Snacks terminal instance
+local function notify_output(inst)
+  local bar = inst._pill_win and vim.api.nvim_win_is_valid(inst._pill_win)
+  if inst._shelved and not bar and inst.win and vim.api.nvim_win_is_valid(inst.win) then
+    bounce(inst)
+  else
+    flash(inst)
+  end
+end
+
+-- Defined with the shelf functions below; M.open (above them) attaches it to each new float.
+local follow_focus
+
+---Signal the panel (notify_output) when its terminal gets new text while the panel is unfocused or
+-- minimized. The signal fires once the output has been quiet for M.flash_quiet_ms, so a streaming
+-- reply signals once when it finishes rather than on every redraw. Terminal reflow right after a
+-- resize is ignored.
 ---@param inst table the Snacks terminal instance
 local function watch_output(inst)
   if not (inst and inst.buf and vim.api.nvim_buf_is_valid(inst.buf)) or inst._flash_timer then
@@ -749,7 +862,7 @@ local function watch_output(inst)
         M.flash_quiet_ms,
         0,
         vim.schedule_wrap(function()
-          flash(inst)
+          notify_output(inst)
         end)
       )
     end,
@@ -892,6 +1005,7 @@ function M.open(harness, opts)
   e.inst = inst
   mark_harness_buffer(harness, inst)
   watch_output(inst)
+  follow_focus(inst)
   follow_lifecycle(harness, inst)
   schedule_enter_terminal_mode(inst.win, inst.buf)
   e.cwd = spawn_cwd
@@ -1013,9 +1127,113 @@ local function drag_to(mouse)
     height = height,
   })
   inst.opts.row, inst.opts.col, inst.opts.width, inst.opts.height = row, col, width, height
-  if not inst._wide then
+  if not drag.wide then
     inst._saved_config = nil
   end
+  inst._wide = false
+end
+
+---Show the end of the terminal (the prompt) in the float's window. A float focused in terminal mode
+-- already follows the terminal cursor.
+---@param inst table the Snacks terminal instance
+local function scroll_to_bottom(inst)
+  local win = inst.win
+  if not (win and vim.api.nvim_win_is_valid(win)) then
+    return
+  end
+  if vim.api.nvim_get_current_win() == win and vim.fn.mode() == "t" then
+    return
+  end
+  pcall(vim.api.nvim_win_set_cursor, win, { vim.api.nvim_buf_line_count(inst.buf), 0 })
+end
+
+---Shelve the float: animate it out to fullscreen, then shrink it to the shelf (the top
+-- M.shelf_rows rows of the fullscreen rect, scrolled to the end), so the harness slides up out of
+-- view and leaves only its prompt showing. The pre-shelf geometry is saved as the <C-f> retract
+-- target. While shelved, new output bounces the shelf instead of flashing it (notify_output).
+---@param inst table the Snacks terminal instance
+local function shelve(inst)
+  if not (inst.win and vim.api.nvim_win_is_valid(inst.win)) then
+    return
+  end
+  save_baseline(inst)
+  inst._shelved = true
+  inst._wide = false
+  local function slide_up()
+    if inst._shelved then
+      resize_to(inst, shelf_rect(), function()
+        scroll_to_bottom(inst)
+      end)
+    end
+  end
+  if at_rect(inst.win, fullscreen_rect()) then
+    slide_up()
+  else
+    resize_to(inst, fullscreen_rect(), slide_up)
+  end
+end
+
+---Unshelve the float: animate it back to fullscreen, the same state as a <C-f> fullscreen.
+---@param inst table the Snacks terminal instance
+local function unshelve(inst)
+  if not (inst.win and vim.api.nvim_win_is_valid(inst.win)) then
+    return
+  end
+  inst._shelved = false
+  inst._wide = true
+  resize_to(inst, fullscreen_rect())
+end
+
+---<C-l>: toggle shelf mode, the same as double-clicking the shelf button. Turning it on shelves the
+-- float right away and, if the float has focus, moves focus back the way <C-h> does. While it is on,
+-- the float grows to fullscreen when it gains focus and slides back to the shelf when it loses it
+-- (follow_focus). Turning it off leaves the float fullscreen.
+---@param self table the Snacks terminal instance
+function M.shelf_key(self)
+  if self._shelf_mode then
+    self._shelf_mode = false
+    unshelve(self)
+  else
+    self._shelf_mode = true
+    shelve(self)
+    if self.win and vim.api.nvim_get_current_win() == self.win then
+      M.go_back_key(self)
+    end
+  end
+end
+
+---Drive shelf mode from focus: entering the float unshelves it, leaving it shelves it again. Both
+-- run on the next tick so the window switch has settled (WinLeave fires while the float is still
+-- current, and minimize hides the window after turning shelf mode off).
+---@param inst table the Snacks terminal instance
+follow_focus = function(inst)
+  if not (inst and inst.buf and vim.api.nvim_buf_is_valid(inst.buf)) then
+    return
+  end
+  local function shown()
+    local bar = inst._pill_win and vim.api.nvim_win_is_valid(inst._pill_win)
+    return inst._shelf_mode and not bar and inst.win and vim.api.nvim_win_is_valid(inst.win)
+  end
+  vim.api.nvim_create_autocmd("WinEnter", {
+    buffer = inst.buf,
+    callback = function()
+      vim.schedule(function()
+        if shown() and inst._shelved and vim.api.nvim_get_current_win() == inst.win then
+          unshelve(inst)
+        end
+      end)
+    end,
+  })
+  vim.api.nvim_create_autocmd("WinLeave", {
+    buffer = inst.buf,
+    callback = function()
+      vim.schedule(function()
+        if shown() and not inst._shelved and vim.api.nvim_get_current_win() ~= inst.win then
+          shelve(inst)
+        end
+      end)
+    end,
+  })
 end
 
 ---Minimize the float: hide its window (the PTY keeps running, same as <Esc>) and put a one-line bar
@@ -1063,8 +1281,16 @@ local function minimize(inst)
   end
   local row, col = drawn_pos(inst.win)
   local width = vim.fn.strdisplaywidth(text)
-  -- Where the float was, so restoring can grow the bar back to it.
+  -- Where the float was, so restoring can grow the bar back to it. A shelf restores fullscreen.
   inst._restore_rect = { row = row, col = col, width = cfg.width, height = cfg.height }
+  inst._shelf_mode = false
+  if inst._shelved then
+    inst._shelved = false
+    inst._wide = true
+    inst._restore_rect = fullscreen_rect()
+    local r = inst._restore_rect
+    inst.opts.row, inst.opts.col, inst.opts.width, inst.opts.height = r.row, r.col, r.width, r.height
+  end
   inst._bar_slot = free_slot()
   pcall(function()
     inst:hide()
@@ -1242,6 +1468,7 @@ function M.mouse.press(mouse)
   drag = {
     inst = inst,
     edges = edges,
+    wide = inst._wide,
     screenrow = mouse.screenrow,
     screencol = mouse.screencol,
     row = row,
@@ -1289,11 +1516,17 @@ function M.mouse.double(mouse)
   local inst, edges = border_hit(mouse.screenrow, mouse.screencol)
   if inst and edges.move then
     local _, col = drawn_pos(inst.win)
-    if mouse.screencol == col + vim.api.nvim_win_get_config(inst.win).width + 2 then
+    local on_minimize = mouse.screencol == col + vim.api.nvim_win_get_config(inst.win).width + 2
+    local on_shelf = mouse.screencol == col + 1
+    if on_minimize or on_shelf then
       drag = nil
       press_consumed = true
       vim.schedule(function()
-        minimize(inst)
+        if on_minimize then
+          minimize(inst)
+        else
+          M.shelf_key(inst)
+        end
       end)
       return ""
     end

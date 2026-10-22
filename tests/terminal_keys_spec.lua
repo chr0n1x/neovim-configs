@@ -270,30 +270,21 @@ describe("terminal key legend: one handler per key", function()
     assert.is_true(called, "<C-q> must call the agent picker")
   end)
 
-  it("<C-l> is in the shared legend and bound to the SAME handler as <C-h>", function()
-    -- <C-l> is a second go-back binding (right-hand side counterpart of <C-h>). It must live in the
-    -- shared terminal_keys legend (so every harness float gets it) and route to the same go_back_key
-    -- handler - not a copy. We assert on the legend itself via M.terminal_keys.
-    local keys = term_mod.terminal_keys()
+  it("Given the shared legend, Then <C-l> is a terminal-mode key bound to the shelf toggle", function()
     local by_lhs = {}
-    for _, spec in ipairs(keys) do
+    for _, spec in ipairs(term_mod.terminal_keys()) do
       by_lhs[spec[1]] = spec
     end
-    assert.is_not_nil(by_lhs["<C-h>"], "<C-h> must be in the shared legend")
-    assert.is_not_nil(by_lhs["<C-l>"], "<C-l> must be in the shared legend (global go-back binding)")
-    -- Both must be terminal-mode keys.
+    assert.is_not_nil(by_lhs["<C-l>"], "<C-l> must be in the shared legend")
     assert.are.equal("t", by_lhs["<C-l>"].mode, "<C-l> must be a terminal-mode key")
-    -- Drive BOTH handlers through their legend entries with a fresh fake and confirm they behave
-    -- identically: neither hides the float (go-back leaves it visible). This proves <C-l> routes to
-    -- go_back_key, not some other handler.
-    local fake_h = make_fake()
-    local ok_h = pcall(by_lhs["<C-h>"][2], fake_h)
-    assert.is_true(ok_h, "<C-h> legend handler raised")
-    assert.is_false(fake_h.hide_called, "<C-h> must not hide the float")
-
-    local fake_l = make_fake()
-    local ok_l = pcall(by_lhs["<C-l>"][2], fake_l)
-    assert.is_true(ok_l, "<C-l> legend handler raised")
-    assert.is_false(fake_l.hide_called, "<C-l> must not hide the float (same go-back behavior as <C-h>)")
+    local orig, got = term_mod.shelf_key, nil
+    term_mod.shelf_key = function(self)
+      got = self
+    end
+    local fake = make_fake()
+    local ok, err = pcall(by_lhs["<C-l>"][2], fake)
+    term_mod.shelf_key = orig
+    assert.is_true(ok, "<C-l> legend handler raised: " .. tostring(err))
+    assert.are.equal(fake, got, "<C-l> must call shelf_key with the instance")
   end)
 end)

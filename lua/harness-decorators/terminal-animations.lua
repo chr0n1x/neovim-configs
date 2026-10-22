@@ -1,7 +1,8 @@
 -- Shared animation helper: smoothly transition the float window to `target`.
 -- `target` is { row, col, width, height }.
 -- `snap_config` (optional) is applied verbatim on the final frame to eliminate rounding residue.
-local function animate_resize(self, target, snap_config)
+-- `on_done` (optional) runs after the final frame; it does not run when a newer resize cuts this one off.
+local function animate_resize(self, target, snap_config, on_done)
   local win = self.win
   if not win or not vim.api.nvim_win_is_valid(win) then
     return false
@@ -42,6 +43,9 @@ local function animate_resize(self, target, snap_config)
         style = "minimal",
         border = border,
       })
+      if on_done then
+        on_done()
+      end
       return
     end
     set({
