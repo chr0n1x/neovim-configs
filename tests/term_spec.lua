@@ -1368,8 +1368,8 @@ describe("term: float mouse handling, minimized bars and flash", function()
   )
 
   -- Shelf: the top-left border corner is the shelf button. Double-clicking it takes the float
-  -- fullscreen and then shrinks it to term.shelf_rows rows at the top of the editor. While shelf mode
-  -- is on, focusing the float grows it to fullscreen and leaving it slides it back up to the shelf.
+  -- fullscreen and then shrinks it to term.shelf_rows rows at the bottom of the editor. While shelf mode
+  -- is on, focusing the float grows it to fullscreen and leaving it slides it back down to the shelf.
 
   ---The <C-f> fullscreen rect for the current editor size: 5% row padding, 10% column padding.
   local function fullscreen_rect()
@@ -1382,11 +1382,11 @@ describe("term: float mouse handling, minimized bars and flash", function()
     }
   end
 
-  ---The shelf: term.shelf_rows rows at the very top of the editor, fullscreen width.
+  ---The shelf: term.shelf_rows rows at the very bottom of the editor, fullscreen width.
   local function shelf_rect()
     local full = fullscreen_rect()
     return {
-      row = 0,
+      row = full.row + full.height - term.shelf_rows,
       col = full.col,
       width = full.width,
       height = term.shelf_rows,
@@ -1447,7 +1447,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
   end)
 
   it(
-    "Given an open harness float, When its shelf corner is double-clicked, Then it goes fullscreen, then shrinks to a shelf_rows-tall shelf at the top of the editor, scrolled to the end",
+    "Given an open harness float, When its shelf corner is double-clicked, Then it goes fullscreen, then shrinks to a shelf_rows-tall shelf at the bottom of the editor, scrolled to the end",
     function()
       local inst = term.open("claude")
       local text = {}
@@ -1516,10 +1516,10 @@ describe("term: float mouse handling, minimized bars and flash", function()
       local base = rect_of(inst.win)
       vim.api.nvim_buf_set_lines(inst.buf, 0, -1, false, { "new output" })
       local height_kept = true
-      local dropped = wait_for(function()
+      local lifted = wait_for(function()
         local r = rect_of(inst.win)
         height_kept = height_kept and r.height == base.height
-        return r.row > base.row
+        return r.row < base.row
       end)
       local landed = wait_for(function()
         local r = rect_of(inst.win)
@@ -1528,8 +1528,8 @@ describe("term: float mouse handling, minimized bars and flash", function()
       end)
       local flashed = flashes(inst.win, 300)
       term.flash_quiet_ms = orig_quiet
-      assert.is_true(dropped, "the shelf should bounce down")
-      assert.is_true(landed, "the shelf should come back up to its row")
+      assert.is_true(lifted, "the shelf should bounce up")
+      assert.is_true(landed, "the shelf should come back down to its row")
       assert.is_true(height_kept, "a bounce must not resize the terminal")
       assert.is_false(flashed, "a shelf bounces instead of flashing its border")
     end

@@ -318,12 +318,12 @@ end
 -- Text rows a shelved float keeps (see shelve). On M so specs can read it.
 M.shelf_rows = 10
 
----The shelf: M.shelf_rows rows at the very top of the editor, at the fullscreen rect's width.
+---The shelf: M.shelf_rows rows at the very bottom of the editor, at the fullscreen rect's width.
 ---@return { row: integer, col: integer, width: integer, height: integer }
 local function shelf_rect()
   local full = fullscreen_rect()
   local rows = math.min(M.shelf_rows, full.height)
-  return { row = 0, col = full.col, width = full.width, height = rows }
+  return { row = full.row + full.height - rows, col = full.col, width = full.width, height = rows }
 end
 
 ---True when the window is an editor float sitting exactly on `rect`.
@@ -800,7 +800,7 @@ M.flash_quiet_ms = 1500
 
 local BOUNCE_ROWS, BOUNCE_MS = 2, 400
 
----Bounce a shelved float: drop it BOUNCE_ROWS rows and lift it back. Only the row moves, so the
+---Bounce a shelved float: lift it BOUNCE_ROWS rows and drop it back. Only the row moves, so the
 -- terminal is not resized. Skipped while a bounce or resize animation is running.
 ---@param inst table the Snacks terminal instance
 local function bounce(inst)
@@ -819,8 +819,8 @@ local function bounce(inst)
       inst._bouncing = false
       return true
     end
-    local drop = f >= 1 and 0 or math.floor(BOUNCE_ROWS * math.sin(math.pi * f) + 0.5)
-    pcall(vim.api.nvim_win_set_config, win, { relative = "editor", row = row + drop, col = col })
+    local lift = f >= 1 and 0 or math.floor(BOUNCE_ROWS * math.sin(math.pi * f) + 0.5)
+    pcall(vim.api.nvim_win_set_config, win, { relative = "editor", row = row - lift, col = col })
     if f >= 1 then
       inst._bouncing = false
     end
@@ -1147,8 +1147,8 @@ local function scroll_to_bottom(inst)
   pcall(vim.api.nvim_win_set_cursor, win, { vim.api.nvim_buf_line_count(inst.buf), 0 })
 end
 
----Shelve the float: animate it out to fullscreen, then shrink it to the shelf (the top
--- M.shelf_rows rows of the fullscreen rect, scrolled to the end), so the harness slides up out of
+---Shelve the float: animate it out to fullscreen, then shrink it to the shelf (the bottom
+-- M.shelf_rows rows of the fullscreen rect, scrolled to the end), so the harness slides down out of
 -- view and leaves only its prompt showing. The pre-shelf geometry is saved as the <C-f> retract
 -- target. While shelved, new output bounces the shelf instead of flashing it (notify_output).
 ---@param inst table the Snacks terminal instance
