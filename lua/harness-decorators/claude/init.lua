@@ -1,6 +1,5 @@
 -- Claude Code harness adapter: session identification, JSONL dialect parsing,
--- and watcher path helpers for the claude LLM harness (the default). Loaded by
--- the generic modules (jsonl-parser, watcher) when the harness is not maki.
+-- and watcher path helpers. Loaded when the harness is claude.
 local utils = require("harness-decorators.utils")
 local parser = require("harness-decorators.jsonl-parser")
 
@@ -150,10 +149,6 @@ function M.extract_diff(ev)
 end
 
 -- ==========================================================================
--- TERMINAL MATCHING
--- ==========================================================================
-
--- ==========================================================================
 -- JSONL DIALECT
 -- ==========================================================================
 
@@ -169,10 +164,9 @@ function M.extract_cwd(lines)
   end)
 end
 
----Extract the explicit session id from Claude JSONL lines. The header (and many other
----entries) carry a top-level "sessionId" field; this is the authoritative identity of the
----session, used by the watcher to pin by session id rather than inferring from cwd (Option B).
----Returns nil when no line carries one so the caller can fall back to path-based inference.
+---Extract the explicit session id from Claude JSONL lines (the top-level "sessionId" field).
+---The watcher pins on it. Returns nil when no line carries one so the caller can fall back
+---to path-based inference.
 ---@param lines string[]
 ---@return string?
 function M.session_id_from_lines(lines)
@@ -281,9 +275,9 @@ local function parse_tool_use_result(entry, line_number)
   -- Build a delta string for logging.
   local delta = ""
   if tur.type == "create" then
-    delta = tur.content:gsub("\n", "\\n"):sub(1, 60)
+    delta = parser.snippet(tur.content)
   elseif tur.oldString and tur.newString then
-    delta = tur.newString:gsub("\n", "\\n"):sub(1, 60)
+    delta = parser.snippet(tur.newString)
   elseif tur.structuredPatch and tur.structuredPatch[1] then
     local sp = tur.structuredPatch[1]
     delta = string.format("%d->%d lines", sp.oldLines or 0, sp.newLines or 0)
@@ -305,7 +299,7 @@ end
 ---Extract change_info from a tool_use (assistant-type invocation entry).
 ---These appear in the JSONL before the tool result is returned, so catching
 ---them enables faster jump-to-edit while the session is still active.
----Note: tool_use entries don't have line numbers — the structuredPatch with
+---Note: tool_use entries don't have line numbers - the structuredPatch with
 ---actual line ranges only arrives in the matching toolUseResult later.
 ---@param entry table The decoded JSON object
 ---@param line_number? integer The 1-based line number in the JSONL file
@@ -323,9 +317,9 @@ local function parse_tool_use(entry, line_number)
 
         local delta = ""
         if item.input.new_string then
-          delta = item.input.new_string:gsub("\n", "\\n"):sub(1, 60)
+          delta = parser.snippet(item.input.new_string)
         elseif item.input.content then
-          delta = item.input.content:gsub("\n", "\\n"):sub(1, 60)
+          delta = parser.snippet(item.input.content)
         end
 
         return parser.make_change_info(

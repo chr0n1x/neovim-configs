@@ -6,7 +6,7 @@ local utils = require("harness-decorators.utils")
 -- consumes the normalized change events the watcher fires.
 local M = {}
 
----Dedicated window next to the floating terminal for Claude Code edits.
+---Dedicated window next to the floating terminal for harness edits.
 M.jump_win = nil
 
 ---Edit sources keyed by session ID. Each value is a list of records.
@@ -24,7 +24,7 @@ local function find_adjacent_window()
     end
     local buf = vim.api.nvim_win_get_buf(win_id)
     local ok, bt = pcall(vim.api.nvim_get_option_value, "buftype", { buf = buf })
-    -- Skip terminal, nofile, help, etc. — only normal file buffers.
+    -- Skip terminal, nofile, help, etc. - only normal file buffers.
     if ok and bt ~= "" then
       goto continue
     end
@@ -56,7 +56,7 @@ local function find_file_window(file_path)
 end
 
 ---Get or validate the jump window. Reuses the existing non-float window
----next to the floating terminal — no new splits created.
+---next to the floating terminal - no new splits created.
 local function get_jump_win()
   if M.jump_win and not vim.api.nvim_win_is_valid(M.jump_win) then
     M.jump_win = nil
@@ -69,15 +69,9 @@ local function get_jump_win()
   return M.jump_win
 end
 
----The zen-mode window while zen is open. It is a float, so the normal-window
----searches below never pick it, and a jump there would land behind zen.
----@return integer?
-local function zen_win()
-  local ok, view = pcall(require, "zen-mode.view")
-  if ok and view.is_open() and view.win and vim.api.nvim_win_is_valid(view.win) then
-    return view.win, view.parent
-  end
-end
+-- The zen window is a float, so the normal-window searches below never pick it, and a jump there
+-- would land behind zen.
+local zen_win = require("util.zen").win
 
 ---Perform the actual jump logic.
 local function jump_to_edit(data, file_path)
@@ -98,19 +92,9 @@ local function jump_to_edit(data, file_path)
     return
   end
 
-  -- Load the buffer without switching the active window or touching terminal mode.
-  -- The harness just wrote the file on disk, so re-read it even if the buffer is
-  -- already loaded. bufadd creates the entry; checktime detects the external change;
-  -- bufload re-reads from disk (the agent's version wins). Neither changes the window.
   local bufnr = vim.fn.bufadd(file_path)
 
-  -- The agent may have written a file the user also has open with unsaved
-  -- changes, or a stale <file>.swp may linger. Loading such a file (checktime/
-  -- bufload/win_set_buf) raises E325 ATTENTION and pops an interactive swap
-  -- prompt mid-jump — which, uncaught, escaped this scheduled callback and left
-  -- eventignore pinned (autocmds globally suppressed). Auto-answer SwapExists with "edit anyway" so the
-  -- jump stays silent and non-blocking; the on-disk (agent) version is exactly
-  -- what we want to display.
+  -- Answer SwapExists with 'edit' so the jump never prompts.
   local swap_grp = vim.api.nvim_create_augroup("HarnessJumpSwap", { clear = true })
   vim.api.nvim_create_autocmd("SwapExists", {
     group = swap_grp,
@@ -133,9 +117,6 @@ local function jump_to_edit(data, file_path)
   -- Switch the target window to show this buffer. Suppress autocmds during the switch:
   -- BufLeave/BufWinEnter from plugins have been observed to exit terminal insert
   -- mode as a side effect, creating a gap where keystrokes trigger normal-mode keybinds.
-  --
-  -- Only the buffer/window events are suppressed, so the jump's own churn does not run plugin
-  -- BufEnter/WinEnter handlers.
   local saved_ei = vim.o.eventignore
   vim.o.eventignore = "BufLeave,BufEnter,WinEnter,WinLeave"
   local ok_switch, switch_err = pcall(vim.api.nvim_win_set_buf, win, bufnr)
@@ -168,17 +149,13 @@ local function jump_to_edit(data, file_path)
     if not ok then
       utils.log("cursor set failed: " .. tostring(err), vim.log.levels.WARN)
     end
-    -- Switching a non-current window's buffer under eventignore=all can leave the
-    -- grid out of sync: the jump window paints its cursor while the terminal (the
-    -- actual current window) doesn't reclaim it, so the visible cursor appears to
-    -- sit in the jumped-to file. Force a redraw to resync the display.
+    -- Switching a non-current window's buffer under eventignore
+    -- (BufLeave,BufEnter,WinEnter,WinLeave) can leave the grid out of sync: the jump
+    -- window paints its cursor while the terminal (the actual current window) doesn't
+    -- reclaim it. Force a redraw to resync the display.
     if ok then
       vim.cmd.redraw()
-      -- Refresh neo-tree's filesystem listing after the jump so it reflects files
-      -- the agent just wrote. Uses the source refresh command (not `NeoTree reveal`)
-      -- so it updates in place without stealing focus, re-centering, or opening a
-      -- closed tree. Guarded: only fires when a neo-tree window is actually open.
-      -- Deferred past the cursor set so its redraw doesn't fight ours.
+      -- Refresh an open neo-tree in place so it shows new files.
       vim.defer_fn(function()
         local ok_mgr, manager = pcall(require, "neo-tree.sources.manager")
         if not ok_mgr then
@@ -252,11 +229,10 @@ local function store_edit_source(data)
     M.edit_sources[session_id] = list
   end
 
-  -- Dedup / skip logic for same-file events arriving close together:
-  --   1. Last has starting_line, new doesn't → drop new (incomplete).
-  --   2. Last missing starting_line, new has one → replace last in-place
-  --      with the better record.
-  --   3. Both missing starting_line → replace last in-place (duplicate).
+  -- Dedup for same-file events within 5s:
+  --   1. Last has starting_line, new doesn't: drop new.
+  --   2. New has starting_line: replace last in place.
+  --   3. Neither has starting_line nor source_line: replace last in place.
   local last = list[#list]
   if last and last.file_path == file_path then
     local time_diff = math.abs(last.timestamp - timestamp)
@@ -274,16 +250,8 @@ local function store_edit_source(data)
   table.insert(list, new_record)
 end
 
----Trailing-edge debounce for the edit-jump. An active agent can emit many
----HarnessEdit events back-to-back (the maki session file is modified on every
----tool result), so each event used to schedule its own 500ms defer_fn jump,
----and the jumps queued with overlapping eventignore windows -
----starving the deferred terminal re-entry and sticking the terminal in
----terminal-normal. A trailing-edge timer collapses a burst into ONE jump: each
----event resets the timer, and the jump fires only once the agent pauses.
----Different-file edits still jump in order (each resets + reschedules, the
----latest wins); same-file dedup is unchanged (still handled by the watcher's
----dedup_key before HarnessEdit fires).
+---Trailing-edge debounce to the latest edit: per-event deferred jumps can overlap event
+---suppression and starve terminal re-entry, leaving terminal-normal mode.
 local _pending_jump = nil
 local _pending_args = nil
 

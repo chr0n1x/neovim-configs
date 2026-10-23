@@ -107,8 +107,6 @@ return {
     cmp.setup(setup_cfg)
 
     cmp.setup.cmdline(":", {
-      -- more or less remove this from cmdline, very annoying
-      -- mapping = cmp.mapping.preset.cmdline(),
       sources = cmp.config.sources({
         { name = "path" },
       }, {

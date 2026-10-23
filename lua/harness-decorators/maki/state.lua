@@ -1,31 +1,20 @@
--- Maki state adapter: work status + session label, ported from the tmux picker.
+-- Maki state adapter: work status + session label.
 --
--- Status: maki has no per-pid status file (the tmux script's child-process
---check is its only source), so this returns "unknown" and lets agent-state run
---the shared child check. Tool/bash execution shows as working; pure text
---generation does not - a known limitation, same as the tmux picker.
+-- Status: maki has no per-pid status file, so this returns "unknown" and lets
+-- agent-state run the shared child check. Tool/bash execution shows as working;
+-- pure text generation does not.
 --
--- Label: ~/.maki/sessions/cwd_latest.json maps cwd -> session id of the most
---recent session started in that dir; the label is the last "t":"meta" line's
---title in <sid>.jsonl (the header carries the title too, but meta lines are
---re-written as the session evolves).
+-- Label: ~/.maki/sessions/cwd_latest.json maps cwd to the session id of the most
+-- recent session started in that dir; the label is the last "t":"meta" line's
+-- title in <sid>.jsonl (the header carries the title too, but meta lines are
+-- re-written as the session evolves).
 
 local utils = require("harness-decorators.utils")
 
 local M = {}
 
----Sessions dir resolution mirrors maki/init.lua sessions_dir (check both the
---legacy ~/.maki and XDG locations; they can coexist).
----@return string?
 local function sessions_dir()
-  local home = os.getenv("HOME") or ""
-  local xdg_state = os.getenv("XDG_STATE_HOME") or (home .. "/.local/state")
-  for _, dir in ipairs({ home .. "/.maki/sessions", xdg_state .. "/maki/sessions" }) do
-    if vim.uv.fs_stat(dir) then
-      return dir
-    end
-  end
-  return nil
+  return require("harness-decorators.maki").sessions_dir()
 end
 
 ---@param pid number|string
@@ -36,7 +25,7 @@ function M.status(_pid, _cwd)
   return "unknown"
 end
 
----Last meta title in a session jsonl (grep '"t":"meta"' | tail -1 equivalent).
+---Last meta title in a session jsonl.
 ---@param path string
 ---@return string?
 local function read_meta_title(path)
@@ -51,18 +40,16 @@ local function read_meta_title(path)
   end)
 end
 
----Header of a session jsonl: the first line carries id + created_at (unix). Returns the decoded
---table or nil. Reading only the first line keeps this cheap even for long sessions.
+---Header of a session jsonl: the first line carries id + created_at (unix). Returns the
+---decoded table or nil.
 ---@param path string
 ---@return table?
 local function read_header(path)
   return utils.read_first_line_table(path)
 end
 
----The session jsonl in `dir` whose header created_at best matches the terminal's open time. A fresh
---session started in a dir that already has older sessions must NOT be labelled with the previous
---one, so we match by open time rather than "newest file". Returns the path, or nil when nothing is
---close enough (caller falls back to cwd_latest).
+---The session jsonl in `dir` whose header created_at best matches the terminal's open
+---time (see utils.pick_jsonl_by_time). nil when nothing is close enough.
 ---@param dir string
 ---@param opened_at number? unix time this terminal instance was opened
 ---@param cwd string the terminal's working dir (the header carries it, so we can disambiguate)
@@ -90,9 +77,8 @@ function M.label(_pid, cwd)
   if not dir or not cwd or cwd == "" then
     return nil
   end
-  -- Prefer the session that matches THIS terminal's open time (a fresh session in a dir with older
-  -- ones must not inherit the previous title). term.opened_at is nil for non-term contexts/tests,
-  -- which falls straight through to cwd_latest.
+  -- Prefer the session matching this terminal's open time; opened_at is nil outside term
+  -- (tests), which falls through to cwd_latest.
   local ok_term, term = pcall(require, "harness-decorators.term")
   if ok_term and type(term.opened_at) == "function" then
     local live = session_for_open(dir, term.opened_at("maki"), cwd)
@@ -101,17 +87,8 @@ function M.label(_pid, cwd)
     end
   end
   -- Fallback: cwd_latest.json { [cwd] = session_id } (lazy-updated, so it can lag a fresh open).
-  local f = io.open(dir .. "/cwd_latest.json", "r")
-  if not f then
-    return nil
-  end
-  local data = f:read("*a")
-  f:close()
-  if not data or data == "" then
-    return nil
-  end
-  local ok, map = pcall(vim.json.decode, data)
-  if not ok or type(map) ~= "table" then
+  local map = utils.read_json_file(dir .. "/cwd_latest.json")
+  if not map then
     return nil
   end
   local sid = map[cwd]

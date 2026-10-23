@@ -12,13 +12,7 @@ function M.projects_dir()
   return (os.getenv("HOME") or "") .. "/.copilot/session-state"
 end
 
----Copilot stores each session in its own directory:
----  <session-state>/<session-id>/events.jsonl
----so the JSONL filename is always "events" and the session id is the PARENT
----directory name. The generic filename-stem extraction (used by claude/maki,
----where the file itself is named <session-id>.jsonl) would collapse every
----copilot session to the id "events", cross-polluting edit history and the
----sidecar. Extract the parent dir instead.
+---Session id is the parent dir of events.jsonl.
 ---@param jsonl_path string?
 ---@return string?
 function M.session_id(jsonl_path)
@@ -28,24 +22,15 @@ function M.session_id(jsonl_path)
   return jsonl_path:match("([^/]+)/events%.jsonl$")
 end
 
----Copilot's session id is the parent dir of events.jsonl, which is a property of the PATH,
----not of any line's content - so there is nothing to extract from lines. Return nil so the
----watcher falls back to M.session_id(jsonl_path) (the path-based rule), keeping the Option B
----pin-by-session-id contract uniform across adapters.
+---Copilot's session id comes from the path, not line content, so return nil and let the
+---watcher fall back to M.session_id(jsonl_path).
 ---@param _lines string[]
 ---@return string?
 function M.session_id_from_lines(_lines)
   return nil
 end
 
----Session JSONLs are NOT at the top level (they sit one dir down in
----<session-state>/<id>/events.jsonl), but on macOS fswatch's FSEvents backend
----reports writes for the whole subtree of a watched path, so watching the
----session-state root directly still catches every session's events.jsonl -
----including session dirs created AFTER nvim started (the common "open nvim,
----then launch copilot" flow). This also avoids enumerating and watching the
----dozens of historical per-session dirs individually. On Linux the watcher uses
----inotifywait -r on projects_dir, which is recursive regardless of this flag.
+---Flat: watch the root (FSEvents and inotifywait -r see the per-session subdirs).
 M.flat_sessions_dir = true
 
 -- ==========================================================================
@@ -116,14 +101,7 @@ function M.extract_diff(ev)
   end
   local d = ev.data
   if d and d.arguments and d.arguments.old_str and d.arguments.new_str then
-    local old_lines = vim.split(d.arguments.old_str, "\n", { plain = true })
-    local new_lines = vim.split(d.arguments.new_str, "\n", { plain = true })
-    local parts = { string.format("%d -> %d lines", #old_lines, #new_lines), "" }
-    local numbered = diff.diff_full_files(d.arguments.old_str, d.arguments.new_str)
-    if #numbered > 0 then
-      table.insert(parts, table.concat(numbered, "\n"))
-    end
-    return table.concat(parts, "\n")
+    return diff.format_full(d.arguments.old_str, d.arguments.new_str)
   end
   if d and d.arguments and d.arguments.new_str then
     return d.arguments.new_str
@@ -174,11 +152,11 @@ function M.parse_tool_result(line, line_number)
 
   if args.old_str and args.new_str then
     starting_line = diff.find_starting_line(args.old_str, args.new_str)
-    delta = args.new_str:gsub("\n", "\\n"):sub(1, 60)
+    delta = parser.snippet(args.new_str)
   elseif args.new_str then
-    delta = args.new_str:gsub("\n", "\\n"):sub(1, 60)
+    delta = parser.snippet(args.new_str)
   elseif args.content then
-    delta = args.content:gsub("\n", "\\n"):sub(1, 60)
+    delta = parser.snippet(args.content)
   end
 
   local dedup_key = d.toolCallId and ("copilot-" .. d.toolCallId) or nil

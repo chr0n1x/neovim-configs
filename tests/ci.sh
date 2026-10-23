@@ -17,7 +17,7 @@ stylua --check lua/ || { echo "FAIL: stylua" >&2; exit 1; }
 # plugin sync is needed here; lua/ is prepended to package.path so modules can require each
 # other. Files that depend on lazy-loaded plugins are skipped (they load in the integration
 # phase against the real synced tree).
-SKIP_CHECK="lua/util/task_notifications.lua lua/config/lazy.lua"
+SKIP_CHECK="lua/config/lazy.lua"
 echo "==> check (load every lua file)"
 while IFS= read -r f; do
   if echo "$SKIP_CHECK" | grep -qF "$f"; then continue; fi

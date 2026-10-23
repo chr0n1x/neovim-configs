@@ -1,13 +1,4 @@
--- Crush harness: per-key entries for the consolidated <leader>c* keymap table in
--- lua/plugins/ai-harness.lua. Each entry is a lazy.nvim key spec (lhs, action, desc,
--- mode/ft). crush is a self-contained TUI: it reads files itself (no @file mention
--- server) and stores sessions in SQLite rather than JSONL, so the live edit-following
--- watcher is disabled for it (see crush/init.lua). That leaves nothing for the
--- copilot/maki-style edit-history picker to hang off, but <C-t> tree-add still makes
--- sense: type the selected path into the crush terminal as a bare reference you can
--- weave into your prompt. The shared context-injection machinery (find_terminal_win /
--- shorten_path / type_into_terminal / make_tree_add_command) lives in context-inject.lua;
--- this file keeps only crush's build_context_text format and its command registrations.
+-- Crush: bare path references (no @ syntax); no edit following (SQLite sessions).
 
 local ci = require("harness-decorators.context-inject")
 local keymaps = require("harness-decorators.keymaps")
@@ -39,19 +30,16 @@ end
 -- ==========================================================================
 
 ---CrushTreeAdd: sends the file(s)/dir(s) under the cursor / selected in the tree plugin
----as bare path references typed into the crush terminal. Reuses claudecode.nvim's
----server-independent tree detection, but formats paths locally (crush has no @file
----mention server to route through).
+---as bare path references typed into the crush terminal (selection via
+---utils.get_tree_selection).
 ci.make_tree_add_command("CrushTreeAdd", "crush", type_into_terminal, build_context_text)
 
 -- ==========================================================================
--- PER-KEY ENTRIES (consumed by ai-harness.lua's consolidated keys table)
+-- PER-KEY ENTRIES (merged by harness-decorators/keymaps.lua)
 -- ==========================================================================
 
 return {
-  -- <leader>c is wired by keymaps.build() from focus_spec, which triggers the JSONL
-  -- watcher; this file does not declare it.
-  -- <leader>cc: continue the last session via OUR per-harness float (term.lua), not a claudecode cmd.
+  -- <leader>cc: open this harness's float with `--continue`.
   keymaps.continue_spec("crush"),
   keymaps.tree_add_spec("crush", "CrushTreeAdd"),
 }

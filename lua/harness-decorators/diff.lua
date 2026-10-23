@@ -1,6 +1,4 @@
--- Shared diff helpers for the harness adapters. Both maki and copilot render a unified-style
--- diff from two full-file text blobs, and both needed find_starting_line (first divergent line)
--- and diff_full_files (numbered prefix/suffix diff). The output format of diff_full_files is a
+-- Full-file diff helpers for maki and copilot. The output format of diff_full_files is a
 -- de-facto contract: the history picker's highlighter (telescope-history-picker.lua) parses it,
 -- expecting "%5d  <prefix><content>" with the prefix char always at string position 8. Do NOT
 -- change that format string without updating the picker in lockstep.
@@ -24,6 +22,21 @@ function M.find_starting_line(before, after)
     return max_len + 1
   end
   return nil
+end
+
+---Summary header ("N -> M lines"), a blank line, then the numbered diff.
+---@param before string Full file content before edit
+---@param after string Full file content after edit
+---@return string
+function M.format_full(before, after)
+  local before_lines = vim.split(before, "\n", { plain = true })
+  local after_lines = vim.split(after, "\n", { plain = true })
+  local parts = { string.format("%d -> %d lines", #before_lines, #after_lines), "" }
+  local numbered = M.diff_full_files(before, after)
+  if #numbered > 0 then
+    table.insert(parts, table.concat(numbered, "\n"))
+  end
+  return table.concat(parts, "\n")
 end
 
 ---Compute a unified-style diff from two full-file text blobs. Returns lines in the

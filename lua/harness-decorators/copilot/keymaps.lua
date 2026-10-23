@@ -1,14 +1,6 @@
--- Copilot harness: per-key entries for the consolidated <leader>c* keymap table in
--- lua/plugins/ai-harness.lua. Each entry is a lazy.nvim key spec (lhs, action, desc,
--- mode/ft). Copilot supports @file mentions, but isn't the real `claude` binary, so
--- claudecode.nvim's server-backed ClaudeCodeAdd/ClaudeCodeSend do nothing. The shared
--- context-injection machinery (find_terminal_win / shorten_path / type_into_terminal /
--- make_add_command / make_tree_add_command / send_visual_selection) lives in
--- context-inject.lua; this file keeps only copilot's build_context_text format and its
--- command registrations. Copilot is the one harness that sends the trailing space as a
--- SEPARATE chansend (its line editor can discard trailing whitespace when it arrives in
--- the same PTY write as an @file reference), so its type_into_terminal passes
--- separate_space = true.
+-- Copilot: " @<path>" mentions, optional #L range. The trailing space goes in a separate
+-- chansend because copilot's line editor can drop trailing whitespace that arrives in the
+-- same PTY write as an @file reference.
 
 local ci = require("harness-decorators.context-inject")
 local keymaps = require("harness-decorators.keymaps")
@@ -17,20 +9,13 @@ local keymaps = require("harness-decorators.keymaps")
 -- CONTEXT FORMAT (copilot-specific: " @<path>", optional #L<start>-<end> range)
 -- ==========================================================================
 
----Build a Copilot @file mention. Line ranges use the same #L<start>-<end> form
----Claude Code uses (e.g. @<path>#L31-32), so references look consistent across
----harnesses.
+---Build a Copilot @file mention, e.g. @<path>#L31-32.
 ---@param file_path string
 ---@param start_line? integer
 ---@param end_line? integer
 ---@return string
 local function build_context_text(file_path, start_line, end_line)
-  local short = ci.shorten_path(file_path)
-  if not (start_line and end_line) then
-    return " @" .. short
-  end
-  local range = start_line == end_line and ("#L" .. start_line) or ("#L" .. start_line .. "-" .. end_line)
-  return " @" .. short .. range
+  return " @" .. ci.shorten_path(file_path) .. ci.line_range(start_line, end_line)
 end
 
 ---Copilot sends the trailing space as its own PTY write (see file header).
@@ -39,7 +24,7 @@ local function type_into_terminal(text)
 end
 
 -- ==========================================================================
--- USER COMMANDS (replace claudecode's server-backed ClaudeCodeAdd/TreeAdd)
+-- USER COMMANDS
 -- ==========================================================================
 
 ---CopilotAdd: adds a file (or line range) to the copilot terminal as a path reference.
@@ -47,20 +32,18 @@ end
 ci.make_add_command("CopilotAdd", "copilot", type_into_terminal, build_context_text)
 
 ---CopilotTreeAdd: sends the file(s) under the cursor / selected in the tree plugin as
----@path references. Reuses claudecode.nvim's server-independent tree detection.
+---@path references (selection via utils.get_tree_selection).
 ci.make_tree_add_command("CopilotTreeAdd", "copilot", type_into_terminal, build_context_text)
 
 -- Visual-mode <leader>ca: send the selected lines (path + range) to the copilot terminal.
 local send_selection = ci.send_visual_selection(type_into_terminal, build_context_text)
 
 -- ==========================================================================
--- PER-KEY ENTRIES (consumed by ai-harness.lua's consolidated keys table)
+-- PER-KEY ENTRIES (merged by harness-decorators/keymaps.lua)
 -- ==========================================================================
 
 return {
-  -- <leader>c is wired by keymaps.build() from focus_spec, which triggers the JSONL
-  -- watcher; this file does not declare it.
-  -- <leader>cc: continue the last session via OUR per-harness float (term.lua), not a claudecode cmd.
+  -- <leader>cc: open this harness's float with `--continue`.
   keymaps.continue_spec("copilot"),
   keymaps.history_spec("copilot"),
   { "<leader>ca", "<cmd>CopilotAdd %<cr>", desc = "Add current buffer" },

@@ -293,3 +293,37 @@ describe("agent-display: poll timer", function()
     assert.is_true(async_calls >= 1)
   end)
 end)
+
+describe("agent-display: stop_timer", function()
+  it("Given a running poll timer, When stop_timer is called, Then the timer is stopped and closed", function()
+    local real_new_timer = vim.uv.new_timer
+    local agent_state = require("harness-decorators.agent-state")
+    local real_async = agent_state.all_async
+    agent_state.all_async = function() end
+    local calls = {}
+    vim.uv.new_timer = function()
+      local t = real_new_timer()
+      return setmetatable({
+        start = function(_, ...)
+          return t:start(...)
+        end,
+        stop = function(self)
+          assert(self, "stop needs self")
+          calls[#calls + 1] = "stop"
+          return t:stop()
+        end,
+        close = function(self)
+          assert(self, "close needs self")
+          calls[#calls + 1] = "close"
+          return t:close()
+        end,
+      }, {})
+    end
+    display.stop_timer()
+    display.start_timer()
+    display.stop_timer()
+    vim.uv.new_timer = real_new_timer
+    agent_state.all_async = real_async
+    assert.are.same({ "stop", "close" }, calls)
+  end)
+end)

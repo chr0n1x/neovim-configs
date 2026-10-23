@@ -1,36 +1,14 @@
--- Selection + backgrounding layer over the unified per-harness terminal state (Task 6; Task 7 rework;
--- Task 8 consolidated the storage).
---
--- Every annotation about a harness - its live Snacks instance AND its selection bit - lives on ONE
--- record in the shared state table (harness-decorators/state.lua):
---
---   state.table[harness] = { inst = snacks.terminal|nil, selected = boolean }
---
--- This module owns the SELECTION half of that record (set_selected / selected_harness) and
--- backgrounding (park). term.lua owns opening/hiding/showing the instance on the same record. There
--- is no private registry here anymore: the old `registry[harness].inst` duplicated term's instance,
--- which had to be written back on every open - that duplication is gone. Backgrounding a harness
--- hides ITS OWN float (term.hide) - the PTY keeps running, which is the concurrency requirement.
--- Re-selecting re-shows the SAME live process because we hide (not close) the buffer. There is no
--- claudecode handle to attach/detach: term.lua owns each instance, so "maki shows claude" cannot
--- happen - a harness can only ever show its own buffer. See docs/multi-agent-prd.md.
+-- Selection and backgrounding over state.table; term.lua owns the instances.
 local M = {}
 
 local state = require("harness-decorators.state")
 local term = require("harness-decorators.term")
 
----The shared per-harness record for `harness`, creating it if absent (inst=nil, selected=false).
--- Delegates to the single accessor in state.lua so term and park never diverge on the record shape.
----@param harness string
----@return table entry { inst = snacks.terminal|nil, selected = boolean }
 local function entry(harness)
   return state.entry(harness)
 end
 
----Mark `harness` as the selected (foreground-target) harness: set its entry selected=true and every
----other entry selected=false. Creates the entry if absent (inst=nil, so its first <leader>c spawns it
----fresh). Called by switch after deciding the incoming harness is now active. Routes through the
----single invariant-enforcing accessor in state.lua.
+---Make harness the only selected entry.
 ---@param harness string
 function M.set_selected(harness)
   state.select(harness)
@@ -89,16 +67,11 @@ function M.show_selected()
   if not inst then
     return nil
   end
-  -- term.open already recorded the instance on the shared record; just make sure the selection bit
-  -- is set (it should be, but a path that called open without selecting would leave it false).
   entry(selected).selected = true
   return selected
 end
 
----Table snapshot for the picker previewer: a list of { harness, buff_nr, selected, cmd } for every
----harness with a live terminal. Stale entries (dead buffers) are dropped so the picker never offers a
----harness whose process already exited. Never-opened harnesses (no instance) are omitted - they have
----no output to preview yet. Backed entirely by term.list() (the per-harness Snacks instances).
+---Live harnesses for the picker (see term.list).
 ---@return { harness: string, buff_nr: number, selected: boolean, cmd: string? }[]
 function M.list()
   local out = {}

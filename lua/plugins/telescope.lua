@@ -20,11 +20,7 @@ return {
         prompt_prefix = "> ",
         -- While zen mode is open, picked files open in the zen window.
         get_selection_window = function()
-          local ok, zen = pcall(require, "zen-mode.view")
-          if ok and zen.is_open() then
-            return zen.win
-          end
-          return 0
+          return require("util.zen").win() or 0
         end,
         extensions_list = { "fzf", "terms", "themes" },
         mappings = {
@@ -38,8 +34,6 @@ return {
     })
 
     local builtin = require("telescope.builtin")
-    -- TODO: no idea how to make this work yet
-    -- local default_opts = { hidden = true, file_ignore_patterns = {".git/"} }
     vim.keymap.set("n", "<leader>f", builtin.treesitter, { desc = "Telescope: token." })
     vim.keymap.set("n", "<leader>g", builtin.live_grep, { desc = "Telescope: [rip]grep cwd." })
     vim.keymap.set("n", "<leader>p", builtin.find_files, { desc = "Telescope: search cwd for file." })

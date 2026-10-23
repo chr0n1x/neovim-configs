@@ -76,6 +76,34 @@ describe("agent-state: shared child-process check", function()
     assert.are.equal(0, spawned, "pid lookup must not spawn ps")
   end)
 
+  it("Given jobpid fails and ps lists nothing, When its pid is resolved, Then the /proc scan finds the job", function()
+    if vim.fn.isdirectory("/proc/self") == 0 then
+      return pending("needs Linux /proc")
+    end
+    local buf = vim.api.nvim_create_buf(false, true)
+    local job
+    vim.api.nvim_buf_call(buf, function()
+      job = vim.fn.jobstart({ "sleep", "30" }, { term = true })
+    end)
+    local want = vim.fn.jobpid(job)
+    local real_popen, real_jobpid = io.popen, vim.fn.jobpid
+    vim.fn.jobpid = function()
+      error("no job")
+    end
+    io.popen = function(cmd, ...)
+      if cmd == "ps -eo pid=,ppid=,tty=" then
+        return real_popen("true")
+      end
+      return real_popen(cmd, ...)
+    end
+    local ok, pid = pcall(agent_state.pid_for_buf, buf)
+    io.popen, vim.fn.jobpid = real_popen, real_jobpid
+    vim.fn.jobstop(job)
+    vim.api.nvim_buf_delete(buf, { force = true })
+    assert(ok, pid)
+    assert.are.equal(want, pid)
+  end)
+
   it("Given all_async, When it is called, Then it returns before polling and the callback gets the results", function()
     local got
     agent_state.all_async(function(all)

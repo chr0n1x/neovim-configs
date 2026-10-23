@@ -26,12 +26,51 @@ function M.command_for(harness, cli, model_flag)
   return cli
 end
 
+---Stop and close a libuv timer; safe on nil and on an already closed timer.
+---@param timer uv.uv_timer_t?
+---@return nil
+function M.close_timer(timer)
+  if timer then
+    pcall(timer.stop, timer)
+    pcall(timer.close, timer)
+  end
+  return nil
+end
+
+---Upper-case the first letter, e.g. "claude" -> "Claude".
+---@param name string
+---@return string
+function M.capitalize(name)
+  return name:sub(1, 1):upper() .. name:sub(2)
+end
+
+---Spawn command for a harness whose CLI name equals its name: `<CLI>_COMMAND` overrides
+---everything; otherwise the bare CLI plus --provider from NVIM_LLM_HARNESS_<CLI>_PROVIDER_NAME
+---and --model from LLAMA_DEFAULT_MODEL when set.
+---@param cli string e.g. "pi"
+---@return string command
+function M.provider_command(cli)
+  local c = cli:upper()
+  local cmd_env = os.getenv(c .. "_COMMAND") or ""
+  if cmd_env ~= "" then
+    return cmd_env
+  end
+  local cmd = cli
+  local provider = os.getenv("NVIM_LLM_HARNESS_" .. c .. "_PROVIDER_NAME") or ""
+  if provider ~= "" then
+    cmd = cmd .. " --provider " .. provider
+  end
+  local model = os.getenv("LLAMA_DEFAULT_MODEL") or ""
+  if model ~= "" then
+    cmd = cmd .. " --model " .. model
+  end
+  return cmd
+end
+
 -- The harness-decorators dir (parent of this file). list_harnesses scans it for sibling harness dirs.
 local this_dir = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":h")
 
----List sibling directories that look like a harness (env.lua + keymaps.lua). This is the single
---source-of-truth roster for "which harnesses exist" - agent-state, switch, keymaps and the specs all
---derive from it, so adding a new harness dir requires no edits elsewhere.
+---Sibling dirs with env.lua + keymaps.lua: the roster of harnesses every other module derives from.
 ---@return string[]
 function M.list_harnesses()
   local found = {}
@@ -84,11 +123,8 @@ function M.command_executable(cmd)
   return answer
 end
 
----Scan a list of raw JSONL lines for the first one containing `needle`, decode it, and return what
---`extract(entry)` yields (or nil to keep scanning). Returns nil when no line matches. This is the
---shared shape behind every adapter's extract_cwd / session_id_from_lines: a cheap needle pre-filter
---avoids decoding lines that can't match, then the caller's guard + extraction runs on the decoded
---table. The needle and extraction are harness-specific; the loop/decode discipline is not.
+---Decode the first line containing `needle` for which `extract(entry)` returns non-nil.
+---The needle is a cheap pre-filter so non-matching lines are never decoded.
 ---@param lines string[] raw JSONL lines
 ---@param needle string plain substring that must appear for a line to be considered
 ---@param extract fun(entry: table): any? decode-guard + field extraction; nil means "not this one"
@@ -109,12 +145,10 @@ function M.scan_lines_for_field(lines, needle, extract)
 end
 
 ---Pick the *.jsonl in `dir` whose candidate time best matches `opened_at`, within `tolerance`
---seconds. This is the shared "match a session to THIS terminal's open time" skeleton used by the
---cwd-keyed label adapters (maki, pi): a fresh session started in a dir that already has older ones
---must NOT be labelled with the previous one, so we match by open time rather than "newest file".
---`time_of(path)` returns the candidate unix time for a path (or nil to skip it - e.g. maki reads the
---header created_at and also rejects a cwd mismatch, pi uses the file mtime). Returns the best path,
---or nil when nothing is close enough (caller falls back to its own newest-file heuristic).
+---seconds. Used by the cwd-keyed label adapters (maki, pi): a fresh session started in a dir
+---that already has older ones must not be labelled with the previous one, so the match is by
+---open time rather than "newest file". `time_of(path)` returns the candidate unix time, or nil
+---to skip the path. Returns nil when nothing is close enough.
 ---@param dir string
 ---@param opened_at number? unix time this terminal instance was opened; non-number returns nil
 ---@param tolerance number max |candidate - opened_at| in seconds
@@ -124,24 +158,10 @@ function M.pick_jsonl_by_time(dir, opened_at, tolerance, time_of)
   if type(opened_at) ~= "number" then
     return nil
   end
-  local d = vim.uv.fs_opendir(dir)
-  if not d then
-    return nil
-  end
   local best, best_dt = nil, math.huge
-  while true do
-    local r = vim.uv.fs_readdir(d)
-    if not r or type(r) ~= "table" or #r == 0 then
-      break
-    end
-    local e = r[1]
-    if not e or not e.name then
-      break
-    end
-    -- Skip non-session files - do NOT break: readdir order is unspecified, so the session we need
-    -- may come after a non-matching entry.
-    if e.name:match("%.jsonl$") then
-      local path = dir .. "/" .. e.name
+  for name in vim.fs.dir(dir) do
+    if name:match("%.jsonl$") then
+      local path = dir .. "/" .. name
       local t = time_of(path)
       if t then
         local dt = math.abs(t - opened_at)
@@ -151,14 +171,27 @@ function M.pick_jsonl_by_time(dir, opened_at, tolerance, time_of)
       end
     end
   end
-  vim.uv.fs_closedir(d)
   return best
 end
 
----Read and decode the FIRST line of a JSONL file, returning the decoded table or nil. Reading only
---the first line keeps this cheap even for long sessions (the header/first-record lives at the top).
---Callers keep their own type guards on the returned table (e.g. `t == "header"`,
---`type == "session.start"`); this helper just does the open / read-first-line / pcall-decode.
+---The path with the newest mtime; the first wins a tie. Paths whose stat target is missing are
+---skipped, so the result is nil when none exist.
+---@param paths string[]
+---@param stat_path_fn? fun(path: string): string maps a path to the file whose mtime counts
+---@return string?
+function M.newest_by_mtime(paths, stat_path_fn)
+  local best, best_m = nil, -1
+  for _, path in ipairs(paths) do
+    local st = vim.uv.fs_stat(stat_path_fn and stat_path_fn(path) or path)
+    local m = st and st.mtime.sec or -1
+    if m > best_m then
+      best, best_m = path, m
+    end
+  end
+  return best
+end
+
+---Decode the first line of a JSONL file, or nil. Callers check the record type themselves.
 ---@param path string? nil or unreadable returns nil
 ---@return table?
 function M.read_first_line_table(path)
@@ -181,13 +214,52 @@ function M.read_first_line_table(path)
   return nil
 end
 
----Tail-scan reader shared by the per-harness label/status adapters. Reads at most `max_bytes` from
---the END of `path`, skips a possible partial first line (only when we actually truncated, so a small
---file never loses its first line), and calls `fn(line)` once per complete line in file order. fn
---returns the value to KEEP for that line, or nil to leave the running result unchanged - so callers
---implement "last matching record wins" (claude/maki titles) or "accumulate a state, last marker wins"
---(copilot turn state) without re-scanning. Returns the final result, or nil if no line ever produced
---one (or the file is missing/empty). The needle/predicate and accumulator live in the caller, not here.
+---Open a SQLite db read-only through lsqlite3, leaving a live WAL db undisturbed.
+---@param path string
+---@return table? db
+---@return function|string close_or_err close function, or an error when lsqlite3 or the open fails
+function M.sqlite_open_ro(path)
+  local ok_sqlite, sqlite = pcall(require, "lsqlite3")
+  if not ok_sqlite or type(sqlite) ~= "table" then
+    return nil, "lsqlite3 not available"
+  end
+  local ok_db, db = pcall(function()
+    return sqlite.open("file:" .. path .. "?mode=ro", true)
+  end)
+  if not ok_db or type(db) ~= "table" then
+    return nil, "open failed: " .. tostring(db)
+  end
+  return db,
+    function()
+      pcall(function()
+        if type(db.close) == "function" then
+          db:close()
+        end
+      end)
+    end
+end
+
+---Decode a whole JSON file, or nil when it is missing, empty, invalid, or not an object/array.
+---@param path string
+---@return table?
+function M.read_json_file(path)
+  local f = io.open(path, "r")
+  if not f then
+    return nil
+  end
+  local data = f:read("*a")
+  f:close()
+  if not data or data == "" then
+    return nil
+  end
+  local ok, e = pcall(vim.json.decode, data)
+  if ok and type(e) == "table" then
+    return e
+  end
+  return nil
+end
+
+---Call fn on each complete line in the last max_bytes; returns the last non-nil result.
 ---@param path string
 ---@param max_bytes number cap on bytes read from the end
 ---@param fn fun(line: string): any? per-line handler; nil means "no change to the running result"
@@ -243,31 +315,16 @@ local function shorten_path(fp)
   return fp
 end
 
----Shorten a path for display. The harness CLI reads files itself, so the reference just
----needs to be unambiguous and short. Preference order:
----  1. ~ collapse (e.g. "~/Code/kran/...") when the path is $HOME itself or lives under it.
----  2. the full path otherwise.
----No cwd-relative tier: a reference is only as good as the cwd the HARNESS started in, which
----differs from nvim's cwd when the user cd's into /tmp (or anywhere else) and tree-adds a
----subdir - the relative remainder would then point at a nonexistent path. ~ and full paths are
----absolute, so they resolve correctly no matter where the harness's session lives.
----This is the single definition of display shortening; context-inject and the history picker
----both delegate here (see tests/utils_spec.lua). Callers apply their own prefix/decoration
----(the picker prepends "./", claude/crush append a trailing "/" for dirs) on top of this.
+---Shorten a path for display: ~ under $HOME, else the absolute path. Absolute so the harness
+---resolves it whatever its cwd. Callers add their own prefix/suffix decoration.
 ---@param file_path string
 ---@return string
 function M.shorten_path(file_path)
-  -- 0. Absolutize a relative input first. <leader>ca is `MakiAdd %`; make_add_command
-  --    expands "%" which, when the current buffer was opened with a RELATIVE name (e.g.
-  --    maki opening "foo.txt" while cwd is /tmp), returns a relative path. Without this,
-  --    the relative name passes straight through and only resolves if the harness's cwd
-  --    happens to equal nvim's cwd. fnamemodify(":p") absolutizes + resolves ~; it leaves
-  --    an already-absolute path unchanged, so the tiers below are unaffected.
+  -- Absolutize relative input (e.g. an expanded `%`).
   if file_path and file_path:sub(1, 1) ~= "/" then
     file_path = vim.fn.fnamemodify(file_path, ":p")
   end
 
-  -- 1. ~ collapse for anything under $HOME.
   local home = vim.env.HOME
   if home and home ~= "" then
     local bare_home = home:gsub("/+$", "")
@@ -284,11 +341,10 @@ function M.shorten_path(file_path)
     end
   end
 
-  -- 2. Full path.
   return file_path
 end
 
----Suppresses duplicate message prefixes within a cooldown window.
+---Drops a message repeated within cooldown_ms.
 ---@param msg string The message to log.
 ---@param level? number Log level (passed to vim.notify).
 ---@param notify_opts? table Options passed directly to vim.notify.
@@ -343,13 +399,8 @@ end
 -- TREE SELECTION
 -- ==========================================================================
 
----Get the file(s) selected in the current tree plugin, safely.
----
----Delegates to our own neo-tree selector (harness-decorators/tree-select), which
----reads the live neo-tree state directly - no claudecode.nvim dependency. The whole
----call is wrapped in a pcall because reading a tree whose window was just closed or
----recreated can throw (a stale win id -> E5108). Returning an error string keeps every
----harness's <C-t>/tree-add handler from crashing.
+---Get the file(s) selected in the current tree plugin, via tree-select.
+---pcall: a stale tree window can throw.
 ---@return table files List of file paths (empty on failure)
 ---@return string|nil err Error message if no selection or the lookup threw
 function M.get_tree_selection()
@@ -419,11 +470,8 @@ function M.format_time(ts)
   return os.date("%b %d %Y %H:%M:%S", secs)
 end
 
----Map an extracted session cwd to the tri-state ownership verdict every harness's
----session_ownership must return. This is the single definition of the contract so all
----adapters agree: a known cwd that differs from this nvim's cwd is a definite "mismatch";
----a known cwd equal to it is a "match"; and no cwd evidence yet (cwd is nil) is
----"unknown" - leave as a candidate and retry on the next write rather than guessing.
+---Tri-state ownership verdict from a session's cwd: "match", "mismatch", or "unknown"
+---when there is no cwd evidence yet (retry on the next write).
 ---@param nvim_cwd string? CWD of this Neovim instance (assumed non-nil by callers).
 ---@param cwd string? The session's extracted cwd, or nil if no evidence yet.
 ---@return "match"|"mismatch"|"unknown"

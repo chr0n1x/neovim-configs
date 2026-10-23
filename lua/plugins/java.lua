@@ -1,6 +1,6 @@
 -- java support is opt-in on the host: it only loads if a `java` binary is on
 -- PATH, and debug support only loads if $JAVA_DEBUG_JAR_PATH points at a jar.
--- this keeps the config portable — a machine without java gets nothing extra.
+-- this keeps the config portable - a machine without java gets nothing extra.
 --
 -- configuration (set in .envrc or shell profile):
 --
@@ -8,35 +8,33 @@
 --     enables DAP debug support. install however you like (mason, brew, build
 --     from source) and point the var at whatever path the jar lands at.
 --     mason: :MasonInstall java-debug-adapter
---       → ~/.local/share/nvim/mason/packages/java-debug-adapter/extension/server/com.microsoft.java.debug.plugin-*.jar
+--       installs to ~/.local/share/nvim/mason/packages/java-debug-adapter/extension/server/
+--       com.microsoft.java.debug.plugin-*.jar
 --
 --   JAVA_INCLUDED_JAR_PATHS="pattern1:pattern2:..."
 --     colon-separated glob patterns. each resolved jar is passed as -javaagent
 --     to jdtls at startup. use this for compiler-instrumenting libraries that
 --     jdtls can't see without agent access (e.g. lombok). kept explicit rather
---     than auto-detected so you always know what's being loaded into the JVM —
+--     than auto-detected so you always know what's being loaded into the JVM -
 --     relevant for audits, SBOMs, and supply-chain hygiene.
 --
 -- gotchas:
--- 1. M2E ignores .mvn/maven.config; pass settings.xml via userSettings or classpath is empty.
+-- 1. M2E ignores .mvn/maven.config (see make_jdtls_config).
 -- 2. hover returns nil for ~15-30 min on first launch while jdtls builds its type index.
 -- 3. nvim-jdtls auto-loads its own lsp/jdtls.lua in nvim 0.11+; it starts before
 --    our autocmd and wins. disable it explicitly via vim.lsp.enable("jdtls", false).
--- 4. lombok (and other annotation processors): set JAVA_INCLUDED_JAR_PATHS in .envrc
---    as a colon-separated list of glob patterns; each is passed as -javaagent to jdtls.
+-- 4. lombok (and other annotation processors): set JAVA_INCLUDED_JAR_PATHS (see above).
 
 -- detect whether java is available on PATH (no JVM startup).
 if vim.fn.exepath("java") == "" then
   return {}
 end
 
--- only load in Java projects — instant stat checks, no glob traversal.
+-- only load in Java projects - instant stat checks, no glob traversal.
 if not vim.fs.root(0, { "pom.xml", "build.gradle", "build.gradle.kts", "gradlew", "mvnw" }) then
   return {}
 end
 
--- optional debug adapter. install the jar however you like on the host
--- (mason, brew, manual) and export JAVA_DEBUG_JAR_PATH to point at it.
 local debug_jar = os.getenv("JAVA_DEBUG_JAR_PATH")
 
 -- build the config jdtls should start with for the current buffer's project.
@@ -75,7 +73,7 @@ local function make_jdtls_config()
   -- per-project JAR agents (e.g. lombok). patterns are passed directly to the shell
   -- so glob expansion happens there, not via vim.fn.expand (which returns newline-
   -- separated matches that break the io.popen command). sources/javadoc jars are
-  -- excluded — they lack the Premain-Class manifest attribute the JVM requires.
+  -- excluded - they lack the Premain-Class manifest attribute the JVM requires.
   local cmd = { "jdtls", "-data", workspace_dir }
   local jar_paths_env = os.getenv("JAVA_INCLUDED_JAR_PATHS")
   if jar_paths_env and jar_paths_env ~= "" then

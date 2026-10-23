@@ -6,9 +6,4 @@
 -- Context keymaps live in pig/keymaps.lua; status + session label in pig/state.lua.
 local M = setmetatable({}, { __index = require("harness-decorators.stub-adapter") })
 
----@return string?
-function M.projects_dir()
-  return nil
-end
-
 return M

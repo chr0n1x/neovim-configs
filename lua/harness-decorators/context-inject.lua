@@ -1,15 +1,8 @@
--- Shared context-injection helpers for the per-harness keymaps files. The four harnesses
--- (claude/copilot/crush/maki) each need to type a path reference into their floating
--- terminal, and the machinery for finding that window, shortening the path, and writing
--- to its PTY was copy-pasted verbatim across all four keymaps.lua files. This module is
--- the single home for that shared logic; each harness keeps only what genuinely differs:
--- its build_context_text format (claude @path + dir slash, copilot/maki optional #L range,
--- crush bare path) and the command names / notify prefix it registers under.
+-- Shared helpers for typing path references into a harness terminal.
 local M = {}
 
----Find the floating harness terminal window (a non-hidden buffer with buftype=="terminal").
----Identical across all four harnesses; there is exactly one visible terminal float at a
----time, so no per-harness filtering is needed.
+---Return the first visible terminal window in the current tab. Several harness floats can be
+---open, so this may not be the caller's harness.
 ---@return number? Window ID or nil if not running
 function M.find_terminal_win()
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
@@ -32,10 +25,33 @@ function M.shorten_path(file_path)
   return require("harness-decorators.utils").shorten_path(file_path)
 end
 
----Write text into the harness terminal's PTY via chansend (same mechanism as
----claudecode.nvim). Multi-line text is wrapped in bracketed-paste markers so newlines
----arrive as one literal block instead of premature submits. We do NOT auto-submit - the
----text lands in the input for you to review and send.
+---Line-range suffix for a path reference.
+---@param start_line? integer
+---@param end_line? integer
+---@return string "" without both bounds, "#L5" for one line, "#L5-9" for a span
+function M.line_range(start_line, end_line)
+  if not (start_line and end_line) then
+    return ""
+  end
+  return start_line == end_line and ("#L" .. start_line) or ("#L" .. start_line .. "-" .. end_line)
+end
+
+---Path mention for the harness: "@" plus the path, a trailing slash for directories, and an optional
+---#L range.
+---@param file_path string
+---@param start_line? integer
+---@param end_line? integer
+---@return string
+function M.at_mention(file_path, start_line, end_line)
+  local short = M.shorten_path(file_path)
+  if vim.fn.isdirectory(file_path) == 1 and not short:match("/$") then
+    short = short .. "/"
+  end
+  return "@" .. short .. M.line_range(start_line, end_line)
+end
+
+---Write text into the harness terminal's PTY via chansend. Multi-line text is wrapped in
+---bracketed-paste markers so newlines arrive as one literal block. Never auto-submits.
 ---@param text string
 ---@param opts? table { separate_space = boolean } When true, the trailing space (added so
 ---  the next keystroke doesn't glue onto the inserted text) is sent as its OWN chansend
@@ -47,17 +63,28 @@ end
 function M.type_into_terminal(text, opts, harness)
   local separate_space = opts and opts.separate_space or false
 
-  local win = M.find_terminal_win()
+  local ok_term, term = pcall(require, "harness-decorators.term")
+  ---This harness's own visible window, or any terminal window when the harness has no float.
+  local function target_win()
+    local buf = ok_term and term.bufnr(harness)
+    if not buf then
+      return M.find_terminal_win()
+    end
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      local ok, cfg = pcall(vim.api.nvim_win_get_config, w)
+      if vim.api.nvim_win_get_buf(w) == buf and not (ok and cfg.hide) then
+        return w
+      end
+    end
+  end
+
+  local win = target_win()
   if not win then
-    -- No visible terminal: open OUR per-harness float (term.open), NOT claudecode's stock
-    -- ClaudeCodeOpen - that would spawn a second, claudecode-owned window in a separate pane
-    -- instead of typing into the one we own. term.open re-shows the same live process if the
-    -- harness was already running (just hidden), or spawns fresh otherwise.
-    local ok_term, term = pcall(require, "harness-decorators.term")
+    -- Open or re-show this harness's float.
     if ok_term then
       term.open(harness)
     end
-    win = M.find_terminal_win()
+    win = target_win()
     if not win then
       vim.notify(harness .. ": terminal did not open", vim.log.levels.WARN)
       return nil
@@ -95,9 +122,6 @@ function M.type_into_terminal(text, opts, harness)
     return nil
   end
 
-  -- Send the separator separately when requested. Copilot's line editor can discard
-  -- trailing whitespace when it arrives in the same PTY write as an @file reference, so it
-  -- must be its own write with its own error check.
   if separate_space and not normalized:match("[%s ]$") then
     local ok_space, space_written = pcall(vim.fn.chansend, chan, " ")
     if not ok_space or space_written == 0 then
@@ -106,11 +130,8 @@ function M.type_into_terminal(text, opts, harness)
     end
   end
 
-  -- chansend writes to the PTY without moving focus; jump to the harness terminal so you can
-  -- review/edit/submit the added context. term.lua's shared WinEnter handler enters terminal mode.
-  -- Drop any active visual
-  -- selection first: switching windows while in visual mode exits it and parks the cursor on
-  -- '>, which then poisoned later sends.
+  -- Leave visual mode before switching windows; otherwise the cursor lands at '> and corrupts the
+  -- selection used by later context sends.
   if vim.fn.mode() == "V" or vim.fn.mode() == "v" then
     vim.cmd("normal! gv")
     vim.cmd("normal! lv")

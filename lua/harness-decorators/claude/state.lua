@@ -1,13 +1,12 @@
--- Claude Code state adapter: work status + session label, ported from the tmux
---picker (tmux-agent-pick.sh pane_status/session_label claude branches).
+-- Claude Code state adapter: work status + session label.
 --
--- Status: ~/.claude/sessions/<pid>.json carries a "status" field; "busy" =
---working. Missing/unreadable falls through to the shared child-process check
---(agent-state does that when we return "unknown").
+-- Status: ~/.claude/sessions/<pid>.json carries a "status" field; "busy" means
+-- working. Missing/unreadable returns "unknown", so agent-state runs the shared
+-- child-process check.
 --
 -- Label: a user rename lives in the session file's "name" (nameSource absent or
---not "derived"); otherwise the ai-title from the project jsonl, looked up by
---sessionId.
+-- not "derived"); otherwise the ai-title from the project jsonl, looked up by
+-- sessionId.
 
 local utils = require("harness-decorators.utils")
 
@@ -18,27 +17,14 @@ local function sessions_dir()
 end
 
 local function projects_dir()
-  return (os.getenv("HOME") or "") .. "/.claude/projects"
+  return require("harness-decorators.claude").projects_dir()
 end
 
 ---Read the session file for a pid. Returns the decoded table or nil.
 ---@param pid number|string
 ---@return table?
 local function read_session(pid)
-  local f = io.open(sessions_dir() .. "/" .. tostring(pid) .. ".json", "r")
-  if not f then
-    return nil
-  end
-  local data = f:read("*a")
-  f:close()
-  if not data or data == "" then
-    return nil
-  end
-  local ok, entry = pcall(vim.json.decode, data)
-  if ok and type(entry) == "table" then
-    return entry
-  end
-  return nil
+  return utils.read_json_file(sessions_dir() .. "/" .. tostring(pid) .. ".json")
 end
 
 ---@param pid number|string
@@ -58,9 +44,8 @@ function M.status(pid, _cwd)
   return "idle"
 end
 
----Find the project jsonl for a session id (same find as the tmux script). The
---project dir is keyed by cwd, so the file can be anywhere under it; globpath's
---** matches recursively (findfile does not).
+---Find the project jsonl for a session id. The project dir is keyed by cwd, so the file
+---can be anywhere under it; globpath's ** matches recursively (findfile does not).
 ---@param session_id string
 ---@return string?
 local function find_project_jsonl(session_id)
@@ -71,8 +56,7 @@ local function find_project_jsonl(session_id)
   return nil
 end
 
----Last ai-title in a jsonl (the tmux script greps '"ai-title"' | tail -1). Scans the tail and keeps
---the last line that carries an aiTitle, so the final value wins.
+---Last ai-title in a jsonl; scans the tail so the final value wins.
 ---@param path string
 ---@return string?
 local function read_ai_title(path)

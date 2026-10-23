@@ -1,22 +1,14 @@
--- Consolidated <leader>c* keymap table for the AI harness. Each harness's
--- keymaps.lua (lua/harness-decorators/<harness>/keymaps.lua) returns its own list of
--- lazy.nvim key specs (lhs, action, desc, mode/ft); this module owns the single
--- place where they are wired in: the harness-agnostic <leader>cl switcher and the
--- terminal-open watcher trigger. lua/plugins/ai-harness.lua just registers the
--- result with vim.keymap.set, so there is exactly one keys table for the plugin.
+-- Builds and applies the <leader>c* spec list: shared keys plus the active harness's keymaps.lua.
+local utils = require("harness-decorators.utils")
+
 local M = {}
 
 local FT_AUGROUP = "AiHarnessFtKeys"
 
----The tree filetypes a <C-t> tree-add binding is scoped to. Shared by every per-harness keymaps.lua
---via tree_add_spec, so the set of recognized trees lives in one place (a new tree plugin is added
---here once, not in five files).
+---Tree filetypes the <C-t> tree-add binding is scoped to.
 local TREE_FTS = { "NvimTree", "neo-tree", "oil", "minifiles", "netrw" }
 
----The <leader>cc "continue last session" spec. Identical across every harness: it drives OUR
---per-harness float (term.open) with --continue, not a claudecode command - so it opens/continues
---THIS harness's terminal. Per-harness keymaps.lua files emit this via M.continue_spec rather than
---re-declaring the callback.
+---<leader>cc: term.open(harness, --continue).
 ---@param harness string
 ---@return table spec
 function M.continue_spec(harness)
@@ -25,13 +17,11 @@ function M.continue_spec(harness)
     function()
       require("harness-decorators.term").open(harness, { args = "--continue" })
     end,
-    desc = "Continue " .. harness:sub(1, 1):upper() .. harness:sub(2),
+    desc = "Continue " .. utils.capitalize(harness),
   }
 end
 
----The <C-t> tree-add spec: ft-scoped to the shared TREE_FTS, running the harness's own <Harness>TreeAdd
---command (registered by context-inject.make_tree_add_command). Per-harness keymaps.lua files emit this
---via M.tree_add_spec rather than re-declaring the lhs/ft/desc shape.
+---<C-t>: ft-scoped to TREE_FTS, runs the harness's <Harness>TreeAdd command.
 ---@param harness string
 ---@param tree_cmd string the user command, e.g. "ClaudeTreeAdd"
 ---@return table spec
@@ -39,15 +29,12 @@ function M.tree_add_spec(harness, tree_cmd)
   return {
     "<C-t>",
     "<cmd>" .. tree_cmd .. "<cr>",
-    desc = "Add file to " .. harness:sub(1, 1):upper() .. harness:sub(2),
+    desc = "Add file to " .. utils.capitalize(harness),
     ft = TREE_FTS,
   }
 end
 
----The <leader>cu history-picker spec: opens the telescope-history-picker over this session's recorded
---edits. Identical across every harness that has live edit-following (claude/copilot/maki); crush and pi
---have no JSONL to hang a picker off, so they omit it. Per-harness keymaps.lua files emit this via
---M.history_spec rather than re-declaring the callback.
+---<leader>cu: telescope-history-picker over this session's recorded edits. Crush omits it.
 ---@param harness string
 ---@return table spec
 function M.history_spec(harness)
@@ -61,10 +48,7 @@ function M.history_spec(harness)
   }
 end
 
----Buffer-local ft-mappings written by M.apply (bufnr -> list of {mode, lhs}).
----Tracked so M.clear can remove them: deleting the FileType augroup alone leaves
----these mappings on already-open buffers, so a stale harness's <C-t> survives a
----switch (e.g. claude -> crush) and keeps firing the old command.
+---Buffer-local ft-mappings written by M.apply (bufnr to list of {mode, lhs}), so M.clear can remove them.
 local ft_buf_maps = {}
 
 ---The harness-agnostic switcher key. Appended to every harness's spec list so it
@@ -91,8 +75,7 @@ local function agent_picker_spec()
   }
 end
 
----Toggle the statusline agent overview on/off. Harness-agnostic, like the switcher: it shows
---every live harness terminal with its work status + label, so it must survive a harness switch.
+---Toggle the statusline agent overview; survives a harness switch.
 local function agent_overview_spec()
   return {
     "<leader>co",
@@ -107,11 +90,7 @@ local function agent_overview_spec()
   }
 end
 
----The <leader>c key opens (or focuses) the floating terminal. When it creates
----the terminal buffer for the first time, this is also the moment the JSONL
----watcher starts: no terminal, no session, nothing to watch. Requiring the
----module inside the callback keeps this from loading at plugin-spec evaluation
----time (ai-harness.lua is evaluated before plugins are loaded).
+---<leader>c: start following (once), restore the work buffer, show the selected harness.
 local function focus_spec(harness)
   return {
     "<leader>c",
@@ -131,10 +110,7 @@ local function focus_spec(harness)
         focus.suppress_next_leave()
         focus.restore()
       end
-      -- Table-driven show (Task 6): instead of a single shared terminal handle - which could
-      -- re-show a parked buffer from a DIFFERENT harness ("maki shows claude") - ask the unified
-      -- park table for the selected harness and show ITS buffer. The table is the source of truth
-      -- for which harness is active; term.lua owns each per-harness float.
+      -- Show the selected harness's own float.
       local pok, park = pcall(require, "harness-decorators.park")
       if pok then
         park.show_selected()
@@ -145,7 +121,7 @@ local function focus_spec(harness)
   }
 end
 
----Register the given harness's <leader>c* keymaps (plus <leader>cl). Buffer-local
+---Register the given harness's <leader>c* keymaps (plus <leader>cl, <C-q> and <leader>co). Buffer-local
 ---ft keys are applied to already-open matching buffers and kept current via a
 ---FileType autocmd; everything else is global.
 ---@param specs table[] the consolidated spec list from M.build
@@ -186,11 +162,8 @@ function M.apply(specs)
   end
 end
 
----Remove whatever keymaps the previously-active harness registered: the FileType
----autocmd group AND the buffer-local ft-mappings M.apply wrote directly onto
----already-open buffers. Without the latter, a stale harness's <C-t> survives a
----switch (e.g. claude -> crush) on any still-open tree buffer and keeps firing the
----old command.
+---Remove the previous harness's keymaps: the FileType autocmd group and the buffer-local
+---ft-mappings M.apply wrote onto already-open buffers, so a stale <C-t> does not survive a switch.
 function M.clear()
   pcall(vim.api.nvim_del_augroup_by_name, FT_AUGROUP)
   for buf, maps in pairs(ft_buf_maps) do
@@ -204,12 +177,7 @@ function M.clear()
   ft_buf_maps = {}
 end
 
----Build the consolidated spec list for a harness: the watcher-triggering <leader>c
----focus entry (always first, so the JSONL watcher starts on open), then the harness's
----own entries, then <leader>cl and <leader>co. Returns the list; registration is
----M.apply's job. The per-harness keymaps files do NOT declare <leader>c themselves -
----focus_spec owns it, so a harness can't shadow the watcher trigger with a stale
----ClaudeCodeFocus binding.
+---focus_spec first, then the harness's keys, then the shared switch/overview keys.
 ---@param harness string
 function M.build(harness)
   local specs = {}

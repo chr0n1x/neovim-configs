@@ -64,32 +64,3 @@ describe("setup_auto_follow idempotency (Task 14)", function()
     _ = before
   end)
 end)
-
-describe("open_on_startup (open the harness float at nvim boot)", function()
-  it("starts the watcher then shows the selected harness's float", function()
-    -- Stub both collaborators so no global state (watcher pin, park selection, term instances)
-    -- is touched - the spec only verifies open_on_startup calls them, in order.
-    local decorators = require("harness-decorators")
-    local park = require("harness-decorators.park")
-    local orig_setup = decorators.setup_auto_follow
-    local orig_show = park.show_selected
-    local order = {}
-    decorators.setup_auto_follow = function()
-      table.insert(order, "setup")
-    end
-    park.show_selected = function()
-      table.insert(order, "show")
-    end
-
-    decorators.open_on_startup()
-
-    assert.are.same(
-      { "setup", "show" },
-      order,
-      "open_on_startup must start the watcher (setup_auto_follow) then show the float (park.show_selected)"
-    )
-
-    decorators.setup_auto_follow = orig_setup
-    park.show_selected = orig_show
-  end)
-end)

@@ -5,13 +5,10 @@ nmap("n", "<leader><tab>", ":Neotree reveal<CR>", { noremap = true, desc = "Neot
 
 return {
   "nvim-neo-tree/neo-tree.nvim",
-  -- branch = "v3.x",
   dependencies = {
     "nvim-lua/plenary.nvim",
     "nvim-tree/nvim-web-devicons",
     "MunifTanjim/nui.nvim",
-    -- TODO: figure out platform agnostic setup
-    -- {"3rd/image.nvim", opts = {}},
   },
   lazy = false,
   opts = {

@@ -26,6 +26,10 @@ make ci        # podman/docker busted, the ONLY reliable runner
 make -C .config/nvim ci   # equivalent when the repo root is the cwd
 ```
 
+Only one `make ci` can run at a time: a new run stops any `nvim-test` container already
+running. Run `stylua` from the config root so it picks up `.stylua.toml`. The CI container has no
+`lsqlite3`; the sqlite paths are covered by `tests/sqlite_state_spec.lua` with a fake module.
+
 **Do NOT** hand-roll headless `nvim -u init.lua` probes to "confirm" behavior. They hang on
 lazy.nvim sync and give you nothing. If you need to see a failing spec, run `make ci` and read
 the failure - it will name the exact contract that broke, which is faster than any live
@@ -44,11 +48,21 @@ work to shared modules - so a "maki bug" is usually a shared-code bug:
 
 - `lua/harness-decorators/context-inject.lua` - the send machinery: `make_add_command`
   (`<leader>ca`, has a `filereadable` gate), `make_tree_add_command` (`<C-t>`, NO gate),
-  `send_visual_selection`, `type_into_terminal` (the PTY `chansend` write), and `shorten_path`
-  (a thin delegate to utils).
+  `send_visual_selection`, `type_into_terminal` (the PTY `chansend` write into the calling
+  harness's own float), `at_mention` / `line_range` (the shared `@path#L5-9` builders), and
+  `shorten_path` (a thin delegate to utils).
 - `lua/harness-decorators/utils.lua` - `shorten_path` (the single path-display definition),
-  `get_tree_selection` (delegates to `tree-select.lua`), session/ownership helpers.
+  `get_tree_selection` (delegates to `tree-select.lua`), session/ownership helpers, and the shared
+  file/process helpers: `read_json_file`, `read_tail_lines`, `newest_by_mtime`, `sqlite_open_ro`,
+  `close_timer`, `command_for` / `provider_command`.
 - `lua/harness-decorators/tree-select.lua` - reads live neo-tree state; returns file AND dir paths.
+- `lua/util/zen.lua` - `zen.win()`, the one lookup for the open zen-mode window (and its parent).
+- `lua/util/live-previewer.lua` - the auto-refreshing telescope previewer behind the `<C-q>` picker
+  and the procs picker.
+
+**Active harness:** the harness whose float has focus is the active one (`switch.activate`):
+`<leader>c*` keymaps, `type_into_terminal`, and the edit watcher all follow it. `switch.switch`
+adds the layout and zen-focus handling for a `<C-q>` pick on top of that.
 
 **Shared-code callout:** `shorten_path` is used by all five harnesses AND the telescope history
 picker. Changing it is a cross-harness behavior change, not a fix for the one harness you're

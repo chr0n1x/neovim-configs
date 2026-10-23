@@ -61,9 +61,7 @@ function M.append(sidecar_path, raw_line)
 end
 
 ---Look up the best event from a sidecar file matching uuid + timestamp (+ optional id).
----String matching is used as a fast pre-filter before full JSON decode.
----This avoids decoding every line in the sidecar, which keeps lookup O(n)
----with a very small constant for the majority of non-matching lines.
+---Substring pre-filter before decoding.
 ---The scoring function is harness-specific (adapter `score_event`).
 ---@param sidecar_path string
 ---@param uuid string|nil

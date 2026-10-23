@@ -20,24 +20,6 @@ return {
     },
     build = ":TSUpdate",
 
-    -- TODO: not sure what to do yet
-    --
-    -- config = function ()
-    --   local configs = require("nvim-treesitter.configs")
-    --   configs.setup({
-    --     ensure_installed = {
-    --       'vim', 'lua', 'bash', 'yaml',
-    --       'json', 'hcl', 'make', 'go',
-    --       'typescript', 'markdown', 'markdown_inline',
-    --       'bash', 'ruby', 'python', 'helm'
-    --     },
-    --     sync_install = false,
-    --     highlight = { enable = true },
-    --     indent = { enable = true },
-    --     extensions_list = {'fzf'},
-    --   })
-    -- end,
-
     opts = {
       highlight = {
         enable = true,

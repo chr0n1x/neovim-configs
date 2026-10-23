@@ -1,6 +1,6 @@
--- Parses session JSONL files into normalized change events. The Claude Code and
--- maki dialects live in harness-decorators.claude and harness-decorators.maki;
--- this module only dispatches on the active harness (utils.harness).
+-- Parses session JSONL files into normalized change events. Each dialect lives in
+-- its harness adapter (harness-decorators.<name>); this module only dispatches on
+-- the active harness (utils.harness).
 local utils = require("harness-decorators.utils")
 
 local M = {}
@@ -15,10 +15,17 @@ function M.parse_tool_result(line, line_number)
   return require("harness-decorators." .. utils.harness).parse_tool_result(line, line_number)
 end
 
+---One-line preview of text for a change delta: newlines shown as a literal backslash-n, cut to 60 chars.
+---@param s string
+---@return string
+function M.snippet(s)
+  return (s:gsub("\n", "\\n"):sub(1, 60))
+end
+
 ---Build a normalized change event. This is the SINGLE definition of the change_info schema - every
---per-harness parse_tool_result constructs its result through here, so adding or renaming a field is
---one edit (the watcher's dispatch_change autocmd data and edit-jump's store_edit_source both read
---from this shape). All fields are passed explicitly; nil is a valid value for any of them.
+---per-harness parse_tool_result constructs its result through here, so adding or renaming a field is
+---one edit (the watcher's dispatch_change autocmd data and edit-jump's store_edit_source both read
+---from this shape). All fields are passed explicitly; nil is a valid value for any of them.
 ---@param file_path string? path the edit touched
 ---@param operation string "Edit"|"Create"
 ---@param starting_line? integer 1-based line the change starts at, or nil (early/line-less events)

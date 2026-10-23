@@ -197,8 +197,8 @@ describe("terminal key legend: one handler per key", function()
     assert.is_false(fake.hide_called, "<C-n> must NOT hide the float")
   end)
 
-  it("registers FocusGained and TermLeave handlers for harness terminals", function()
-    for _, event in ipairs({ "FocusGained", "TermLeave" }) do
+  it("registers a FocusGained handler for harness terminals", function()
+    for _, event in ipairs({ "FocusGained" }) do
       local autocmds = vim.api.nvim_get_autocmds({
         group = "HarnessTerminalAutoInsert",
         event = event,

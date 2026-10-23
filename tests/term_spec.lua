@@ -1007,6 +1007,80 @@ describe("term: float mouse handling, minimized bars and flash", function()
     end
   )
 
+  ---Whether harness's float is open again and its bar is gone, within the wait.
+  local function restored(harness)
+    return wait_for(function()
+      local inst = state.table[harness] and state.table[harness].inst
+      return inst ~= nil and inst.win ~= nil and vim.api.nvim_win_is_valid(inst.win) and bar_of(harness) == nil
+    end, 1500)
+  end
+
+  it(
+    "Given claude is active and maki's float has focus, When claude is picked in <C-q>, Then claude's float gets focus",
+    function()
+      sw.init("claude")
+      local claude = term.open("claude")
+      local maki = term.open("maki")
+      vim.api.nvim_set_current_win(maki.win)
+      vim.wait(100)
+      sw.switch("claude")
+      sw.after_pick()
+      assert.is_true(
+        wait_for(function()
+          return claude.win ~= nil and vim.api.nvim_get_current_win() == claude.win
+        end, 1500),
+        "picking claude must move focus to claude's float"
+      )
+    end
+  )
+
+  it(
+    "Given maki is active and focused, When the <C-q> picker closes back onto maki and claude is picked, Then claude stays active and gets focus",
+    function()
+      sw.init("maki")
+      local maki = term.open("maki")
+      -- Closing Telescope lands focus back on maki's float (its WinEnter schedules work), then the
+      -- pick switches in the same tick.
+      vim.cmd("wincmd p")
+      vim.api.nvim_set_current_win(maki.win)
+      sw.switch("claude")
+      sw.schedule_after_pick()
+      assert.is_true(
+        wait_for(function()
+          local claude = state.table.claude and state.table.claude.inst
+          return claude ~= nil and claude.win ~= nil and vim.api.nvim_get_current_win() == claude.win
+        end, 1500),
+        "picking claude must move focus to claude's float"
+      )
+      assert.are.equal("claude", sw.current(), "claude must stay the active harness")
+    end
+  )
+
+  it("Given the active harness is minimized, When it is picked in <C-q>, Then its float opens again", function()
+    sw.init("claude")
+    term.open("claude")
+    term.minimize("claude")
+    assert.is_true(wait_for(function()
+      return bar_of("claude") ~= nil
+    end))
+    sw.switch("claude")
+    sw.after_pick()
+    assert.is_true(restored("claude"), "picking the minimized active harness must restore its float")
+  end)
+
+  it("Given another harness is minimized, When it is picked in <C-q>, Then its float opens again", function()
+    sw.init("claude")
+    term.open("claude")
+    term.open("copilot")
+    term.minimize("copilot")
+    assert.is_true(wait_for(function()
+      return bar_of("copilot") ~= nil
+    end))
+    sw.switch("copilot")
+    sw.after_pick()
+    assert.is_true(restored("copilot"), "picking a minimized harness must restore its float")
+  end)
+
   it("Given a running harness float, When another harness is picked, Then the running one stays open", function()
     sw.init("claude")
     local inst = term.open("claude")
@@ -2783,5 +2857,46 @@ describe("term: float mouse handling, minimized bars and flash", function()
         )
       end
     )
+  end)
+end)
+
+describe("term: focus follows the active harness", function()
+  local sw = require("harness-decorators.switch")
+
+  local function float_for(harness)
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.b[buf].harness_terminal = harness
+    local win = vim.api.nvim_open_win(buf, false, { relative = "editor", row = 1, col = 1, width = 20, height = 5 })
+    return win, buf
+  end
+
+  local function focus_and_capture(harness, current)
+    local real_activate, real_current = sw.activate, sw.current
+    local activated = {}
+    sw.activate = function(h)
+      table.insert(activated, h)
+    end
+    sw.current = function()
+      return current
+    end
+    local start = vim.api.nvim_get_current_win()
+    local win, buf = float_for(harness)
+    vim.api.nvim_set_current_win(win)
+    vim.wait(200, function()
+      return #activated > 0
+    end, 10)
+    vim.api.nvim_set_current_win(start)
+    sw.activate, sw.current = real_activate, real_current
+    pcall(vim.api.nvim_win_close, win, true)
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    return activated
+  end
+
+  it("Given claude is active, When copilot's float gets focus, Then copilot becomes the active harness", function()
+    assert.are.same({ "copilot" }, focus_and_capture("copilot", "claude"))
+  end)
+
+  it("Given claude is active, When claude's own float gets focus, Then the active harness is left alone", function()
+    assert.are.same({}, focus_and_capture("claude", "claude"))
   end)
 end)

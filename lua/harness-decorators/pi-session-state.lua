@@ -15,7 +15,7 @@ local utils = require("harness-decorators.utils")
 
 local M = {}
 
----cwd -> session dir name (ported from the sed in the tmux script).
+---Session dir name for a cwd.
 ---@param cwd string
 ---@return string
 local function dir_name(cwd)
@@ -24,9 +24,8 @@ local function dir_name(cwd)
   return "--" .. s .. "--"
 end
 
----The *.jsonl in `dir` whose mtime best matches the terminal's open time. A fresh session started
---in a dir that already has older ones must NOT be labelled with the previous one, so we match by
---open time rather than "newest file". Returns nil when nothing is close enough.
+---The *.jsonl in `dir` whose mtime best matches the terminal's open time (see
+---utils.pick_jsonl_by_time). Returns nil when nothing is close enough.
 ---@param dir string
 ---@param opened_at number? unix time this terminal instance was opened
 ---@return string?
@@ -39,57 +38,31 @@ local function jsonl_for_open(dir, opened_at)
 end
 
 ---Most recently modified *.jsonl in a dir. Fallback when no session's mtime matches the
---terminal's open time.
+---terminal's open time.
 ---@param dir string
 ---@return string?
 local function newest_jsonl(dir)
-  local d = vim.uv.fs_opendir(dir)
-  if not d then
-    return nil
-  end
-  local best, best_m = nil, -1
-  while true do
-    local r = vim.uv.fs_readdir(d)
-    if not r or type(r) ~= "table" or #r == 0 then
-      break
-    end
-    local e = r[1]
-    if not e or not e.name then
-      break
-    end
-    if e.name:match("%.jsonl$") then
-      local st = vim.uv.fs_stat(dir .. "/" .. e.name)
-      local m = st and st.mtime.sec or -1
-      if m > best_m then
-        best, best_m = dir .. "/" .. e.name, m
-      end
+  local paths = {}
+  for name in vim.fs.dir(dir) do
+    if name:match("%.jsonl$") then
+      paths[#paths + 1] = dir .. "/" .. name
     end
   end
-  vim.uv.fs_closedir(d)
-  return best
+  return utils.newest_by_mtime(paths)
 end
 
 ---Turn state from the tail of a session file: "idle" when the last message entry is an assistant
---that stopped (stop/aborted/error), "working" for a trailing user/toolResult message or an
---assistant stopped on toolUse, nil when there is no message entry to read.
+---that stopped (stop/aborted/error), "working" for a trailing user/toolResult message or an
+---assistant stopped on toolUse, nil when there is no message entry to read.
 ---@param path string
 ---@return "working"|"idle"|nil
 local function turn_status(path)
-  local fh = io.open(path, "rb")
-  if not fh then
-    return nil
-  end
-  local size = fh:seek("end")
-  fh:seek("set", math.max(0, size - 65536))
-  local tail = fh:read("*a") or ""
-  fh:close()
-  local last
-  for line in tail:gmatch("[^\n]+") do
+  local last = utils.read_tail_lines(path, 65536, function(line)
     local ok, e = pcall(vim.json.decode, line)
     if ok and type(e) == "table" and e.type == "message" and type(e.message) == "table" then
-      last = e.message
+      return e.message
     end
-  end
+  end)
   if not last then
     return nil
   end

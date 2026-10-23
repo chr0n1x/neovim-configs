@@ -27,12 +27,6 @@ local function ensure_hl()
   end
 end
 
----Display form for a picker row: the shared ~-collapse/full shortener (utils.shorten_path),
--- passed through as-is so a row reads the same way the harness terminal would type it.
-local function shorten_path(fp)
-  return utils.shorten_path(fp)
-end
-
 ---Build a Telescope previewer that renders diffs from the sidecar file.
 local function make_previewer()
   local previewers = require("telescope.previewers")
@@ -66,8 +60,8 @@ local function make_previewer()
       local event = sidecar.lookup(e.sidecar_path, e.event_uuid, e.event_timestamp, e.event_id)
       local diff_text = sidecar.extract_diff(event)
 
-      -- Build header: date (dim) + path (bright), shortened if under CWD.
-      local short_path = shorten_path(e.file_path)
+      -- Build header: date (dim) + path (bright), ~-collapsed under $HOME.
+      local short_path = utils.shorten_path(e.file_path)
       local header_line = string.format("%s %s", e.time_str, short_path)
 
       -- Strip the delta line from diff_text if extract_diff already added it.
@@ -93,7 +87,7 @@ local function make_previewer()
       vim.api.nvim_buf_add_highlight(bufnr, 0, SIDECAR_DATE_HL, 0, 0, date_len)
       vim.api.nvim_buf_add_highlight(bufnr, 0, SIDECAR_PATH_HL, 0, date_len, -1)
 
-      -- Line 1: blank separator — skip.
+      -- Line 1: blank separator - skip.
       -- Lines 2+: diff content from extract_diff.
       -- Format is "%5d  <prefix><content>" where <prefix> is +|-|space.
       -- The prefix char is always at string position 8 (1-indexed).
@@ -131,7 +125,7 @@ function M.pick()
   local current_session = utils.extract_session_id(pinned_path) or nil
 
   -- If we can't determine the current session, fall back to the most recent
-  -- session that has records, for backwards compatibility.
+  -- session that has records.
   if not current_session then
     for sid, records in pairs(edit_jump.edit_sources) do
       if #records > 0 then
@@ -185,7 +179,7 @@ function M.pick()
       results = display_entries,
       entry_maker = function(entry)
         local line_part = entry.starting_line and ":" .. entry.starting_line or ""
-        local short_path = shorten_path(entry.file_path)
+        local short_path = utils.shorten_path(entry.file_path)
         local display = string.format("%-8s  %-19s  %s%s", entry.operation, entry.time_str, short_path, line_part)
         return {
           value = entry,

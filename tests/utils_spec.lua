@@ -6,6 +6,27 @@
 local utils = require("harness-decorators.utils")
 local ci = require("harness-decorators.context-inject")
 
+describe("utils.read_json_file", function()
+  local function write(content)
+    local path = vim.fn.tempname()
+    local f = assert(io.open(path, "w"))
+    f:write(content)
+    f:close()
+    return path
+  end
+
+  it("Given a JSON object file, Then it returns the decoded table", function()
+    assert.are.same({ a = 1, b = { "x" } }, utils.read_json_file(write('{"a":1,"b":["x"]}')))
+  end)
+
+  it("Given a missing, empty, invalid, or scalar file, Then it returns nil", function()
+    assert.is_nil(utils.read_json_file(vim.fn.tempname()))
+    assert.is_nil(utils.read_json_file(write("")))
+    assert.is_nil(utils.read_json_file(write("{not json")))
+    assert.is_nil(utils.read_json_file(write("42")))
+  end)
+end)
+
 describe("utils.is_noise", function()
   it("rejects nil and empty paths", function()
     assert.is_true(utils.is_noise(nil))
@@ -353,6 +374,50 @@ describe("context-inject.type_into_terminal: no visible terminal opens OUR float
     assert.are.equal("claude", opened_harnesses[1], "the fallback must open the HARNESS's own float (claude)")
   end)
 
+  it(
+    "Given claude's and copilot's floats both visible, When text is typed for copilot, Then it goes to copilot's terminal",
+    function()
+      for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if w ~= vim.api.nvim_get_current_win() then
+          pcall(vim.api.nvim_win_close, w, true)
+        end
+      end
+      require("harness-decorators.state")._reset()
+      local function cat_terminal()
+        vim.cmd("vsplit")
+        assert.is_true(pcall(vim.cmd, "terminal cat"), "could not open a terminal window (cat)")
+        local win = vim.api.nvim_get_current_win()
+        vim.cmd("wincmd p")
+        return make_fake(win)
+      end
+      local a, b = cat_terminal(), cat_terminal()
+      -- claude owns the terminal window find_terminal_win would pick first.
+      local first = ci.find_terminal_win()
+      local claude, copilot = a, b
+      if first == b.win then
+        claude, copilot = b, a
+      end
+      vim.b[claude.buf].terminal_job_id = 1111
+      vim.b[copilot.buf].terminal_job_id = 2222
+      local st = require("harness-decorators.state")
+      st.entry("claude").inst = claude
+      st.entry("copilot").inst = copilot
+
+      local orig_chansend = vim.fn.chansend
+      local chans = {}
+      vim.fn.chansend = function(chan, _data)
+        table.insert(chans, chan)
+        return 1
+      end
+      local result = ci.type_into_terminal("@/tmp/somefile", nil, "copilot")
+      vim.fn.chansend = orig_chansend
+      st._reset()
+
+      assert.are.equal(copilot.win, result, "the text must go to copilot's own window")
+      assert.are.same({ 2222 }, chans, "the text must be written to copilot's terminal channel")
+    end
+  )
+
   it("<C-t> tree-add with no visible terminal opens OUR float, not claudecode's", function()
     -- Same regression as <leader>ca but through the tree-add path: <C-t> in a tree buffer runs the
     -- harness's *TreeAdd command (e.g. ClaudeTreeAdd), which calls make_tree_add_command's handler ->
@@ -392,5 +457,49 @@ describe("context-inject.type_into_terminal: no visible terminal opens OUR float
     assert.is_true(ok, "ClaudeTreeAdd errored: " .. tostring(err))
     assert.are.equal(1, #opened_harnesses, "tree-add fallback must open a terminal exactly once")
     assert.are.equal("claude", opened_harnesses[1], "tree-add fallback must open the HARNESS's own float")
+  end)
+end)
+
+describe("utils.close_timer", function()
+  it("Given a running timer, When close_timer is called, Then it is stopped, closed and nil is returned", function()
+    local t = vim.uv.new_timer()
+    t:start(10000, 0, function() end)
+    assert.is_nil(utils.close_timer(t))
+    assert.is_true(t:is_closing())
+  end)
+
+  it("Given nil or an already closed timer, When close_timer is called, Then it does not error", function()
+    assert.is_nil(utils.close_timer(nil))
+    local t = vim.uv.new_timer()
+    t:close()
+    assert.is_nil(utils.close_timer(t))
+  end)
+end)
+
+describe("utils.newest_by_mtime", function()
+  local function touch(path, mtime)
+    vim.fn.writefile({}, path)
+    vim.uv.fs_utime(path, mtime, mtime)
+    return path
+  end
+
+  it("Given files with different mtimes, Then the newest; missing paths are skipped", function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, "p")
+    local old = touch(dir .. "/old", 1000)
+    local new = touch(dir .. "/new", 2000)
+    assert.are.equal(new, utils.newest_by_mtime({ old, dir .. "/gone", new }))
+    assert.is_nil(utils.newest_by_mtime({ dir .. "/gone" }))
+  end)
+
+  it("Given a stat_path_fn, Then the mtime of the mapped path counts", function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, "p")
+    touch(dir .. "/a.events", 3000)
+    touch(dir .. "/b.events", 1000)
+    local got = utils.newest_by_mtime({ dir .. "/b", dir .. "/a" }, function(p)
+      return p .. ".events"
+    end)
+    assert.are.equal(dir .. "/a", got)
   end)
 end)

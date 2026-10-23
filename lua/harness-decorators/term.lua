@@ -1,21 +1,5 @@
--- Per-harness floating terminal owner (Task 7; Task 8 consolidated the state).
---
--- The terminal layer no longer routes through claudecode.nvim's single module-level `terminal`
--- handle (the "maki shows claude" bug: one shared handle means opening a different harness can
--- re-show the previous harness's parked buffer). Instead each harness drives its OWN Snacks
--- floating terminal, and this module keeps them in the SHARED per-harness state table
--- (harness-decorators/state.lua), keyed by harness name:
---
---   state.table[harness].inst = snacks.terminal instance  -- has .buf, .win, :show(), :hide(), :buf_valid()
---
--- Snacks.terminal already keeps its OWN registry (terminals[tid]), so N independent floats work
--- natively; we just add a per-harness key on top and resolve each harness's spawn command at call
--- time from its env module (harness-decorators/<harness>/env.lua). This module is deliberately free
--- of any claudecode require - context injection (context-inject.lua) finds the visible terminal
--- window by scanning, so it never needs our handle either. The float's keys and resize animation
--- that used to live in plugins/ai-harness.lua now live here (win_opts), so the whole terminal layer
--- is owned by this module. Selection state lives on the same record (state.table[harness].selected)
--- and is managed by park.lua - this module only ever touches `.inst`. See docs/multi-agent-prd.md.
+-- Owns one Snacks floating terminal per harness, stored in state.table[harness].inst; park.lua
+-- owns the selection bit.
 local M = {}
 
 local state = require("harness-decorators.state")
@@ -27,35 +11,6 @@ local function mark_harness_buffer(harness, inst)
   if inst and inst.buf and vim.api.nvim_buf_is_valid(inst.buf) then
     vim.b[inst.buf].harness_terminal = harness
   end
-end
-
----Log a terminal-mode transition event with full guard state to a grep-able file and
--- :messages. Used by every guard in enter_terminal_mode so a stuck state (terminal in
--- terminal-normal when it should be in terminal-insert) can be diagnosed from the artifact
--- without scrolling the message history. One line per event.
-local function dbg(tag, buf, detail)
-  local line = string.format(
-    "%s | %s | cur=%s curbuf=%s buftype=%s mark=%s mode=%s normal_mode=%s",
-    os.date("%H:%M:%S"),
-    tag,
-    tostring(vim.api.nvim_get_current_win()),
-    tostring(vim.api.nvim_win_get_buf(vim.api.nvim_get_current_win())),
-    (buf and vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].buftype) or "invalid",
-    (buf and vim.api.nvim_buf_is_valid(buf) and tostring(vim.b[buf].harness_terminal)) or "invalid",
-    vim.fn.mode(1),
-    (buf and vim.api.nvim_buf_is_valid(buf) and tostring(vim.b[buf].harness_terminal_normal_mode)) or "n/a"
-  )
-  if detail then
-    line = line .. " | " .. detail
-  end
-  local log_path = "/tmp/harness-term-focus.log"
-  local f = io.open(log_path, "a")
-  if f then
-    f:write(line .. "\n")
-    f:close()
-  end
-  vim.notify(line, vim.log.levels.DEBUG)
-  return line
 end
 
 ---True while windows.nvim is animating a split resize. Its animation runs `feedkeys("ze", "nx")` in
@@ -79,49 +34,23 @@ local RESIZE_WAIT_MAX_MS = 1000
 local function enter_terminal_mode(win, buf, waited)
   waited = waited or 0
   if waited < RESIZE_WAIT_MAX_MS and windows_resize_animating() then
-    dbg("enter_terminal_mode WAIT: windows.nvim resize animating", buf)
     vim.defer_fn(function()
       enter_terminal_mode(win, buf, waited + 20)
     end, 20)
     return
   end
-  if not vim.api.nvim_win_is_valid(win) then
-    dbg("enter_terminal_mode DROPPED: win invalid", buf, "win=" .. tostring(win))
+  if
+    not vim.api.nvim_win_is_valid(win)
+    or not vim.api.nvim_buf_is_valid(buf)
+    or vim.api.nvim_get_current_win() ~= win
+    or vim.api.nvim_win_get_buf(win) ~= buf
+    or vim.bo[buf].buftype ~= "terminal"
+    or not vim.b[buf].harness_terminal
+    or vim.fn.mode(1) == "t"
+    or vim.b[buf].harness_terminal_normal_mode
+  then
     return
   end
-  if not vim.api.nvim_buf_is_valid(buf) then
-    dbg("enter_terminal_mode DROPPED: buf invalid", buf, "buf=" .. tostring(buf))
-    return
-  end
-  if vim.api.nvim_get_current_win() ~= win then
-    dbg("enter_terminal_mode DROPPED: current win mismatch", buf, "got win=" .. tostring(win))
-    return
-  end
-  if vim.api.nvim_win_get_buf(win) ~= buf then
-    dbg(
-      "enter_terminal_mode DROPPED: win shows different buf",
-      buf,
-      "win shows " .. tostring(vim.api.nvim_win_get_buf(win))
-    )
-    return
-  end
-  if vim.bo[buf].buftype ~= "terminal" then
-    dbg("enter_terminal_mode DROPPED: not a terminal buftype", buf)
-    return
-  end
-  if not vim.b[buf].harness_terminal then
-    dbg("enter_terminal_mode DROPPED: buffer lost harness mark", buf)
-    return
-  end
-  if vim.fn.mode(1) == "t" then
-    dbg("enter_terminal_mode SKIP: already in terminal mode", buf)
-    return
-  end
-  if vim.b[buf].harness_terminal_normal_mode then
-    dbg("enter_terminal_mode SKIP: user pressed <C-n>", buf)
-    return
-  end
-  dbg("enter_terminal_mode: startinsert", buf)
   vim.cmd.startinsert()
 end
 
@@ -143,8 +72,23 @@ vim.api.nvim_create_autocmd("WinEnter", {
   callback = function()
     local buf = harness_terminal_buf()
     if buf then
-      dbg("WinEnter autocmd", buf)
       schedule_enter_terminal_mode(vim.api.nvim_get_current_win(), buf)
+      -- The focused float's harness is the active one, so <leader>c* sends and edit jumps follow it.
+      -- A pending switch (M._focus_target, see M.expect_focus) wins: closing the <C-q> picker lands
+      -- focus back on the old float just before the pick moves it to the new one.
+      vim.schedule(function()
+        local harness = vim.api.nvim_buf_is_valid(buf) and vim.b[buf].harness_terminal
+        local sw = require("harness-decorators.switch")
+        local pending = M._focus_target ~= nil and M._focus_target ~= harness
+        if
+          type(harness) == "string"
+          and not pending
+          and vim.api.nvim_get_current_buf() == buf
+          and harness ~= sw.current()
+        then
+          pcall(sw.activate, harness)
+        end
+      end)
     end
   end,
 })
@@ -159,20 +103,7 @@ vim.api.nvim_create_autocmd("FocusGained", {
     -- into insert (schedule_enter_terminal_mode clears the flag, so only the deliberate re-focus
     -- paths may reset it).
     if buf and not vim.b[buf].harness_terminal_normal_mode then
-      dbg("FocusGained autocmd", buf)
       schedule_enter_terminal_mode(vim.api.nvim_get_current_win(), buf)
-    end
-  end,
-})
-
--- Log every TermLeave from a harness terminal so the debug log shows what kicks it out of terminal
--- mode.
-vim.api.nvim_create_autocmd("TermLeave", {
-  group = auto_insert_group,
-  callback = function()
-    local buf = harness_terminal_buf()
-    if buf then
-      dbg("TermLeave autocmd", buf)
     end
   end,
 })
@@ -186,29 +117,17 @@ vim.api.nvim_create_autocmd("TermLeave", {
 ---@param buf integer?
 schedule_enter_terminal_mode = function(win, buf)
   if not win or not buf then
-    dbg(
-      "schedule_enter_terminal_mode DROPPED: nil win/buf",
-      buf,
-      string.format("win=%s buf=%s", tostring(win), tostring(buf))
-    )
     return
   end
   if vim.api.nvim_buf_is_valid(buf) then
     vim.b[buf].harness_terminal_normal_mode = false
   end
-  dbg("schedule_enter_terminal_mode", buf)
   vim.schedule(function()
     enter_terminal_mode(win, buf)
   end)
 end
 
--- Exposed on M so it is stubbable from tests; the autocmds above close over the local, which is the
--- same function.
-M.schedule_enter_terminal_mode = schedule_enter_terminal_mode
-
----The shared per-harness record for `harness`, creating it if absent.
--- Every instance read/write in this module goes through the single accessor in state.lua so term
--- and park never diverge (Task 8).
+---See state.entry.
 ---@param harness string
 ---@return table entry { inst = snacks.terminal|nil, selected = boolean }
 local function entry(harness)
@@ -242,9 +161,7 @@ local function resolve_cmd(harness)
   return cmd
 end
 
----Find the window beside the floating terminal - no cleaner way exists (still). Specifically written
--- to go back to the previous window BECAUSE we're using a floating terminal. Ported verbatim from
--- plugins/ai-harness.lua so the go-back behavior is unchanged.
+---Whether this is another window with no z-index and an existing buffer path.
 local function valid_buf(win_id)
   local config = vim.api.nvim_win_get_config(win_id)
   local buf_info = vim.api.nvim_win_get_buf(win_id)
@@ -254,6 +171,7 @@ local function valid_buf(win_id)
   return not config.z and win_id ~= terminal_win and vim.uv.fs_stat(buf_name) ~= nil
 end
 
+---Focus the first eligible window in reverse tab-window order.
 local function find_base_window()
   local wins = vim.api.nvim_tabpage_list_wins(0)
 
@@ -302,9 +220,8 @@ local function zen_float_span()
   local dock_room = BAR_MIN_TEXT + 2
   local outer = math.floor(cols * ZEN_MIN_WIDTH)
   local left = cols - dock_room - outer
-  local ok, zen = pcall(require, "zen-mode.view")
-  local zwin = ok and zen.is_open and zen.is_open() and zen.win
-  if zwin and vim.api.nvim_win_is_valid(zwin) then
+  local zwin = require("util.zen").win()
+  if zwin then
     local zcfg = vim.api.nvim_win_get_config(zwin)
     -- At least as wide as the grid's widest cell: half the empty area left of zen (see M.tile).
     local grid_cell = math.floor((math.floor(zcfg.col) - 1) / 2)
@@ -322,9 +239,8 @@ local function zen_side_span()
   local span = zen_float_span()
   local right = span.col + span.width + 2 -- one past the last column
   local left = span.col
-  local ok, zen = pcall(require, "zen-mode.view")
-  local zwin = ok and zen.is_open and zen.is_open() and zen.win
-  if zwin and vim.api.nvim_win_is_valid(zwin) then
+  local zwin = require("util.zen").win()
+  if zwin then
     local zcfg = vim.api.nvim_win_get_config(zwin)
     local zborder = zcfg.border ~= nil and zcfg.border ~= "none" and not vim.tbl_isempty(zcfg.border)
     local zright = math.floor(zcfg.col) + zcfg.width + (zborder and 2 or 0) -- first column right of zen
@@ -472,8 +388,7 @@ local function retract_rect(self)
   }
 end
 
----Collapse a <C-f>-widened float (_wide) back to its saved geometry, animated. Ported from
--- ai-harness.lua; the animation helper is shared (harness-decorators/terminal-animations.lua).
+---Collapse a <C-f>-widened float (_wide) back to its saved geometry, animated.
 local function animate_collapse(self)
   if not (self._wide and self._saved_config) then
     return
@@ -525,13 +440,9 @@ local function go_back(self)
   vim.cmd("noh")
 end
 
----The <C-h> go-back key handler: jump to the window we came from while THIS harness's float stays
--- open and visible. We do NOT hide it - the float is a separate window, so its PTY keeps running
--- regardless of where focus is; hiding would make the panel disappear, which is not what "go back"
--- should do. The collapse animation (if widened via <C-f>) still runs so the float returns to its
--- normal size. With shelf mode on and the float focused at fullscreen inside tmux, it moves to the
--- tmux pane on the left instead. Exposed on M (not a local) so tests/go_back_key_spec.lua can drive
--- it with a fake instance and assert the float is NOT hidden.
+---<C-h>: return to the work window, leaving the float visible and collapsed.
+-- In shelf mode, move left in tmux only from the focused fullscreen float;
+-- otherwise do nothing.
 ---@param self table the Snacks terminal instance (has :hide(), :show())
 function M.go_back_key(self)
   if self._shelf_mode then
@@ -548,8 +459,7 @@ end
 -- so tests/go_back_key_spec.lua can drive it with a fake instance.
 ---@param self table the Snacks terminal instance (has :hide(), :show())
 function M.close_key(self)
-  -- stopinsert is a no-op unless we're in terminal insert mode; guard it so the handler is safe to
-  -- drive from a headless normal-mode context (tests) and never errors if already out of insert.
+  -- pcall: callable outside terminal-insert (tests).
   pcall(vim.cmd.stopinsert)
   if self._shelf_mode and self.win and vim.api.nvim_win_is_valid(self.win) then
     shelve(self)
@@ -578,9 +488,7 @@ function M.ensure_terminal_mode()
   end)
 end
 
----The <C-n> key handler: drop out of terminal insert mode into NORMAL mode. The float stays open and
--- focused; this is just the standard "get out of insert" for a terminal buffer (mirrors <Esc> in a
--- normal buffer, minus the close). Exposed on M so tests can drive it headless with a fake instance.
+---<C-n>: leave terminal-insert; the float stays open and focused.
 function M.normal_mode_key()
   local buf = vim.api.nvim_get_current_buf()
   if vim.b[buf].harness_terminal then
@@ -614,21 +522,13 @@ function M.fullscreen_key(self)
   resize_to(self, fullscreen_rect())
 end
 
----The shared terminal-mode key legend for EVERY harness float. This is the single home for the
--- keys shown in the float's footer - no per-harness keymap file defines or copies these; all five
--- harnesses get them from here (via win_opts), so a change to one key changes it everywhere. Each
--- entry's handler is a module-level function (close_key / normal_mode_key / go_back_key /
--- fullscreen_key / shelf_key) so tests can drive any of them headless with a fake instance. Exposed on
--- M (as M.terminal_keys) so specs can assert on the legend itself.
+---Terminal-mode keys and footer legend shared by every harness float.
 ---@return table[] keys
 function M.terminal_keys()
   return {
     {
       "<Esc>",
       function(self)
-        -- Exit insert and minimize the float into its docked bar - the PTY keeps running, so it
-        -- resumes from the bar or the next <leader>c. Distinct from <C-h>, which just moves focus
-        -- back while leaving the panel visible.
         M.close_key(self)
       end,
       mode = "t",
@@ -744,8 +644,7 @@ local function win_opts(harness)
         return k[1]
       end, M.terminal_keys())
     ),
-    -- fix_buf disabled (same reason as before): its BufWinEnter swap duplicates buffers during the
-    -- float's destroy/recreate. Every key here manages focus explicitly, so nothing relies on it.
+    -- fix_buf's BufWinEnter swap duplicates buffers when the float is recreated.
     fix_buf = false,
     resize = true,
     stack = true,
@@ -889,8 +788,7 @@ local function free_slot()
   return slot
 end
 
----Close the gaps in the dock: renumber the docked bars from the bottom in their current order and
--- animate any bar whose slot changed (or whose row is stale after an editor resize) into place.
+---Renumber docked bars 1..n in slot order (slot 1 is the top) and animate any that moved.
 local function repack_dock()
   local docked = {}
   for _, e in pairs(state.table) do
@@ -1072,14 +970,8 @@ local function watch_output(inst)
   })
 end
 
----Bring the given instance's float to the front and move focus onto it. This is what "show / refocus"
--- means for a live terminal, and it has to handle two distinct states:
---   * window still open (the common case after <C-h>, which leaves the panel visible but moves focus
---     back to the work buffer) -> use :focus(), which does nvim_set_current_win. We must NOT use
---     :show() here: when the window already exists, Snacks' show() takes an early-return path
---     (self:update()) that re-applies the window config WITHOUT moving focus, so <leader>c after a
---     <C-h> would do nothing - the exact "it doesn't refocus" bug.
---   * window closed but buffer alive (after :hide(), i.e. parked) -> use :show() to reopen it.
+---:focus() when the window exists (Snacks' :show() only re-applies config and does not move
+-- focus); :show() when only the buffer is alive.
 ---@param inst table the Snacks terminal instance (has .win, :focus(), :show())
 local function show_instance(inst)
   close_pill(inst)
@@ -1109,6 +1001,11 @@ end
 local function focus_instance(inst)
   local bar = inst._pill_win
   if bar and vim.api.nvim_win_is_valid(bar) and inst._restore_rect then
+    -- A restoring bar leaves the dock, so a re-tile's dock repack does not pull it back.
+    if inst._bar_slot then
+      inst._bar_slot = nil
+      repack_dock()
+    end
     animate_win(inst, bar, inst._restore_rect, function()
       -- The bar may have been closed (or reused) while it was growing.
       if inst._pill_win == bar then
@@ -1187,9 +1084,7 @@ function M.open(harness, opts)
     cmd = cmd .. " " .. opts.args
   end
 
-  -- Spawn in the cwd of the file being edited, so `--continue` resumes THAT project's
-  -- session, not the global getcwd()'s. Falls back to getcwd() for an unnamed/scratch
-  -- buffer (no directory to infer).
+  -- Spawn in the current file's dir so --continue picks that project; else getcwd().
   local spawn_cwd = vim.fn.getcwd()
   local cur_buf = vim.api.nvim_get_current_buf()
   local cur_file = vim.api.nvim_buf_get_name(cur_buf)
@@ -1209,10 +1104,7 @@ function M.open(harness, opts)
   follow_lifecycle(harness, inst)
   schedule_enter_terminal_mode(inst.win, inst.buf)
   e.cwd = spawn_cwd
-  -- Wall-clock open time for THIS instance. The cwd-keyed label adapters (maki/pi) match the live
-  -- session to this timestamp instead of assuming "newest file = current session" - which is wrong
-  -- the moment you start a fresh session in a dir that already has older ones. A re-show (live
-  -- branch above) deliberately does NOT touch it: the process is the same, so its open time stands.
+  -- Open time, used by cwd-keyed label adapters (utils.pick_jsonl_by_time).
   e.opened_at = os.time()
   return inst
 end
@@ -1494,13 +1386,8 @@ follow_focus = function(inst)
   })
 end
 
----Minimize the float: hide its window (the PTY keeps running, same as <Esc>) and put a one-line bar
--- with the harness title in the top-right dock. The bar opens at the float's size and position and
--- animates down into its dock slot; the terminal window itself is never resized, so the harness does
--- not redraw at every frame. Double-clicking the bar (see
--- restore_from_bar), <leader>c or a re-pick restores it through focus_instance, which closes the bar.
--- Clicking the bar's close icon ends the harness (see close_harness); clicking its restore icon
--- restores it (see bar_button).
+---Hide the float and dock a one-line bar for it in the top-right; restore via bar double-click,
+-- <leader>c or a re-pick.
 ---@param inst table the Snacks terminal instance
 minimize_float = function(inst)
   local harness
@@ -1631,10 +1518,10 @@ function M.minimize(harness)
   return true
 end
 
----Drop shelf mode and fullscreen and point the float back at its normal spot (the zen spot while zen
--- is open). Open floats move there; minimized ones restore there. With `harness`, only that harness
--- is reset and tiling stays on (re-tiling if active); without it, every harness is reset and tiling
--- ends.
+---Drop shelf mode and fullscreen for every harness and point the float back at its normal spot (the
+-- zen spot while zen is open). Open floats move there; minimized ones restore there. With `harness`,
+-- only that harness is moved, the others are left for the grid, and tiling stays on (re-tiling if
+-- active); without it, every harness is moved and tiling ends.
 ---@param harness? string
 function M.reset_layout(harness)
   if not harness then
@@ -1643,8 +1530,10 @@ function M.reset_layout(harness)
   local rect = auto_float_rect()
   for h, e in pairs(state.table) do
     local inst = e.inst
-    if inst and (not harness or h == harness) then
+    if inst then
       inst._shelf_mode, inst._shelved, inst._wide, inst._saved_config = false, false, false, nil
+    end
+    if inst and (not harness or h == harness) then
       inst.opts = inst.opts or {}
       inst.opts.row, inst.opts.col, inst.opts.width, inst.opts.height = rect.row, rect.col, rect.width, rect.height
       if inst._pill_win and vim.api.nvim_win_is_valid(inst._pill_win) then
@@ -1791,9 +1680,8 @@ retile = function(cycle)
   end, members)
 
   local focus_rect, stack
-  local ok, zen = pcall(require, "zen-mode.view")
-  local zwin = ok and zen.is_open and zen.is_open() and zen.win
-  if zwin and vim.api.nvim_win_is_valid(zwin) then
+  local zwin = require("util.zen").win()
+  if zwin then
     -- The zen spot while focused, the gap right of zen while another window has focus.
     focus_rect = focused and auto_float_rect(not pending and focused.win or nil)
     local zleft = math.floor(vim.api.nvim_win_get_config(zwin).col)
@@ -2059,9 +1947,6 @@ vim.keymap.set(drag_modes, "<2-LeftMouse>", function()
   return M.mouse.double(vim.fn.getmousepos())
 end, { expr = true, desc = "Minimize/restore harness float" })
 
----Wall-clock unix time the given harness's CURRENT terminal instance was opened, or nil when it has
---no live instance. Used by cwd-keyed label adapters to pick the session that matches this open rather
---than the most recently active one for the dir.
 ---@param harness string
 ---@return number?
 function M.opened_at(harness)
@@ -2104,9 +1989,7 @@ function M.show(harness)
   end
 end
 
----Hide the given harness's float WITHOUT killing its process. Snacks' :hide() closes only the
----window (buf=false), leaving the buffer - and therefore the PTY - alive so it keeps executing.
----This is what "parking" a harness means now: no global handle to detach, just hide this one.
+---Close the window only; the buffer and PTY keep running.
 ---@param harness string
 function M.hide(harness)
   local inst = entry(harness).inst
@@ -2125,12 +2008,8 @@ function M.is_open(harness)
   return e ~= nil and is_live(e.inst)
 end
 
----List of { harness, bufnr } for every harness with a live instance, sorted by name. Used by the
----picker previewer (via park.list) to show "what each one is doing". Entries whose instance has
----EXITED (had a buffer that died) are dropped so the picker never offers a dead process. A harness
----that was merely SELECTED but never opened (inst == nil) is NOT dropped: deleting it would wipe its
----selection bit, and then <leader>c / show_selected bails before term.open - the "<leader>c does
----nothing after opening the picker" regression. Only a genuinely-exited instance is garbage.
+---Live instances sorted by name. Records whose instance exited are dropped; never-opened records
+---(inst nil) are kept so their selection bit survives.
 ---@return { harness: string, bufnr: number }[]
 function M.list()
   local out = {}
@@ -2139,8 +2018,7 @@ function M.list()
     if is_live(e.inst) then
       table.insert(out, { harness = harness, bufnr = e.inst.buf })
     elseif e.inst ~= nil then
-      -- Had an instance that is no longer live: the process exited. Drop it. (inst == nil means
-      -- never opened - keep the record so its selection bit survives.)
+      -- exited: drop
       table.insert(dead, harness) -- collect; removing during pairs() is undefined
     end
   end

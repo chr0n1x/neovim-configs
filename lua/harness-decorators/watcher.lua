@@ -83,7 +83,7 @@ M.reap_interval_ms = 30000
 M._last_reap_ms = nil
 
 ---Track read position per JSONL session so we can scan new lines on each event.
----Each value is { byte_pos, line_count } — byte offset and the number of lines
+---Each value is { byte_pos, line_count }: byte offset and the number of lines
 ---scanned up to that point, so we know the absolute line number of new content.
 local jsonl_positions = {}
 
@@ -98,7 +98,7 @@ local function session_ownership(lines, jsonl_path)
   return adapter.session_ownership(M.nvim_cwd, lines, jsonl_path)
 end
 
----Extract the session id a set of JSONL lines declare for themselves (Option B pin key).
+---Extract the session id a set of JSONL lines declare for themselves (the pin key).
 ---Delegates to the adapter's session_id_from_lines; returns nil when the dialect carries no
 ---in-line id (copilot) so the caller falls back to path-based inference.
 ---@param lines string[]
@@ -113,10 +113,7 @@ local function declared_session_id(lines)
   return nil
 end
 
----The full set of per-session state fields, each with its "cleared" value. This is the single
---definition of what "all session state" means. jsonl_positions and pending_notifications are
---module-local (not on M) but are part of session state. `reset(opts)` below clears a named subset;
---every reset site picks the flags it needs, so a field added here is easy to audit for coverage.
+---Clear a named subset of per-session state.
 ---
 ---Flag semantics:
 ---  pin                pinned_jsonl_path / pinned_session_id / ignored_jsonl_paths / pin_notified
@@ -146,42 +143,23 @@ local function reset(opts)
   end
 end
 
----Clear the pin-state trio shared by every reset site: which session is pinned (by both path
----and declared id), which paths are confirmed foreign, and whether the pin notification has
----fired. The other fields in the full set (jsonl_positions, pending_notifications) are NOT part of
----this - they are only cleared where a full re-scan is wanted (see M.reset_all). Exposed so
----init.setup_auto_follow can reset the same trio without reaching into watcher's internals.
+---Clear pin state (path, id, ignored paths, notified flag).
 function M.reset_pin_state()
   reset({ pin = true })
 end
 
----Clear per-session RUNTIME state on a session switch (re-pin or a reset command detected in
----the pinned session). Unlike M.reset_all this does NOT clear jsonl_positions: keeping byte offsets
----avoids a missed-write-batch immediately after re-pin.
----
----It deliberately does NOT delete the old session's edit history (edit_sources[old_id]). A mid-work
----switch (/resume to a new JSONL) should not make prior diffs disappear from <leader>cu - the user
----explicitly chose "preserve old history" over wiping it. The picker shows only the CURRENTLY pinned
----session's records, so preserved history stays reachable by re-pinning the old session and never
----pollutes the current view. (M.reset_all still wipes all history on a harness switch, where nothing
----from the previous harness should leak.)
+---Clear pin + pending notifications on a session switch; keeps byte offsets and earlier sessions' edit history.
 local function reset_session_state(_old_session_id)
   reset({ pin = true, pending = true })
 end
 
----Clear ALL per-session state: every field in the set above, plus the edit-jump history for every
----session and the utils dedup cache. Used by set_harness, where nothing from the previous harness may
----leak into the new one. (reset_log is NOT part of this: the logger's cooldown cache is keyed by
----message text and is not per-session state; init.setup_auto_follow clears it separately at startup.)
+---Clear all session state on a harness switch.
 function M.reset_all()
   reset({ pin = true, pending = true, positions = true, edit_sources = true, dedup = true })
 end
 
----Pin to a JSONL session, recording both its path and its declared session id (Option B). The
----declared id - extracted from the JSONL's own header via adapter.session_id_from_lines, with a
----path-based fallback for dialects that carry no in-line id (copilot) - is what the pin locks
----on. Cwd was only ever the initial candidate filter; once a session declares an id we key on
----that id so a stale same-cwd session cannot hijack the pin.
+---Pin to a JSONL session by path and declared session id. Pins lock on the session id the JSONL
+---declares; cwd only filters candidates. Dialects with no in-line id (copilot) fall back to the path.
 ---@param jsonl_path string The JSONL to pin to.
 ---@param declared_id string? The session id declared in the JSONL lines, if any.
 local function try_pin_session(jsonl_path, declared_id)
@@ -296,12 +274,10 @@ function M.process_jsonl_write(jsonl_path)
 
   local prev = jsonl_positions[jsonl_path]
 
-  -- First encounter: check session ownership. On a match, pin. By default the
-  -- baseline is set at the current file size so preexisting content is never
-  -- replayed. An adapter may opt into recovering in-flight edits via on_pin()
-  -- (maki does, because it writes its JSONL in atomic write+rename bursts): it
-  -- returns a new baseline byte offset after scanning whatever it chose to
-  -- recover. Nil/absent hook = no recovery, baseline stays at file_size.
+  -- First encounter: check session ownership. On a match, pin with the baseline at the current file
+  -- size so preexisting content is never replayed. An adapter's on_pin hook may return a different
+  -- baseline; maki's scans the tail and feeds it to process_recovered_lines, which dispatches nothing
+  -- for maki because its parse_tool_result returns nil.
   if prev == nil then
     -- Already pinned: record position for this new file but never re-pin.
     -- The pin is locked until a reset command is detected in the pinned session.
@@ -314,9 +290,7 @@ function M.process_jsonl_write(jsonl_path)
     local ownership = session_ownership({}, jsonl_path)
     if ownership == "match" then
       utils.log("initial pin to " .. filename, vim.log.levels.DEBUG)
-      -- Pin on the id the file declares (Option B); cwd was only the initial filter. The
-      -- first-encounter path has no parsed lines yet, so fall back to path inference here -
-      -- the incremental path below upgrades to the declared id once lines arrive.
+      -- No parsed lines yet: path inference; the incremental path upgrades to the declared id.
       try_pin_session(jsonl_path, declared_session_id({}))
 
       local base = file_size
@@ -369,14 +343,11 @@ function M.process_jsonl_write(jsonl_path)
     line_count = prev_line_count + #lines,
   }
 
-  --- Session pin logic (Option B: key on the declared session id, not cwd) ----------
+  --- Session pin logic ----------
   local this_id = declared_session_id(lines)
 
   if not M.pinned_jsonl_path then
-    -- No pin yet. Cwd is only the initial candidate filter; once this file declares a session
-    -- id we lock onto THAT id, so a stale same-cwd session cannot win the pin first. We require
-    -- BOTH a cwd match AND a declared id: a cwd-matching file with no id yet stays a candidate
-    -- (retry next write) rather than claiming the pin on cwd alone.
+    -- Pin only on a cwd match that also declares an id; otherwise retry next write.
     local ownership = session_ownership(lines, jsonl_path)
     if ownership == "match" and this_id then
       utils.log("no active pin, pinning " .. filename, vim.log.levels.DEBUG)
@@ -415,7 +386,7 @@ function M.process_jsonl_write(jsonl_path)
     local old_sid = utils.extract_session_id(M.pinned_jsonl_path)
     utils.log("reset command " .. cmd .. " detected; clearing session state", vim.log.levels.INFO)
     if adapter.is_same_file_reset(cmd) then
-      -- Same JSONL continues — only clear history, keep the pin.
+      -- Same JSONL continues: clear history, keep the pin.
       jsonl_positions[jsonl_path] = { byte_pos = file_size, line_count = 0 }
       utils.reset_dedup()
       if old_sid then
@@ -433,9 +404,8 @@ function M.process_jsonl_write(jsonl_path)
   for i, line in ipairs(lines) do
     local change_info = parser.parse_tool_result(line, chunk_start_line + i - 1)
     if change_info then
-      -- Suppress duplicate autocmds for the same logical edit. The notification logic
-      -- (early vs complete tool result) runs as a before_fire hook so it fires only when
-      -- the autocmd actually fires, and in the same order as before.
+      -- The notification logic (early vs complete tool result) runs as a before_fire hook so it
+      -- fires only when the autocmd fires.
       local dedup_key = change_info.dedup_key
       local fired = dispatch_change(change_info, line, function(ci)
         local fp = ci.file_path
@@ -513,6 +483,19 @@ local function process_watcher_log()
   end
 end
 
+---Deletes the log and pidfile currently recorded on M, whichever watcher they belong to. stop()
+---clears them on shutdown paths where on_watcher_exit may never fire (uv torn down at VimLeavePre).
+local function cleanup_files()
+  if M.watcher_log then
+    pcall(vim.fn.delete, M.watcher_log)
+    M.watcher_log = nil
+  end
+  if M.watcher_pidfile then
+    pcall(vim.fn.delete, M.watcher_pidfile)
+    M.watcher_pidfile = nil
+  end
+end
+
 ---Callback when the watcher process exits. Owns all cleanup so nothing is
 ---discarded while the process is still dying: closing the handle here (not in
 ---stop()) lets libuv reap the child, which is what prevents a zombie from
@@ -527,24 +510,13 @@ local function on_watcher_exit(code)
     M.watcher_handle = nil
   end
 
-  -- Only clean up shared files if this exit belongs to the current watcher;
-  -- a late callback from an already-replaced watcher must not delete the new
-  -- one's files. stop() is responsible for clearing these on shutdown paths
-  -- where the callback may never fire (uv torn down at VimLeavePre).
-  if M.watcher_log then
-    pcall(vim.fn.delete, M.watcher_log)
-    M.watcher_log = nil
-  end
-  if M.watcher_pidfile then
-    pcall(vim.fn.delete, M.watcher_pidfile)
-    M.watcher_pidfile = nil
-  end
+  cleanup_files()
 end
 
 ---Reap watcher processes left behind by dead Neovim instances.
 ---
 ---Each nvim writes /tmp/nvim.$USER.<nvim_pid>.inotify.pid containing its
----watcher's pid. When an nvim exits cleanly, VimLeavePre -> stop() kills its
+---watcher's pid. When an nvim exits cleanly, VimLeavePre runs stop(), which kills its
 ---watcher and removes the pidfile. But a crash or `kill -9` skips VimLeavePre,
 ---so the watcher (fswatch/inotifywait) is reparented to init/launchd and keeps
 ---running forever - an orphan. This walks every pidfile, and for any whose
@@ -586,11 +558,7 @@ local function on_watcher_poll()
   -- wrap in pcall so a bad log line can't kill the poll loop
   pcall(process_watcher_log)
 
-  -- Periodically sweep orphaned watchers from crashed nvims. Reaping at start()
-  -- alone is lazy - orphans from a crash linger until the NEXT nvim launch. Any
-  -- live instance running this loop cleans them within one sweep interval, so
-  -- orphans self-heal without waiting for a fresh nvim. Throttled well below the
-  -- 500ms poll cadence to keep it cheap.
+  -- Sweep orphaned watchers from crashed nvims every reap_interval_ms.
   local now = math.floor(vim.uv.hrtime() / 1000000)
   if not M._last_reap_ms or (now - M._last_reap_ms) >= M.reap_interval_ms then
     M._last_reap_ms = now
@@ -604,36 +572,18 @@ local function which(bin)
   return #path > 0 and path or nil
 end
 
----Build the list of directories fswatch should monitor (non-recursively).
----
----Recursive fswatch (`-r`) walks and stats every node in the tree to build its
----watch list before reporting. On a large ~/.claude/projects that walk takes
----seconds, and it repeats once per Neovim instance — freezing the pane on macOS.
----
----macOS avoids this entirely: fswatch's FSEvents backend reports the whole
----SUBTREE of any watched path even without -r, so we watch just the root. That
----keeps the command short, skips the startup tree-walk, and — unlike enumerating
----subdirs at spawn time — automatically catches session dirs created AFTER nvim
----started (e.g. the first Claude session in a brand-new repo).
----
----Non-macOS fswatch (a rare fallback; Linux prefers inotifywait) uses the inotify
----backend, which is NOT subtree-recursive. There we watch the root but must let
----the caller add -r for non-flat layouts (JSONLs one dir deep). Flat layouts keep
----their JSONLs at the root, so no recursion is needed on any platform.
+---Build the list of directories fswatch should monitor. macOS FSEvents reports the subtree
+---without -r, so watch the root only. Non-macOS fswatch needs -r unless the harness is flat.
 ---@param projects_dir string
 ---@return string[] dirs, boolean recursive
 local function resolve_watch(projects_dir)
   local is_macos = vim.uv.os_uname().sysname == "Darwin"
-  -- Root-only is sufficient when either the backend reports the subtree (macOS
-  -- FSEvents) or the JSONLs already sit at the root (flat harness). Otherwise the
-  -- caller needs -r so nested per-project JSONLs are seen.
   local recursive = not is_macos and not adapter.flat_sessions_dir
   return { projects_dir }, recursive
 end
 
 ---The inotify event set. close_write+moved_to cover direct writes and the tmp+rename pattern;
---flat-session harnesses (maki, copilot) keep their JSONL open and append, so they additionally
---need modify - which is exactly the flat_sessions_dir adapters already expose for resolve_watch.
+---flat-session harnesses (maki, copilot) keep their JSONL open and append, so they also need modify.
 ---Extra events are harmless: the byte-offset dedup in process_jsonl_write makes a redundant poll
 ---a cheap no-op. Adapters may still override via inotify_events() if their needs diverge.
 local function inotify_event_set()
@@ -669,15 +619,14 @@ local function spawn_inotifywait(projects_dir, log_path)
 end
 
 ---Spawn fswatch, redirecting its stdout (bare path per line) to `log_path`.
----Watches `dirs`; passes -r only when `recursive` is set (non-macOS non-flat).
----On macOS the FSEvents backend already reports the subtree, so -r is omitted to
----avoid the expensive whole-tree watch-list build. See resolve_watch.
+---Watches `dirs`; passes -r only when `recursive` is set (see resolve_watch).
 local function spawn_fswatch(dirs, log_path, recursive)
   local fd = vim.uv.fs_open(log_path, "w", tonumber("644", 8))
   if not fd then
     return nil
   end
 
+  -- -l 0.3: coalesce writes within 300ms to avoid duplicate events.
   local args = { "-l", "0.3", "--event", "Updated" }
   if recursive then
     args[#args + 1] = "-r"
@@ -687,7 +636,6 @@ local function spawn_fswatch(dirs, log_path, recursive)
   end
 
   local handle, pid = vim.uv.spawn("fswatch", {
-    -- -l 0.3: coalesce writes within 300ms to avoid duplicate events.
     args = args,
     stdio = { nil, fd, nil },
   }, on_watcher_exit)
@@ -696,9 +644,7 @@ local function spawn_fswatch(dirs, log_path, recursive)
   return handle, pid
 end
 
----Best-effort: try inotifywait, then fswatch, and give up without ever
----starting a polling fallback. Safe to call again after stop(): restarts the
----watcher (e.g. after a live config reload).
+---Start inotifywait or fswatch; safe to call again after stop().
 function M.start()
   if M.watcher_handle then
     return
@@ -763,7 +709,7 @@ function M.start()
 
   local handle, pid
   if backend == "inotifywait" then
-    -- inotifywait handles recursion in the kernel; spawning is cheap. Unchanged.
+    -- inotifywait handles recursion in the kernel; spawning is cheap.
     handle, pid = spawn_inotifywait(projects_dir, M.watcher_log)
   else
     -- fswatch: watch the root; recursion depends on backend/layout (resolve_watch).
@@ -797,26 +743,14 @@ function M.start()
   utils.log("watcher started on " .. projects_dir, vim.log.levels.DEBUG)
 end
 
----Re-point the watcher at a different harness at runtime (called by switch.lua
----when the user swaps the backing CLI without restarting Neovim).
----
----The adapter and notify prefix are otherwise bound once at module load, so a
----plain harness swap would leave this watcher following the OLD harness's
----sessions dir, still pinned to the old session, and still firing HarnessEdit -
----which is what let edit-jump wander into files edited by another harness.
----
----This reloads the adapter, updates utils.harness, and wipes ALL per-session
----state so nothing from the previous harness can leak into the new one. The
----caller is responsible for stop()/start() around it.
+---Re-point the watcher at a different harness at runtime: reload the adapter, update
+---utils.harness, and wipe all per-session state. The caller runs stop()/start() around it.
 ---@param name string the new harness name (must match a sibling adapter dir)
 function M.set_harness(name)
   utils.harness = name
   package.loaded["harness-decorators." .. name] = nil
   adapter = require("harness-decorators." .. name)
 
-  -- Wipe ALL per-session state (pin, ownership, scan offsets, pending notifications,
-  -- every session's edit history, and the dedup cache) so nothing from the previous harness
-  -- can leak into the new one. See M.reset_all for the single definition of that set.
   M.reset_all()
 end
 
@@ -836,15 +770,7 @@ function M.stop()
   -- actually gone. Same for the handle - closing it before the child exits
   -- races libuv's reaper and leaves a zombie under a live nvim.
 
-  if M.watcher_poll_timer then
-    pcall(function()
-      M.watcher_poll_timer:stop()
-    end)
-    pcall(function()
-      M.watcher_poll_timer:close()
-    end)
-    M.watcher_poll_timer = nil
-  end
+  M.watcher_poll_timer = utils.close_timer(M.watcher_poll_timer)
   M.watcher_pid = nil
   M.watcher_backend = nil
 
@@ -865,14 +791,7 @@ function M.stop()
       end)
       M.watcher_handle = nil
     end
-    if M.watcher_log then
-      pcall(vim.fn.delete, M.watcher_log)
-      M.watcher_log = nil
-    end
-    if M.watcher_pidfile then
-      pcall(vim.fn.delete, M.watcher_pidfile)
-      M.watcher_pidfile = nil
-    end
+    cleanup_files()
   end
 end
 

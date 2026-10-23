@@ -14,22 +14,35 @@ local function find_buf_for_name(name)
   end
 end
 
+-- Stop the job behind a registered process's buffer and delete the buffer. Returns false when no
+-- buffer exists. `after` runs once the buffer is deleted.
+local function teardown(name, notify, after)
+  local buf = find_buf_for_name(name)
+  if not buf then
+    return false
+  end
+  local st = vim.b[buf] and vim.b[buf].snacks_terminal
+  local job_id = st and st.id
+  if job_id then
+    if notify then
+      vim.notify("Killing " .. name .. " ...")
+    end
+    pcall(vim.fn.jobstop, job_id)
+  end
+  buf_to_name[buf] = nil
+  attached_bufs[buf] = nil
+  vim.schedule(function()
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    if after then
+      after()
+    end
+  end)
+  return true
+end
+
 -- Kill a registered process by name. If ad-hoc, remove from registry.
 local function kill(name)
-  local buf = find_buf_for_name(name)
-  if buf then
-    local st = vim.b[buf] and vim.b[buf].snacks_terminal
-    local job_id = st and st.id
-    if job_id then
-      vim.notify("Killing " .. name .. " ...")
-      pcall(vim.fn.jobstop, job_id)
-    end
-    buf_to_name[buf] = nil
-    attached_bufs[buf] = nil
-    vim.schedule(function()
-      pcall(vim.api.nvim_buf_delete, buf, { force = true })
-    end)
-  end
+  teardown(name, true)
   -- Remove ad-hoc entries from registry so they disappear from the picker.
   if name:find("^%[ad-hoc%]") then
     registry[name] = nil
@@ -38,21 +51,11 @@ end
 
 -- Kill, clean up, and reopen a registered process by name.
 local function restart(name)
-  local buf = find_buf_for_name(name)
-  if buf then
-    local st = vim.b[buf] and vim.b[buf].snacks_terminal
-    local job_id = st and st.id
-    if job_id then
-      pcall(vim.fn.jobstop, job_id)
-    end
-    buf_to_name[buf] = nil
-    attached_bufs[buf] = nil
-    vim.schedule(function()
-      pcall(vim.api.nvim_buf_delete, buf, { force = true })
-      M.toggle(name)
-    end)
-  else
+  local function reopen()
     M.toggle(name)
+  end
+  if not teardown(name, false, reopen) then
+    reopen()
   end
 end
 
@@ -194,85 +197,29 @@ function M.prompt_new()
 end
 
 local function make_previewer()
-  local previewers = require("telescope.previewers")
-  local active_timer = nil
-
-  local function stop_timer()
-    if active_timer then
-      pcall(function()
-        active_timer:stop()
-        active_timer:close()
-      end)
-      active_timer = nil
-    end
-  end
-
-  local match_ids = {}
-  local function colorize(winid)
-    if not vim.api.nvim_win_is_valid(winid) then
-      return
-    end
-    for _, id in ipairs(match_ids) do
-      pcall(vim.fn.matchdelete, id, winid)
-    end
-    match_ids = {}
-    local patterns = {
+  return require("util.live-previewer").new({
+    patterns = {
       { "ErrorMsg", [[\c\<\(error\|fatal\|fail\(ed\)\?\|panic\)\>]] },
       { "WarningMsg", [[\c\<warn\(ing\)\?\>]] },
       { "DiagnosticOk", [[\c\<\(ok\|pass\(ed\)\?\|success\(ful\)\?\)\>]] },
       { "Comment", [[\c\<debug\>]] },
-    }
-    for _, p in ipairs(patterns) do
-      local ok, id = pcall(vim.fn.matchadd, p[1], p[2], 10, -1, { window = winid })
-      if ok then
-        match_ids[#match_ids + 1] = id
+    },
+    lines = function(entry)
+      local e = entry.value
+      local lines = {}
+      if e.desc and e.desc ~= "" then
+        vim.list_extend(lines, vim.split(e.desc, "\n"))
+        table.insert(lines, "")
       end
-    end
-  end
-
-  local function render(bufnr, winid, entry)
-    if type(bufnr) ~= "number" or not vim.api.nvim_buf_is_valid(bufnr) then
-      return
-    end
-    local e = entry.value
-    local lines = {}
-    if e.desc and e.desc ~= "" then
-      vim.list_extend(lines, vim.split(e.desc, "\n"))
-      table.insert(lines, "")
-    end
-    table.insert(lines, "$ " .. e.cmd)
-    table.insert(lines, string.rep("─", 40))
-    local term_buf = find_buf_for_name(e.name)
-    if term_buf then
-      vim.list_extend(lines, vim.api.nvim_buf_get_lines(term_buf, 0, -1, false))
-    else
-      table.insert(lines, "(not running — <enter> to start)")
-    end
-    vim.api.nvim_buf_set_option(bufnr, "modifiable", true)
-    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-    vim.api.nvim_buf_set_option(bufnr, "modifiable", false)
-    if vim.api.nvim_win_is_valid(winid) then
-      pcall(vim.api.nvim_win_set_cursor, winid, { #lines, 0 })
-      colorize(winid)
-    end
-  end
-
-  return previewers.new_buffer_previewer({
-    title = "output",
-    define_preview = function(self, entry)
-      stop_timer()
-      render(self.state.bufnr, self.state.winid, entry)
-      active_timer = vim.uv.new_timer()
-      active_timer:start(
-        500,
-        500,
-        vim.schedule_wrap(function()
-          render(self.state.bufnr, self.state.winid, entry)
-        end)
-      )
-    end,
-    teardown = function()
-      stop_timer()
+      table.insert(lines, "$ " .. e.cmd)
+      table.insert(lines, string.rep("─", 40))
+      local term_buf = find_buf_for_name(e.name)
+      if term_buf then
+        vim.list_extend(lines, vim.api.nvim_buf_get_lines(term_buf, 0, -1, false))
+      else
+        table.insert(lines, "(not running — <enter> to start)")
+      end
+      return lines
     end,
   })
 end

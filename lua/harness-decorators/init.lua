@@ -13,14 +13,7 @@ local function on_vim_leave()
   watcher.stop()
 end
 
----Startup wiring for the AI harness, called once from lua/plugins/ai-harness.lua (a lazy.nvim
---spec file that loads at startup). Registers the consolidated <leader>c* keymaps for the active
---harness, seeds switch.lua's initial state, and installs the two session-lifetime autocmds:
---WinLeave (remember the last normal-mode buffer so focus-gaining actions can restore it) and
---ColorScheme (re-define title/agent-overview highlight groups after a theme switch). The terminal
---itself is NOT opened here; the first <leader>c press opens it (and starts the JSONL watcher via
---setup_auto_follow). Kept in this module rather than ai-harness.lua so it has no plugin-spec
---dependency and tests can drive it directly.
+---Startup wiring: keymaps, switch state, WinLeave/ColorScheme autocmds, adapter on_activate.
 ---@param harness string the active harness name (NVIM_LLM_HARNESS or "claude")
 function M.setup(harness)
   keymaps.apply(keymaps.build(harness))
@@ -52,13 +45,7 @@ end
 ---reopening the terminal) does not re-register the autocmds or re-run the startup resets.
 local initialized = false
 
----Register the jump/leave autocmds exactly once per nvim session. Called from the first
----<leader>c press, i.e. when claudecode.nvim creates the floating terminal buffer for the
----first time: no terminal means no session, so there is nothing to watch until then. The
----`initialized` flag makes a later call (close + reopen the terminal in the same session) a
----no-op, so dedup/pin state established by the first session is NOT wiped - previously every
----first-<leader>c press re-ran the resets below and re-pinned, causing duplicate
----notifications/jumps. See tests/init_spec.lua.
+---Register jump/leave autocmds and start the watcher once per nvim session.
 function M.setup_auto_follow()
   if initialized then
     return
@@ -74,10 +61,7 @@ function M.setup_auto_follow()
     callback = on_vim_leave,
   })
 
-  -- Reset state. The pin-state trio goes through watcher's single definition so a field
-  -- added there is covered here too; jsonl_positions and pending_notifications are
-  -- deliberately NOT cleared at startup (a re-pin keeps byte offsets to avoid a missed
-  -- write-batch). dedup + log caches are cleared fresh each startup.
+  -- Fresh dedup/log/pin state; byte offsets are kept.
   utils.reset_dedup()
   utils.reset_log()
   watcher.reset_pin_state()
@@ -85,30 +69,14 @@ function M.setup_auto_follow()
   watcher.start()
 end
 
----Open the active harness's float on nvim startup, so the terminal is already up instead of
----waiting for the first <leader>c. Runs the same steps the <leader>c key does (start the watcher,
----restore the last normal-mode buffer underneath, then show/spawn the float). Idempotent via
----setup_auto_follow's initialized flag; a no-op when the harness has no live command to spawn.
-function M.open_on_startup()
-  M.setup_auto_follow()
-  focus.suppress_next_leave()
-  focus.restore()
-  local pok, park = pcall(require, "harness-decorators.park")
-  if pok then
-    park.show_selected()
-  end
-end
-
 ---Public accessor: always reads from the watcher module.
 function M.get_pinned_path()
   return watcher.pinned_jsonl_path
 end
 
----Display string for the lualine harness/session slot: a spinner frame when no session is
----pinned yet (a real harness will pin once one starts), the pinned session's harness-aware id
----when pinned, or an empty string for a stub harness that has no sessions dir and can never
----pin (spinning forever there is just noise). Kept here rather than in plugins/lualine.lua so
----it is a plain module function that tests/lualine_spec.lua can drive without a live statusline.
+---Display string for the lualine session slot: "0 agents" when no agent is live; robot, status dot
+---and session id for a harness with no sessions dir; a spinner while waiting for a pin; robot, dot
+---and session id once pinned.
 ---@param frame string The current spinner frame to show while waiting for a pin.
 ---@return string
 function M.session_component(frame)
@@ -127,23 +95,18 @@ function M.session_component(frame)
       local prefix = "%#lualine_x_normal#🤖%*"
       return prefix .. (status and " " .. status or "") .. " " .. identity
     end
-    -- The robot emoji carries the SECTION's highlight group (see plugins/lualine.lua), so it is the
-    -- only part of this slot that shows the section fill. The waiting spinner uses the same blue as
-    -- the working-state dot (AgentDotWorking) so "waiting" and "working" read as one color family;
-    -- everything else reverts to the statusline default background.
+    -- The robot emoji carries the section highlight (see plugins/lualine.lua), so it is the only part
+    -- of this slot with the section fill. The spinner uses the working-dot blue.
     local ok_d, display = pcall(require, "harness-decorators.agent-display")
     local spin_hl = (ok_d and display.HL_WORKING) or ""
     return "%#lualine_x_normal#🤖%*" .. " %#" .. spin_hl .. "#" .. frame .. "%*"
   end
-  -- Harness-aware session id (copilot's is the parent dir, not the filename stem). A raw
-  -- path:match("([^/]+)%.jsonl$") would show the wrong name for non-claude harnesses.
+  -- Harness-aware session id (copilot's is the parent dir, not the filename stem).
   local name = utils.extract_session_id(path)
   if not name then
     return ""
   end
-  -- The active agent's OWN status dot, next to its session id. Only shown when we actually KNOW its
-  -- state (working/idle) - an unknown state renders nothing rather than a hollow ring of noise for
-  -- the agent you're actively looking at. Polls just this harness (no live terminal -> nil).
+  -- Show working/idle status or the stale-idle ring; omit unknown status.
   local dot = ""
   local ok_d, display = pcall(require, "harness-decorators.agent-display")
   if ok_d then
@@ -152,10 +115,7 @@ function M.session_component(frame)
       dot = display.dot_for(state.status) or ""
     end
   end
-  -- The dot sits right after the robot emoji (before the session id), not at the end. The emoji
-  -- carries the SECTION's highlight group (see plugins/lualine.lua) so it is the only part of this
-  -- slot that shows the section fill; everything after it reverts to the statusline default, keeping
-  -- the dot and session id on the normal background.
+  -- Dot sits between the robot and the session id.
   local prefix = "%#lualine_x_normal#🤖%*" .. (dot ~= "" and " " .. dot or "") .. " "
   return prefix .. name
 end

@@ -1,11 +1,4 @@
--- Neo-tree file selection for the <C-t> tree-add command (all harnesses).
---
--- This is a self-contained port of the neo-tree branch of claudecode.nvim's
--- integrations.get_selected_files_from_tree, so <C-t> no longer depends on that
--- plugin. It reads the live neo-tree filesystem state directly and returns a list
--- of ABSOLUTE file/dir paths - never a buffer name or filetype like "neo-tree".
--- A regression that returned the buffer name produced "not a readable file:
--- neo-tree" when <C-t> fired in neo-tree (see tests/tree_selection_spec.lua).
+-- Selected neo-tree paths for <C-t>, always absolute (see tests/tree_selection_spec.lua).
 local M = {}
 
 ---Read the current neo-tree filesystem state, or nil if neo-tree isn't open.
@@ -19,9 +12,9 @@ local function get_state()
 end
 
 ---Collect file/dir paths from a visual selection in the neo-tree window. Uses
---neo-tree's own line-to-node mapping over the visual range (the same approach its
---copy/paste feature uses). Skips root-level nodes (depth <= 1) so selecting the
---tree root doesn't add a bare directory.
+---neo-tree's own line-to-node mapping over the visual range (the same approach its
+---copy/paste feature uses). Skips root-level nodes (depth <= 1) so selecting the
+---tree root doesn't add a bare directory.
 ---@param state table neo-tree filesystem state
 ---@return table files absolute paths
 local function from_visual(state)
@@ -61,7 +54,7 @@ local function from_visual(state)
 end
 
 ---Collect file paths from neo-tree's tracked selection (the nodes the user has
---explicitly selected via its own selection mechanism).
+---explicitly selected via its own selection mechanism).
 ---@param state table neo-tree filesystem state
 ---@return table files absolute paths
 local function from_state_selection(state)
@@ -82,7 +75,7 @@ local function from_state_selection(state)
 end
 
 ---The single node under the cursor (normal-mode fallback). Accepts both file and
---directory nodes.
+---directory nodes.
 ---@param state table neo-tree filesystem state
 ---@return string|nil path
 local function from_cursor(state)
@@ -97,7 +90,7 @@ local function from_cursor(state)
 end
 
 ---Resolve the file(s)/dir(s) selected in neo-tree. Tries, in order: a visual
---selection, neo-tree's tracked selection, then the node under the cursor.
+---selection, neo-tree's tracked selection, then the node under the cursor.
 ---@return table files list of absolute paths (empty when nothing is selected)
 ---@return string|nil err error message when no selection could be resolved
 function M.get_selected()

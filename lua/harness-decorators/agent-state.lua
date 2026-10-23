@@ -3,23 +3,19 @@
 -- (lualine etc.) without shelling out to ps/awk per pane.
 --
 -- Per-harness adapters live in harness-decorators.<name>.state and implement:
---   M.status(pid, cwd)  -> "working" | "idle" | "unknown"
---   M.label(pid, cwd)   -> string? (nil = no label; caller falls back to name)
+--   M.status(pid, cwd) returns "working" | "idle" | "unknown"
+--   M.label(pid, cwd) returns string? (nil = no label; caller falls back to name)
 -- Adapters may also set M.no_child_check = true when the child-process count is
 -- misleading for that harness (copilot spawns helper subprocesses even at rest).
 -- Returning "unknown" from status delegates to the shared child-process check.
 --
 -- Inputs are term-based: pid comes from the harness's live Snacks terminal
--- buffer, cwd from the current window. A harness with no open float simply has
--- no state entry - same as the tmux picker showing a dim dot for an empty pane.
+-- buffer, cwd from term.cwd(name) (the spawn cwd), falling back to getcwd(). A
+-- harness with no open float has no state entry.
 
 local M = {}
 
----All harnesses that have a state adapter. The candidate list is the single source of truth in
---utils.list_harnesses() (discovers sibling dirs with env.lua + keymaps.lua); we keep only those that
---also ship a state.lua, so adding a new harness dir never requires editing this file.
----Each entry also carries an `installed` boolean: whether the harness CLI's first-token command is
---found on PATH (checked via utils.command_executable against the env module's return value).
+---Harnesses with a state.lua, plus whether their CLI is on PATH.
 ---@return {name: string, installed: boolean}[]
 function M.harnesses()
   local ok_u, u = pcall(require, "harness-decorators.utils")
@@ -41,8 +37,8 @@ function M.harnesses()
   return out
 end
 
----Child-process count for a pid from one ps snapshot (same portable check the
---tmux script uses: BSD ps has no --ppid, so count ppid matches in a snapshot).
+---Child-process count for a pid from one ps snapshot (BSD ps has no --ppid, so
+---count ppid matches in the snapshot).
 ---@param snap string? Precomputed "pid ppid" lines (shared across panes)
 ---@param pid number|string
 ---@return integer
@@ -60,23 +56,47 @@ function M.child_count(snap, pid)
   return n
 end
 
----One ps snapshot per poll (not per harness), threaded into child_count.
----@return string
-function M.ps_snapshot()
+---Output lines of a shell command; empty when it cannot be started.
+---@param cmd string
+---@return string[]
+local function popen_lines(cmd)
   local out = {}
-  local h = io.popen("ps -eo pid=,ppid=")
+  local h = io.popen(cmd)
   if h then
     for line in h:lines() do
       out[#out + 1] = line
     end
     h:close()
   end
-  return table.concat(out, "\n")
+  return out
 end
 
----Status via the shared child-process check (the maki/aider/codex/... default
---in the tmux script). Tool/bash execution shows as working; pure text
---generation does not (in-process model backend, no per-pid signal).
+---The first pid in `pids` whose parent is not in `pids`: among processes sharing a pty, the
+---command Neovim launched.
+---@param pids string[]
+---@param ppid_of table<string, string>
+---@return number?
+local function topmost(pids, ppid_of)
+  local set = {}
+  for _, pid in ipairs(pids) do
+    set[pid] = true
+  end
+  for _, pid in ipairs(pids) do
+    if not set[ppid_of[pid]] then
+      return tonumber(pid)
+    end
+  end
+  return nil
+end
+
+---One ps snapshot per poll (not per harness), threaded into child_count.
+---@return string
+function M.ps_snapshot()
+  return table.concat(popen_lines("ps -eo pid=,ppid="), "\n")
+end
+
+---Status via the shared child-process check. Tool/bash execution shows as
+---working; pure text generation does not (in-process model backend, no per-pid signal).
 ---@param snap string?
 ---@param pid number|string
 ---@return "working"|"idle"
@@ -88,7 +108,7 @@ function M.child_status(snap, pid)
 end
 
 ---The terminal channel for a buffer (mode == "terminal"), or nil. The chan
---carries .pty and .argv, which is all we need to resolve the agent's pid.
+---carries .pty and .argv, which is all we need to resolve the agent's pid.
 ---@param bufnr number
 ---@return table? chan
 local function terminal_chan(bufnr)
@@ -105,7 +125,7 @@ local function terminal_chan(bufnr)
 end
 
 ---Resolve the direct process launched for a terminal pty from a portable ps snapshot. Both
----macOS (/dev/ttys006 -> ttys006) and Linux (/dev/pts/3 -> pts/3) report the pty without /dev/.
+---macOS (/dev/ttys006 as ttys006) and Linux (/dev/pts/3 as pts/3) report the pty without /dev/.
 ---When descendants share the pty, return the topmost one because that is the command Neovim
 ---launched; child-process status detection depends on counting its descendants.
 ---@param snap string? Precomputed "pid ppid tty" lines
@@ -116,19 +136,15 @@ function M.pid_from_tty_snapshot(snap, pty)
     return nil
   end
   local tty = pty:gsub("^/dev/", "")
-  local matches = {}
+  local matches, ppid_of = {}, {}
   for line in snap:gmatch("[^\n]+") do
     local pid, ppid, process_tty = line:match("^%s*(%d+)%s+(%d+)%s+(%S+)")
     if pid and process_tty == tty then
-      matches[pid] = ppid
+      matches[#matches + 1] = pid
+      ppid_of[pid] = ppid
     end
   end
-  for pid, ppid in pairs(matches) do
-    if not matches[ppid] then
-      return tonumber(pid)
-    end
-  end
-  return nil
+  return topmost(matches, ppid_of)
 end
 
 ---Resolve the agent's pid from a terminal buffer: the terminal job's pid, which is the command
@@ -149,17 +165,9 @@ function M.pid_for_buf(bufnr)
     return nil
   end
 
-  local ps = io.popen("ps -eo pid=,ppid=,tty=")
-  if ps then
-    local lines = {}
-    for line in ps:lines() do
-      lines[#lines + 1] = line
-    end
-    ps:close()
-    local pid = M.pid_from_tty_snapshot(table.concat(lines, "\n"), chan.pty)
-    if pid then
-      return pid
-    end
+  local tty_pid = M.pid_from_tty_snapshot(table.concat(popen_lines("ps -eo pid=,ppid=,tty="), "\n"), chan.pty)
+  if tty_pid then
+    return tty_pid
   end
 
   local ok_fd, fd = pcall(vim.uv.fs_open, chan.pty, "r", 438) -- O_RDONLY
@@ -173,44 +181,36 @@ function M.pid_for_buf(bufnr)
   end
   local target_rdev = st.rdev
 
-  -- pid -> ppid map for the descendant check.
+  -- pid to ppid map for the descendant check.
   local ppid_of = {}
-  local h = io.popen("ps -eo pid=,ppid=")
-  if h then
-    for line in h:lines() do
-      local pid, ppid = line:match("^(%d+)%s+(%d+)")
-      if pid then
-        ppid_of[pid] = ppid
-      end
+  for _, line in ipairs(popen_lines("ps -eo pid=,ppid=")) do
+    local pid, ppid = line:match("^(%d+)%s+(%d+)")
+    if pid then
+      ppid_of[pid] = ppid
     end
-    h:close()
   end
 
   -- Collect every process whose controlling tty is this pty. /proc/*/stat
   -- field 7 (tty_nr) is a numeric major*16M+minor, comparable to st.rdev.
   local matches = {}
-  local hp = io.popen("ls /proc 2>/dev/null | grep -E '^[0-9]+$'")
-  if hp then
-    for pid in hp:lines() do
-      local f = io.open("/proc/" .. pid .. "/stat", "r")
-      if f then
-        local data = f:read("*a")
-        f:close()
-        -- comm may contain spaces/parens, so anchor past the closing ")".
-        local rest = data:match("^%d+ %b()%s+%w%s+(.*)$")
-        if rest then
-          local fields = {}
-          for word in rest:gmatch("%S+") do
-            fields[#fields + 1] = word
-          end
-          -- rest starts at state (field 3); tty_nr is field 7 = index 4.
-          if tonumber(fields[4]) == target_rdev then
-            matches[#matches + 1] = pid
-          end
+  for _, pid in ipairs(popen_lines("ls /proc 2>/dev/null | grep -E '^[0-9]+$'")) do
+    local f = io.open("/proc/" .. pid .. "/stat", "r")
+    if f then
+      local data = f:read("*a")
+      f:close()
+      -- comm may contain spaces/parens, so anchor past the closing ")".
+      local rest = data:match("^%d+ %b()%s+%w%s+(.*)$")
+      if rest then
+        local fields = {}
+        for word in rest:gmatch("%S+") do
+          fields[#fields + 1] = word
+        end
+        -- rest starts at state (field 3); tty_nr is field 7 = index 4.
+        if tonumber(fields[4]) == target_rdev then
+          matches[#matches + 1] = pid
         end
       end
     end
-    hp:close()
   end
 
   if #matches == 0 then
@@ -219,22 +219,12 @@ function M.pid_for_buf(bufnr)
   if #matches == 1 then
     return tonumber(matches[1])
   end
-  -- Topmost match: its parent does not share the pty. This is the direct command Neovim launched;
-  -- returning a leaf would make child_count always zero while that command is doing work.
-  local matched = {}
-  for _, pid in ipairs(matches) do
-    matched[pid] = true
-  end
-  for _, pid in ipairs(matches) do
-    if not matched[ppid_of[pid]] then
-      return tonumber(pid)
-    end
-  end
-  return tonumber(matches[1])
+  -- A leaf would make child_count always zero while the launched command is doing work.
+  return topmost(matches, ppid_of) or tonumber(matches[1])
 end
 
 ---Poll one harness. Returns nil when the harness has no live terminal (no float
---opened yet, or its process exited).
+---opened yet, or its process exited).
 ---@param name string Harness name (claude|maki|copilot|crush|pi)
 ---@param snap? string Shared ps snapshot for this poll round
 ---@return {status: string, label: string?, pid: number}|nil
@@ -291,7 +281,7 @@ function M.poll(name, snap)
 end
 
 ---Poll every harness that has a live terminal. One ps snapshot for the whole
---round. Result keyed by harness name.
+---round. Result keyed by harness name.
 ---@param snap? string ps snapshot to use instead of taking one
 ---@return table<string, {status: string, label: string?, pid: number}>
 function M.all(snap)
@@ -307,7 +297,7 @@ function M.all(snap)
 end
 
 ---M.all with the ps snapshot taken off the main loop, so the poll never blocks typing. The
---callback runs on the main loop with the same result M.all returns.
+---callback runs on the main loop with the same result M.all returns.
 ---@param cb fun(all: table<string, {status: string, label: string?, pid: number}>)
 function M.all_async(cb)
   local ok = pcall(vim.system, { "ps", "-eo", "pid=,ppid=" }, { text = true }, function(res)

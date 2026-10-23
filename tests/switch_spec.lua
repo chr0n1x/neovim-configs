@@ -150,6 +150,27 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
     end
   )
 
+  it(
+    "Given a harness is active, When another harness is activated, Then it becomes active and selected without moving focus or the floats",
+    function()
+      sw.init(original_harness)
+      local real_reset = term_mod.reset_layout
+      local resets = 0
+      term_mod.reset_layout = function()
+        resets = resets + 1
+      end
+      local win = vim.api.nvim_get_current_win()
+      local ok, err = pcall(sw.activate, target)
+      term_mod.reset_layout = real_reset
+      assert.is_true(ok, tostring(err))
+      assert.are.equal(target, sw.current())
+      assert.are.equal(target, require("harness-decorators.park").selected_harness())
+      assert.are.equal(target, utils.harness, "the watcher must follow the activated harness")
+      assert.are.equal(win, vim.api.nvim_get_current_win(), "activate must not move focus")
+      assert.are.equal(0, resets, "activate must not re-lay out the floats")
+    end
+  )
+
   it("resolves the incoming harness's command from its env module at open time (Task 7)", function()
     -- The whole point of the switch under Task 7: there is no global terminal_cmd to re-point. term.lua
     -- resolves each harness's command from its env module when its float opens. So after switching to
@@ -264,7 +285,7 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
   )
 
   it(
-    "Given harnesses in shelf mode or fullscreen, When another harness is selected, Then only the selected harness loses shelf mode and fullscreen and restores to the normal spot",
+    "Given harnesses in shelf mode or fullscreen, When another harness is selected, Then every harness leaves shelf mode and fullscreen so the grid can tile them, and the selected one restores to the normal spot",
     function()
       sw.init(original_harness)
       local a = term_mod.open(original_harness)
@@ -281,8 +302,10 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
       assert.is_false(b._wide == true, "the selected harness must leave fullscreen")
       assert.is_nil(b._saved_config, "the selected harness must forget its pre-fullscreen geometry")
       assert.are_not.equal(999, b.opts.width, "the selected harness must restore to the normal spot")
-      assert.is_true(a._shelf_mode == true, "the other harness keeps shelf mode")
-      assert.are.equal(999, a.opts.width, "the other harness keeps its geometry")
+      assert.is_false(a._shelf_mode == true, "the other harness must leave shelf mode to join the grid")
+      assert.is_false(a._shelved == true, "the other harness must leave the shelf")
+      assert.is_false(a._wide == true, "the other harness must leave fullscreen")
+      assert.is_nil(a._saved_config, "the other harness must forget its pre-fullscreen geometry")
     end
   )
 end)

@@ -1,12 +1,6 @@
--- Maki harness adapter. Implements the same interface as
--- harness-decorators.claude (see docs/ai/agents/adapter-structure.md) so the
--- generic modules (watcher, jsonl-parser) are harness-agnostic.
---
--- Session identification works (the watcher pins the right session and the
--- statusline shows it). Edit-jump is NOT done here: the maki plugin
--- (lua/edit-jump-nvim.lua) fires User HarnessEdit on ToolDone, so this
--- adapter's parse_tool_result returns nil and the watcher does no edit
--- parsing for maki.
+-- Maki harness adapter (see docs/ai/agents/adapter-structure.md). Handles session
+-- identification only; the maki plugin (lua/edit-jump-nvim.lua) fires User HarnessEdit
+-- on ToolDone, so parse_tool_result returns nil.
 local utils = require("harness-decorators.utils")
 local diff = require("harness-decorators.diff")
 
@@ -46,9 +40,7 @@ end
 ---per-project subdirs), so fswatch should watch the dir itself, non-recursively.
 M.flat_sessions_dir = true
 
----Trailing bytes of a freshly-pinned session to scan on pin. Comfortably holds
----several full-file Diff records, capped so a long resumed session doesn't replay
----its whole history.
+---Trailing bytes of a freshly-pinned session to scan on pin.
 local PIN_TAIL_BYTES = 16384
 
 ---Sidecar filename for a session (without the .jsonl extension).
@@ -80,28 +72,16 @@ function M.extract_diff(ev)
   -- Maki Diff records: full-file before/after in d.Diff.
   local maki_diff = ev.d and ev.d.Diff
   if maki_diff and maki_diff.before and maki_diff.after then
-    local before_lines = vim.split(maki_diff.before, "\n", { plain = true })
-    local after_lines = vim.split(maki_diff.after, "\n", { plain = true })
-    local parts = {}
-    table.insert(parts, string.format("%d -> %d lines", #before_lines, #after_lines))
-    table.insert(parts, "") -- blank separator before diff
-    local numbered = diff.diff_full_files(maki_diff.before, maki_diff.after)
-    if #numbered > 0 then
-      table.insert(parts, table.concat(numbered, "\n"))
-    end
-    return table.concat(parts, "\n")
+    return diff.format_full(maki_diff.before, maki_diff.after)
   end
 
   return "(event matched but contains no diff data)"
 end
 
----Called by the watcher when it first pins this session. Maki writes its JSONL in
----atomic bursts (write-to-temp + rename), so an edit made in the same burst as the
----pin sits below the "current size" baseline and would be missed. Read the last
----PIN_TAIL_BYTES, recover the very last recorded event(s) via the watcher's
----process_recovered_lines, and return the byte offset to use as the new baseline
----(start of the scanned region's first complete line). Returns file_size when
----there is nothing to recover.
+---Called by the watcher when it first pins this session. Reads the last PIN_TAIL_BYTES and
+---passes them to the watcher's process_recovered_lines, then returns the byte offset of the
+---first complete line as the new baseline (file_size when there is nothing to read). The
+---recovered lines dispatch nothing, since parse_tool_result returns nil for maki.
 ---@param jsonl_path string
 ---@param file_size number
 ---@return number base_byte_offset
@@ -138,9 +118,7 @@ function M.on_pin(jsonl_path, file_size)
     return file_size
   end
 
-  -- We don't know how many lines precede the tail, so use a negative offset for
-  -- source_line (display only); dedup keys are id-based and unaffected. The
-  -- recovered events feed edit_sources and the sidecar exactly like live ones.
+  -- Negative source_line offset: the number of lines before the tail is unknown.
   require("harness-decorators.watcher").process_recovered_lines(lines, -#lines)
 
   return base
@@ -150,10 +128,8 @@ end
 -- SESSION IDENTIFICATION
 -- ==========================================================================
 
----Extract the explicit session id from Maki JSONL lines. The header line carries a top-level
----"id" field that is the session's identity (it also equals the filename stem). Used by the
----watcher to pin by session id rather than inferring from cwd (Option B). Returns nil when no
----line carries one so the caller can fall back to path-based inference.
+---Extract the session id from the header line's top-level "id" (it also equals the filename
+---stem). nil when no line carries one, so the caller falls back to the path.
 ---@param lines string[]
 ---@return string?
 function M.session_id_from_lines(lines)
@@ -176,8 +152,8 @@ function M.read_header_cwd(jsonl_path)
   return nil
 end
 
----Extract the session's cwd from maki JSONL lines, falling back to the header
----line at the TOP of the file (a tail-only scan never sees it).
+---Extract the session's cwd from a header line among `lines` (session_ownership falls back
+---to read_header_cwd, since a tail-only scan never sees the header).
 ---@param lines string[]
 ---@return string?
 function M.extract_cwd(lines)
@@ -213,7 +189,6 @@ end
 ---@param cmd string The reset command text (e.g. "/compact")
 ---@return boolean
 function M.is_same_file_reset(cmd)
-  -- /compact archives old turns into the same JSONL; the pin survives.
   return cmd == "/compact"
 end
 
@@ -235,10 +210,6 @@ end
 -- TOOL RESULT PARSING
 -- ==========================================================================
 
----Parse a maki JSONL line for file changes. Always nil: edit-jump for maki is
----handled natively by the maki plugin (lua/edit-jump-nvim.lua), which fires
----User HarnessEdit on ToolDone. The watcher still uses this adapter for session
----identification (pinning, statusline, history-picker), not for edits.
 ---@param line string The JSONL line text
 ---@param line_number? integer The 1-based line number in the JSONL file
 function M.parse_tool_result(_line, _line_number)

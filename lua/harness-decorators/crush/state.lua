@@ -1,16 +1,17 @@
--- Crush state adapter: work status + session label, ported from the tmux
---picker (crush branches of pane_status/session_label).
+-- Crush state adapter: work status + session label.
 --
 -- Status: crush keeps a per-project SQLite db at <cwd>/.crush/crush.db. Only
---assistant messages ever get a finished_at; tool/user rows stay NULL. At rest
---the newest message is a finished assistant; mid-turn it's an unfinished row
---(streaming assistant, or a tool/user row awaiting a reply). So the newest
---message having finished_at NULL = turn in progress = working. This catches
---pure text generation, which the child check misses.
+-- assistant messages ever get a finished_at; tool/user rows stay NULL. At rest
+-- the newest message is a finished assistant; mid-turn it's an unfinished row
+-- (streaming assistant, or a tool/user row awaiting a reply). So the newest
+-- message having finished_at NULL means working. This catches pure text
+-- generation, which the child check misses.
 --
 -- Label: the most recently updated session's title from the same db. Read-only
---open so the live WAL db isn't disturbed. Needs lsqlite3; without it both
---status and label degrade (status falls through to the child check).
+-- open so the live WAL db isn't disturbed. Needs lsqlite3; without it both
+-- status and label degrade (status falls through to the child check).
+
+local utils = require("harness-decorators.utils")
 
 local M = {}
 
@@ -41,51 +42,39 @@ local function db_path(cwd)
   return nil
 end
 
----Open the db read-only. Returns (db, close_fn) or (nil, err).
----@param path string
-local function open_ro(path)
-  local ok_sqlite, sqlite = pcall(require, "lsqlite3")
-  if not ok_sqlite or type(sqlite) ~= "table" then
-    return nil, "lsqlite3 not available"
+---First row of `sql` against the project db.
+---@param cwd string
+---@param sql string
+---@return table? row nil when there is no row
+---@return boolean ok false when there is no db, no lsqlite3, or the query failed
+local function first_row(cwd, sql)
+  local path = db_path(cwd)
+  if not path then
+    return nil, false
   end
-  local ok_db, db = pcall(function()
-    return sqlite.open("file:" .. path .. "?mode=ro", true)
+  local db, close = utils.sqlite_open_ro(path)
+  if not db then
+    return nil, false
+  end
+  local ok, row = pcall(function()
+    return db:prepare(sql):get()
   end)
-  if not ok_db or type(db) ~= "table" then
-    return nil, "open failed: " .. tostring(db)
+  close()
+  if not ok then
+    return nil, false
   end
-  return db,
-    function()
-      pcall(function()
-        if type(db.close) == "function" then
-          db:close()
-        end
-      end)
-    end
+  return row, true
 end
 
 ---@param pid number|string
 ---@param cwd string
 ---@return "working"|"idle"|"unknown"
 function M.status(_pid, cwd)
-  local db_path_ = db_path(cwd)
-  if not db_path_ then
-    return "unknown" -- no project db: let the child check decide
-  end
-  local db, close = open_ro(db_path_)
-  if not db then
-    return "unknown"
-  end
-  local ok, finished_null = pcall(function()
-    local stmt = db:prepare("SELECT finished_at FROM messages ORDER BY created_at DESC, rowid DESC LIMIT 1")
-    local row = stmt:get()
-    return row ~= nil and row[1] == nil
-  end)
-  close()
+  local row, ok = first_row(cwd, "SELECT finished_at FROM messages ORDER BY created_at DESC, rowid DESC LIMIT 1")
   if not ok then
-    return "unknown"
+    return "unknown" -- no project db or reader: let the child check decide
   end
-  if finished_null then
+  if row ~= nil and row[1] == nil then
     return "working"
   end
   return "idle"
@@ -95,24 +84,9 @@ end
 ---@param cwd string
 ---@return string?
 function M.label(_pid, cwd)
-  local db_path_ = db_path(cwd)
-  if not db_path_ then
-    return nil
-  end
-  local db, close = open_ro(db_path_)
-  if not db then
-    return nil
-  end
-  local ok, title = pcall(function()
-    local stmt = db:prepare("SELECT title FROM sessions ORDER BY updated_at DESC LIMIT 1")
-    local row = stmt:get()
-    if row and row[1] and row[1] ~= "" then
-      return row[1]
-    end
-    return nil
-  end)
-  close()
-  if ok and type(title) == "string" then
+  local row = first_row(cwd, "SELECT title FROM sessions ORDER BY updated_at DESC LIMIT 1")
+  local title = row and row[1]
+  if type(title) == "string" and title ~= "" then
     return title
   end
   return nil
@@ -126,17 +100,9 @@ function M.session_id(_pid, cwd)
   if not db_path_ then
     return nil
   end
-  local db, close = open_ro(db_path_)
-  if db then
-    local ok, session_id = pcall(function()
-      local stmt = db:prepare("SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1")
-      local row = stmt:get()
-      return row and row[1] or nil
-    end)
-    close()
-    if ok and type(session_id) == "string" and session_id ~= "" then
-      return session_id
-    end
+  local row = first_row(cwd, "SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1")
+  if row and type(row[1]) == "string" and row[1] ~= "" then
+    return row[1]
   end
   if vim.fn.executable("sqlite3") ~= 1 then
     notify_missing_reader()
