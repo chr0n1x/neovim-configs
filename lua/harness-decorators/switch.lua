@@ -21,6 +21,7 @@ local park = require("harness-decorators.park")
 local agent_display = require("harness-decorators.agent-display")
 
 local current_harness = nil
+local zen_was_open = false
 
 -- Work-status dot glyphs for the picker rows. Every harness that has been initialized (has a live
 -- terminal buffer) shows one before its name, colored by its work status - the same three states and
@@ -172,6 +173,37 @@ function M.after_pick()
     require("harness-decorators").setup_auto_follow()
   end)
   park.show_selected()
+  -- Restore zen mode if it was open when the picker was invoked. The
+  -- switch/show flow moves focus through non-float windows, which triggers
+  -- zen-mode's WinEnter close. Re-open it on the now-current (terminal)
+  -- window so the user stays in zen.
+  if zen_was_open then
+    zen_was_open = false
+    -- zen-mode open() runs :norm! zz which errors from terminal mode.
+    -- After show_selected we are in terminal mode, so wait for the
+    -- user to leave it (ModeChanged t->n) before reopening zen.
+    local function try_open_zen()
+      pcall(function()
+        local view = require("zen-mode.view")
+        if not view.is_open() then
+          require("zen-mode").open()
+        end
+      end)
+    end
+    vim.schedule(function()
+      if vim.fn.mode(1) == "n" then
+        try_open_zen()
+      else
+        local augroup = vim.api.nvim_create_augroup("ZenPickRestore", { clear = true })
+        vim.api.nvim_create_autocmd("ModeChanged", {
+          group = augroup,
+          pattern = "t->*",
+          once = true,
+          callback = try_open_zen,
+        })
+      end
+    end)
+  end
 end
 
 function M.schedule_after_pick()
@@ -408,6 +440,12 @@ function M.pick()
     vim.notify("harness: telescope.nvim not available", vim.log.levels.ERROR)
     return
   end
+  -- Remember whether zen mode is open so after_pick can restore it: the
+  -- park/minimize/show dance in M.switch briefly moves focus to a non-float
+  -- window, which closes zen-mode via its WinEnter autocmd.
+  zen_was_open = pcall(function()
+    return require("zen-mode.view").is_open() == true
+  end)
   local finders = require("telescope.finders")
   local conf = require("telescope.config").values
   local actions = require("telescope.actions")

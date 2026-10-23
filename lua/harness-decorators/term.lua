@@ -276,15 +276,42 @@ local BAR_HEIGHT = 3
 local BAR_MIN_TEXT = 18
 
 -- Default float size and spot, as fractions of the editor.
-local FLOAT_ROW, FLOAT_COL, FLOAT_WIDTH, FLOAT_HEIGHT = 0.01, 0.58, 0.35, 0.9
+local FLOAT_ROW, FLOAT_WIDTH, FLOAT_HEIGHT = 0, 0.30, 0.90
+local ZEN_WIDTH = 0.20
 
----The default float column: the usual 58% of the editor, moved left when that would put the float's
--- right border under the minimized-bar dock in the top-right corner (narrow editors).
+---The default float column: 2 cols left of the right edge, shifted further left when that would
+-- put the float under the minimized-bar dock (top-right).
 ---@return integer col
 local function default_float_col()
   local cols = vim.o.columns
+  local w = math.floor(cols * FLOAT_WIDTH)
+  local col = cols - w - 2
   local dock_left = cols - (BAR_MIN_TEXT + 2)
-  return math.max(0, math.min(math.floor(cols * FLOAT_COL), dock_left - 1 - math.floor(cols * FLOAT_WIDTH)))
+  col = math.min(col, dock_left - 1 - w)
+  return math.max(0, col)
+end
+
+---Center the harness float in the right empty space when zen mode is active:
+-- the gap between the zen window's right border and the editor's right edge.
+---@return integer col
+local function zen_float_col()
+  local cols = vim.o.columns
+  local w = math.floor(cols * ZEN_WIDTH)
+  local ok, zen = pcall(require, "zen-mode.view")
+  if not ok or not zen.is_open or not zen.is_open() then
+    return default_float_col()
+  end
+  local zwin = zen.win
+  if not zwin or not vim.api.nvim_win_is_valid(zwin) then
+    return default_float_col()
+  end
+  local zcfg = vim.api.nvim_win_get_config(zwin)
+  local zright = zcfg.col + zcfg.width -- zen window right border (inclusive)
+  local space_left = cols - zright - 1 -- cells from zen right edge to editor right edge
+  if space_left < w then
+    return math.max(0, cols - w - 2)
+  end
+  return zright + math.floor((space_left - w) / 2)
 end
 
 ---The default right-side float's rect, resolved the way Snacks resolves win_opts: a fractional size
@@ -407,7 +434,16 @@ end
 -- normal size. Exposed on M (not a local) so tests/go_back_key_spec.lua can drive it with a fake
 -- instance and assert the float is NOT hidden.
 ---@param self table the Snacks terminal instance (has :hide(), :show())
+local zen_active -- forward declaration; defined below
+local minimize_float -- forward declaration; defined below
+
 function M.go_back_key(self)
+  -- When zen mode is active, minimize instead of collapse: the docked bar is
+  -- a float, so zen mode's WinEnter autocmd doesn't close zen mode.
+  if zen_active() then
+    minimize_float(self)
+    return
+  end
   local focus = require("harness-decorators.focus")
   focus.suppress_next_leave()
   animate_collapse(self)
@@ -608,8 +644,15 @@ local function win_opts(harness)
     keys = M.terminal_keys(),
 
     row = FLOAT_ROW,
-    col = default_float_col,
-    width = FLOAT_WIDTH,
+    col = function()
+      if zen_active() then
+        return zen_float_col()
+      end
+      return default_float_col()
+    end,
+    width = function()
+      return zen_active() and ZEN_WIDTH or FLOAT_WIDTH
+    end,
     height = FLOAT_HEIGHT,
   }
 end
@@ -667,6 +710,15 @@ local function animate_win(inst, win, to, on_done)
     })
   end)
   inst._bar_anim:run()
+end
+
+---True when zen mode is currently open. M._zen_active_override lets specs force the value.
+zen_active = function()
+  if M._zen_active_override ~= nil then
+    return M._zen_active_override
+  end
+  local ok, zen = pcall(require, "zen-mode.view")
+  return ok and zen.is_open and zen.is_open() and true or false
 end
 
 ---Minimized bars dock in the top-right corner of the editor and stack downward: slot 1 sits at the
@@ -1244,7 +1296,7 @@ end
 -- Clicking the bar's close icon ends the harness (see close_harness); clicking its restore icon
 -- restores it (see bar_button).
 ---@param inst table the Snacks terminal instance
-local function minimize(inst)
+minimize_float = function(inst)
   local harness
   for h, e in pairs(state.table) do
     if e.inst == inst then
@@ -1363,8 +1415,26 @@ function M.minimize(harness)
   if not (is_live(inst) and inst.win and vim.api.nvim_win_is_valid(inst.win)) then
     return false
   end
-  minimize(inst)
+  minimize_float(inst)
   return true
+end
+
+---Resize and reposition all open harness floats for zen mode (narrower, shifted 2 cols left)
+-- or back to the default when zen mode closes. Called from the zen-mode on_open/on_close.
+---@param narrow boolean
+function M.set_zen_width(narrow)
+  local cols = vim.o.columns
+  local w = narrow and ZEN_WIDTH or FLOAT_WIDTH
+  local width = math.floor(cols * w)
+  local col = narrow and zen_float_col() or default_float_col()
+  for _, e in pairs(state.table) do
+    local inst = e.inst
+    if inst and inst.win and vim.api.nvim_win_is_valid(inst.win) then
+      pcall(vim.api.nvim_win_set_config, inst.win, { width = width, col = col })
+      inst.opts.width = w
+      inst.opts.col = col
+    end
+  end
 end
 
 ---Which of a minimized bar's buttons the given 1-based screen column hits: "restore" for the restore
@@ -1523,7 +1593,7 @@ function M.mouse.double(mouse)
       press_consumed = true
       vim.schedule(function()
         if on_minimize then
-          minimize(inst)
+          minimize_float(inst)
         else
           M.shelf_key(inst)
         end

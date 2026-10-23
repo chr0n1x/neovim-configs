@@ -17,8 +17,11 @@ nmap("n", "<leader>o", ":tabe<space>", { noremap = true, desc = "Tab; open" })
 
 -- editor visuals & "ergonomics"
 nmap("n", "<leader>M", ":set mouse!<CR>", { noremap = true, desc = "Toggle mouse mode." })
-nmap("n", "<leader>z", ":set scrolloff=3<CR>", { noremap = true, desc = "Do not center cursor on screen." })
-nmap("n", "<leader>Z", ":set scrolloff=999<CR>", { noremap = true, desc = "Center cursor on screen." })
+vim.api.nvim_create_user_command("ToggleScrolloff", function()
+  vim.opt.scrolloff = vim.opt.scrolloff == 999 and 3 or 999
+  vim.cmd("normal! <C-l>")
+end, {})
+nmap("n", "<leader>Z", "<cmd>ToggleScrolloff<CR>", { noremap = true, desc = "Toggle center cursor on screen." })
 
 -- misc
 nmap("n", "<leader>w", ":w<CR>", { noremap = true, desc = "Save buff." })

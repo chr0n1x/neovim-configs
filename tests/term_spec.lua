@@ -1303,7 +1303,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
     assert.is_true(redocked, "the bar should move to the new last column")
   end)
 
-  it("Given a wide editor, When a harness float opens, Then it keeps its usual 58% column", function()
+  it("Given a wide editor, When a harness float opens, Then it is right-anchored to the editor edge", function()
     local cols = vim.o.columns
     vim.o.columns = 343
     local win_opts
@@ -1321,7 +1321,8 @@ describe("term: float mouse handling, minimized bars and flash", function()
       return inst
     end
     vim.o.columns = cols
-    assert.are.equal(math.floor(343 * 0.58), col, "the float only moves when it would reach the dock")
+    -- 2 left of right edge = 239, dock avoidance pushes to 220.
+    assert.are.equal(220, col, "the float is pushed left to clear the minimized-bar dock")
   end)
 
   it(
@@ -1393,14 +1394,17 @@ describe("term: float mouse handling, minimized bars and flash", function()
     }
   end
 
-  ---The default right-side float as Snacks places it from win_opts (row 0.01, col default, 35% x 90%).
+  ---The default right-side float as Snacks places it from win_opts (row 0, 2 cols left of right
+  -- edge with dock avoidance, 30% x 90%).
   local function default_rect()
     local lines, cols = vim.o.lines, vim.o.columns
+    local w = math.floor(cols * 0.30)
+    local col = math.max(0, math.min(cols - w - 2, cols - 20 - 1 - w))
     return {
-      row = math.floor(lines * 0.01) + 1,
-      col = math.max(0, math.min(math.floor(cols * 0.58), cols - 20 - 1 - math.floor(cols * 0.35))),
-      width = math.floor(cols * 0.35) - 2,
-      height = math.floor(lines * 0.9) - 2,
+      row = math.floor(lines * 0) + 1,
+      col = col,
+      width = w - 2,
+      height = math.floor(lines * 0.90) - 2,
     }
   end
 
@@ -1734,4 +1738,50 @@ describe("term: float mouse handling, minimized bars and flash", function()
       assert.is_nil(inst._shelved)
     end
   )
+
+  describe("term.set_zen_width", function()
+    it("narrows all open floats to 20% of columns when narrow=true", function()
+      local inst = term.open("claude")
+      local cols = vim.o.columns
+      term.set_zen_width(true)
+      local cfg = vim.api.nvim_win_get_config(inst.win)
+      local w = math.floor(cols * 0.20)
+      assert.are.equal(w, cfg.width)
+      assert.are.equal(0.20, inst.opts.width)
+    end)
+
+    it("restores all open floats to the default width and col when narrow=false", function()
+      local inst = term.open("claude")
+      term.set_zen_width(true)
+      term.set_zen_width(false)
+      local cols = vim.o.columns
+      local cfg = vim.api.nvim_win_get_config(inst.win)
+      local w = math.floor(cols * 0.30)
+      local dock_left = cols - 20
+      local expected_col = math.max(0, math.min(cols - w - 2, dock_left - 1 - w))
+      assert.are.equal(w, cfg.width, "width should be back to FLOAT_WIDTH")
+      assert.are.equal(expected_col, cfg.col)
+      assert.are.equal(0.30, inst.opts.width)
+    end)
+
+    it("resizes every open harness float, not just the active one", function()
+      local a = term.open("claude")
+      term.open("maki")
+      local cols = vim.o.columns
+      term.set_zen_width(true)
+      assert.are.equal(math.floor(cols * 0.20), vim.api.nvim_win_get_config(a.win).width)
+      local maki_entry = state.table["maki"]
+      assert.are.equal(math.floor(cols * 0.20), vim.api.nvim_win_get_config(maki_entry.inst.win).width)
+    end)
+
+    it("ignores harnesses with no live window", function()
+      local inst = term.open("claude")
+      -- Minimize the float so its window is replaced by a bar.
+      term.minimize("claude")
+      -- set_zen_width must not error on the minimized harness.
+      term.set_zen_width(true)
+      -- The bar is still there and the float is still minimized.
+      assert.is_not_nil(inst._pill_win)
+    end)
+  end)
 end)
