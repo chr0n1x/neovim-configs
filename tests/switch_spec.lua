@@ -63,7 +63,7 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
       return make_fake(vim.api.nvim_create_buf(false, true))
     end
 
-    -- Capture vim.notify so we can assert on the background/foreground message.
+    -- Capture vim.notify so specs can assert on what a switch reports.
     orig_notify = vim.notify
     notes = {}
     vim.notify = function(msg, level)
@@ -127,52 +127,28 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
     )
   end)
 
-  it("notifies 'backgrounded X, foregrounded Y' when a live terminal was parked", function()
-    -- Force a known starting harness so this test is independent of prior tests' switch state.
-    local start_harness = original_harness
-    sw.init(start_harness)
-    assert.is_not.equal(target, start_harness, "test setup: target must differ from the starting harness")
-
-    -- The outgoing harness has a live float, so park.park backgrounds it.
-    term_mod.open(start_harness)
-
-    pcall(sw.switch, target)
-
-    local saw_bg_fg = false
-    for _, n in ipairs(notes) do
-      if n.msg:find("backgrounded " .. start_harness, 1, true) and n.msg:find("foregrounded " .. target, 1, true) then
-        saw_bg_fg = true
+  it(
+    "Given a live outgoing harness, When switching to another harness, Then no switch notification is shown",
+    function()
+      sw.init(original_harness)
+      term_mod.open(original_harness)
+      for i in pairs(notes) do
+        notes[i] = nil
       end
+
+      pcall(sw.switch, target)
+
+      local shown = vim.tbl_filter(function(n)
+        return n.msg:find("^harness: ") ~= nil
+      end, notes)
+      assert.are.same(
+        {},
+        vim.tbl_map(function(n)
+          return n.msg
+        end, shown)
+      )
     end
-    local msgs = table.concat(
-      vim.tbl_map(function(n)
-        return n.msg
-      end, notes),
-      " | "
-    )
-    assert.is_true(saw_bg_fg, "expected a 'backgrounded X, foregrounded Y' notify; got: " .. msgs)
-  end)
-
-  it("falls back to 'switched to Y' when the outgoing harness had no live terminal", function()
-    -- Force a known starting harness so this test is independent of prior tests' switch state.
-    local start_harness = original_harness
-    sw.init(start_harness)
-    assert.is_not.equal(target, start_harness, "test setup: target must differ from the starting harness")
-
-    -- No live terminal on the outgoing harness (never opened): park records nothing, so the notify is
-    -- a plain switch, not a background/foreground claim.
-    require("harness-decorators.state")._reset()
-
-    pcall(sw.switch, target)
-
-    local saw_plain = false
-    for _, n in ipairs(notes) do
-      if n.msg:find("switched to " .. target, 1, true) then
-        saw_plain = true
-      end
-    end
-    assert.is_true(saw_plain, "expected a plain 'switched to Y' notify when nothing was backgrounded")
-  end)
+  )
 
   it("resolves the incoming harness's command from its env module at open time (Task 7)", function()
     -- The whole point of the switch under Task 7: there is no global terminal_cmd to re-point. term.lua
@@ -260,4 +236,53 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
 
     sw.after_pick = original
   end)
+
+  it(
+    "Given zen mode is open, When a new harness is selected, Then focus is on the zen window so zen mode stays open",
+    function()
+      sw.init(original_harness)
+      local zen_view = require("zen-mode.view")
+      local real_is_open, real_win = zen_view.is_open, zen_view.win
+      local zen_win = vim.api.nvim_open_win(vim.api.nvim_create_buf(false, true), false, {
+        relative = "editor",
+        row = 1,
+        col = 1,
+        width = 20,
+        height = 5,
+      })
+      zen_view.win = zen_win
+      zen_view.is_open = function()
+        return true
+      end
+      local ok, err = pcall(sw.switch, target)
+      local cur = vim.api.nvim_get_current_win()
+      zen_view.is_open, zen_view.win = real_is_open, real_win
+      pcall(vim.api.nvim_win_close, zen_win, true)
+      assert.is_true(ok, tostring(err))
+      assert.are.equal(zen_win, cur, "a normal window getting focus makes zen-mode close itself")
+    end
+  )
+
+  it(
+    "Given harnesses in shelf mode or fullscreen, When another harness is selected, Then only the selected harness loses shelf mode and fullscreen and restores to the normal spot",
+    function()
+      sw.init(original_harness)
+      local a = term_mod.open(original_harness)
+      local b = term_mod.open(target)
+      for _, inst in ipairs({ a, b }) do
+        inst.opts = { row = 3, col = 12, width = 999, height = 63 }
+        inst._shelf_mode, inst._shelved, inst._wide = true, true, true
+        inst._saved_config = { auto = false, row_ratio = 0, col_ratio = 0, width_ratio = 1, height_ratio = 1 }
+      end
+      local ok, err = pcall(sw.switch, target)
+      assert.is_true(ok, tostring(err))
+      assert.is_false(b._shelf_mode == true, "the selected harness must leave shelf mode")
+      assert.is_false(b._shelved == true, "the selected harness must leave the shelf")
+      assert.is_false(b._wide == true, "the selected harness must leave fullscreen")
+      assert.is_nil(b._saved_config, "the selected harness must forget its pre-fullscreen geometry")
+      assert.are_not.equal(999, b.opts.width, "the selected harness must restore to the normal spot")
+      assert.is_true(a._shelf_mode == true, "the other harness keeps shelf mode")
+      assert.are.equal(999, a.opts.width, "the other harness keeps its geometry")
+    end
+  )
 end)

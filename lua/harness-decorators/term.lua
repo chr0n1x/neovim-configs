@@ -277,7 +277,7 @@ local BAR_MIN_TEXT = 18
 
 -- Default float size and spot, as fractions of the editor.
 local FLOAT_ROW, FLOAT_WIDTH, FLOAT_HEIGHT = 0, 0.30, 0.90
-local ZEN_WIDTH = 0.25
+local ZEN_MIN_WIDTH, ZEN_HEIGHT = 0.20, 0.70
 
 ---The default float column: 2 cols left of the right edge, shifted further left when that would
 -- put the float under the minimized-bar dock (top-right).
@@ -291,36 +291,58 @@ local function default_float_col()
   return math.max(0, col)
 end
 
----Center the harness float in the right empty space when zen mode is active:
--- the gap between the zen window's right border and the editor's right edge.
----@return integer col
-local function zen_float_col()
+---The harness float's columns while zen mode is open: starting a quarter of the way into the zen
+-- window and 10% wider than it (at least as wide as the tiling grid's widest cell), shifted left
+-- when needed so the minimized-bar dock fits on its right; on an editor too small for both it
+-- overlaps the dock. With no zen window to measure, ZEN_MIN_WIDTH of the editor ending where the
+-- dock begins.
+---@return { col: integer, width: integer } width excludes the border
+local function zen_float_span()
   local cols = vim.o.columns
-  local w = math.floor(cols * ZEN_WIDTH)
+  local dock_room = BAR_MIN_TEXT + 2
+  local outer = math.floor(cols * ZEN_MIN_WIDTH)
+  local left = cols - dock_room - outer
   local ok, zen = pcall(require, "zen-mode.view")
-  if not ok or not zen.is_open or not zen.is_open() then
-    return default_float_col()
+  local zwin = ok and zen.is_open and zen.is_open() and zen.win
+  if zwin and vim.api.nvim_win_is_valid(zwin) then
+    local zcfg = vim.api.nvim_win_get_config(zwin)
+    -- At least as wide as the grid's widest cell: half the empty area left of zen (see M.tile).
+    local grid_cell = math.floor((math.floor(zcfg.col) - 1) / 2)
+    outer = math.max(grid_cell, zcfg.width + math.floor(zcfg.width / 10))
+    left = math.floor(zcfg.col) + math.floor(zcfg.width / 4)
   end
-  local zwin = zen.win
-  if not zwin or not vim.api.nvim_win_is_valid(zwin) then
-    return default_float_col()
+  left = math.max(0, math.min(left, cols - dock_room - outer))
+  return { col = left, width = outer - 2 }
+end
+
+---The unfocused harness float's columns while zen mode is open: the zen spot shrunk from the left,
+-- so it keeps the zen spot's right edge and starts one column right of the zen window.
+---@return { col: integer, width: integer } width excludes the border
+local function zen_side_span()
+  local span = zen_float_span()
+  local right = span.col + span.width + 2 -- one past the last column
+  local left = span.col
+  local ok, zen = pcall(require, "zen-mode.view")
+  local zwin = ok and zen.is_open and zen.is_open() and zen.win
+  if zwin and vim.api.nvim_win_is_valid(zwin) then
+    local zcfg = vim.api.nvim_win_get_config(zwin)
+    local zborder = zcfg.border ~= nil and zcfg.border ~= "none" and not vim.tbl_isempty(zcfg.border)
+    local zright = math.floor(zcfg.col) + zcfg.width + (zborder and 2 or 0) -- first column right of zen
+    -- Leave room for the border and one text column.
+    left = math.max(left, math.min(zright + 1, right - 3))
   end
-  local zcfg = vim.api.nvim_win_get_config(zwin)
-  local zright = zcfg.col + zcfg.width -- zen window right border (inclusive)
-  local space_left = cols - zright - 1 -- cells from zen right edge to editor right edge
-  if space_left < w then
-    return math.max(0, cols - w - 2)
-  end
-  return zright + math.floor((space_left - w) * 0.25)
+  return { col = left, width = right - left - 2 }
 end
 
 ---The default right-side float's rect, resolved the way Snacks resolves win_opts: a fractional size
--- includes the border and a fractional row is counted below the top border.
+-- includes the border, a fractional row strictly between 0 and 1 is counted below the top border,
+-- and any other row is used as-is.
 ---@return { row: integer, col: integer, width: integer, height: integer }
 local function default_float_rect()
   local lines, cols = vim.o.lines, vim.o.columns
+  local row = (FLOAT_ROW > 0 and FLOAT_ROW < 1) and math.floor(lines * FLOAT_ROW) + 1 or FLOAT_ROW
   return {
-    row = math.floor(lines * FLOAT_ROW) + 1,
+    row = row,
     col = default_float_col(),
     width = math.floor(cols * FLOAT_WIDTH) - 2,
     height = math.floor(lines * FLOAT_HEIGHT) - 2,
@@ -330,27 +352,40 @@ end
 -- <C-f> fullscreen padding, as fractions of the editor.
 local FULL_ROW_PAD, FULL_COL_PAD = 0.05, 0.1
 
----The <C-f> fullscreen rect for the current editor size.
+local zen_active -- forward declaration; defined below
+local retile -- forward declaration; defined below
+local scroll_to_bottom -- forward declaration; defined below
+
+---The <C-f> fullscreen rect for the current editor size. While zen is open it keeps the zen float's
+-- width, centered.
 ---@return { row: integer, col: integer, width: integer, height: integer }
 local function fullscreen_rect()
   local lines, cols = vim.o.lines, vim.o.columns
-  return {
+  local rect = {
     row = math.floor(FULL_ROW_PAD * lines),
     col = math.floor(FULL_COL_PAD * cols),
     width = math.floor((1 - 2 * FULL_COL_PAD) * cols),
     height = math.floor((1 - 2 * FULL_ROW_PAD) * lines),
   }
+  if zen_active() then
+    rect.width = zen_float_span().width
+    rect.col = math.floor((cols - rect.width - 2) / 2)
+  end
+  return rect
 end
 
 -- Text rows a shelved float keeps (see shelve). On M so specs can read it.
 M.shelf_rows = 10
 
----The shelf: M.shelf_rows rows at the very bottom of the editor, at the fullscreen rect's width.
+---The shelf: M.shelf_rows rows at the bottom of the fullscreen rect, the normal float's width (the
+-- zen float's while zen is open), centered.
 ---@return { row: integer, col: integer, width: integer, height: integer }
 local function shelf_rect()
   local full = fullscreen_rect()
+  local cols = vim.o.columns
   local rows = math.min(M.shelf_rows, full.height)
-  return { row = full.row + full.height - rows, col = full.col, width = full.width, height = rows }
+  local width = zen_active() and zen_float_span().width or math.floor(cols * FLOAT_WIDTH) - 2
+  return { row = full.row + full.height - rows, col = math.floor((cols - width - 2) / 2), width = width, height = rows }
 end
 
 ---True when the window is an editor float sitting exactly on `rect`.
@@ -375,10 +410,29 @@ local function resize_to(inst, rect, on_done)
   inst.opts.row, inst.opts.col, inst.opts.width, inst.opts.height = rect.row, rect.col, rect.width, rect.height
   require("harness-decorators.terminal-animations").animate_resize(inst, rect, nil, function()
     inst._resized_at = vim.uv.now()
+    -- An unfocused float keeps tailing its output at the new size.
+    if inst.win and vim.api.nvim_get_current_win() ~= inst.win then
+      scroll_to_bottom(inst)
+    end
     if on_done then
       on_done()
     end
   end)
+end
+
+---Where an unmoved float sits: while zen is open, the zen spot when `win` is focused or not given
+-- and the gap right of zen when another window has focus; else the default right-side spot.
+---@param win? integer the float's window
+---@return { row: integer, col: integer, width: integer, height: integer }
+local function auto_float_rect(win)
+  local rect = default_float_rect()
+  if zen_active() then
+    local aside = win ~= nil and vim.api.nvim_get_current_win() ~= win
+    local span = aside and zen_side_span() or zen_float_span()
+    rect.col, rect.width = span.col, span.width
+    rect.height = math.floor(vim.o.lines * ZEN_HEIGHT) - 2
+  end
+  return rect
 end
 
 ---Save the float's current geometry as the <C-f> retract target, unless one is saved already (so
@@ -392,6 +446,7 @@ local function save_baseline(self)
   local lines, cols = vim.o.lines, vim.o.columns
   local cfg = vim.api.nvim_win_get_config(self.win)
   self._saved_config = {
+    auto = at_rect(self.win, auto_float_rect(self.win)),
     row_ratio = (cfg.row or 0) / lines,
     col_ratio = (cfg.col or 0) / cols,
     width_ratio = (cfg.width or cols) / cols,
@@ -399,14 +454,14 @@ local function save_baseline(self)
   }
 end
 
----Where a fullscreen float retracts to: the geometry saved before it went fullscreen (save_baseline),
--- or the default right-side float when none was saved.
+---Where a fullscreen float retracts to: the unmoved spot for the current layout (zen-aware) when the
+-- float sat there before going fullscreen or nothing was saved, else the saved geometry.
 ---@param self table the Snacks terminal instance
 ---@return { row: integer, col: integer, width: integer, height: integer }
 local function retract_rect(self)
   local sc = self._saved_config
-  if not sc then
-    return default_float_rect()
+  if not sc or sc.auto then
+    return auto_float_rect(self.win)
   end
   local lines, cols = vim.o.lines, vim.o.columns
   return {
@@ -427,17 +482,30 @@ local function animate_collapse(self)
   resize_to(self, retract_rect(self))
 end
 
----The <C-h> go-back key handler: jump to the window we came from while THIS harness's float stays
--- open and visible. We do NOT hide it - the float is a separate window, so its PTY keeps running
--- regardless of where focus is; hiding would make the panel disappear, which is not what "go back"
--- should do. The collapse animation (if widened via <C-f>) still runs so the float returns to its
--- normal size. Exposed on M (not a local) so tests/go_back_key_spec.lua can drive it with a fake
--- instance and assert the float is NOT hidden.
----@param self table the Snacks terminal instance (has :hide(), :show())
-local zen_active -- forward declaration; defined below
 local minimize_float -- forward declaration; defined below
+local shelve -- forward declaration; defined below
 
-function M.go_back_key(self)
+---With shelf mode on and the float focused at fullscreen inside tmux, move to the tmux pane in `dir`
+-- ("L" or "R") and leave the float focused and fullscreen. Returns true when it moved.
+---@param self table the Snacks terminal instance
+---@param dir "L"|"R"
+---@return boolean
+local function shelf_tmux_nav(self, dir)
+  local win = self.win
+  if not (self._shelf_mode and vim.env.TMUX and win and vim.api.nvim_win_is_valid(win)) then
+    return false
+  end
+  if vim.api.nvim_get_current_win() ~= win or not at_rect(win, fullscreen_rect()) then
+    return false
+  end
+  vim.fn.system({ "tmux", "select-pane", "-" .. dir })
+  return true
+end
+
+---Jump to the window we came from (the zen window while zen is open), collapsing a <C-f>-widened
+-- float first.
+---@param self table the Snacks terminal instance
+local function go_back(self)
   local focus = require("harness-decorators.focus")
   focus.suppress_next_leave()
   animate_collapse(self)
@@ -457,15 +525,37 @@ function M.go_back_key(self)
   vim.cmd("noh")
 end
 
+---The <C-h> go-back key handler: jump to the window we came from while THIS harness's float stays
+-- open and visible. We do NOT hide it - the float is a separate window, so its PTY keeps running
+-- regardless of where focus is; hiding would make the panel disappear, which is not what "go back"
+-- should do. The collapse animation (if widened via <C-f>) still runs so the float returns to its
+-- normal size. With shelf mode on and the float focused at fullscreen inside tmux, it moves to the
+-- tmux pane on the left instead. Exposed on M (not a local) so tests/go_back_key_spec.lua can drive
+-- it with a fake instance and assert the float is NOT hidden.
+---@param self table the Snacks terminal instance (has :hide(), :show())
+function M.go_back_key(self)
+  if self._shelf_mode then
+    shelf_tmux_nav(self, "L")
+    return
+  end
+  go_back(self)
+end
+
 ---The <Esc> close key handler: exit terminal insert mode and minimize this harness's float into its
 -- docked bar (same as the float's minimize button). The process keeps running, so the same session
--- resumes from the bar, <leader>c or a re-pick. An instance with no open float to minimize is hidden
--- instead. Exposed on M so tests/go_back_key_spec.lua can drive it with a fake instance.
+-- resumes from the bar, <leader>c or a re-pick. With shelf mode on it slides the float to the shelf
+-- and goes back instead. An instance with no open float to minimize is hidden instead. Exposed on M
+-- so tests/go_back_key_spec.lua can drive it with a fake instance.
 ---@param self table the Snacks terminal instance (has :hide(), :show())
 function M.close_key(self)
   -- stopinsert is a no-op unless we're in terminal insert mode; guard it so the handler is safe to
   -- drive from a headless normal-mode context (tests) and never errors if already out of insert.
   pcall(vim.cmd.stopinsert)
+  if self._shelf_mode and self.win and vim.api.nvim_win_is_valid(self.win) then
+    shelve(self)
+    go_back(self)
+    return
+  end
   for harness, e in pairs(state.table) do
     if e.inst == self and M.minimize(harness) then
       return
@@ -500,27 +590,27 @@ function M.normal_mode_key()
   vim.cmd("noautocmd stopinsert")
 end
 
----The <C-f> key handler: toggle FULLSCREEN for this float, decided from the window's actual geometry.
--- A float anywhere other than the fullscreen rect (5% vertical / 10% horizontal padding) - its normal
--- spot, resized with the mouse, shelved - animates out to fullscreen; one already on it retracts to
--- retract_rect. Exposed on M so tests can drive it headless with a fake instance; _wide mirrors
--- "fullscreen via <C-f>" for animate_collapse (<C-h>).
+---The <C-f> key handler: toggle shelf mode. Turning it on animates the float out to fullscreen
+-- (5% vertical / 10% horizontal padding); from then on it is fullscreen while focused and on the shelf
+-- otherwise (follow_focus). Turning it off retracts the float to retract_rect. Exposed on M so tests
+-- can drive it headless with a fake instance; _wide mirrors "fullscreen" for animate_collapse.
 ---@param self table the Snacks terminal instance (has .win, ._wide, ._saved_config)
 function M.fullscreen_key(self)
   local win = self.win
   if not win or not vim.api.nvim_win_is_valid(win) then
     return
   end
-  if at_rect(win, fullscreen_rect()) then
-    self._wide = false
+  if self._shelf_mode then
     self._shelf_mode = false
+    self._shelved = false
+    self._wide = false
     resize_to(self, retract_rect(self))
     return
   end
   save_baseline(self)
-  self._wide = true
+  self._shelf_mode = true
   self._shelved = false
-  self._shelf_mode = false
+  self._wide = true
   resize_to(self, fullscreen_rect())
 end
 
@@ -593,6 +683,14 @@ function M.terminal_keys()
       mode = "t",
       desc = "⛶",
     },
+    {
+      "<C-t>",
+      function()
+        M.tile()
+      end,
+      mode = "t",
+      desc = "⣿",
+    },
   }
 end
 
@@ -637,7 +735,15 @@ local function win_opts(harness)
     on_win = function(self)
       pcall(vim.api.nvim_set_option_value, "winhighlight", "FloatFooter:SnacksFooter", { win = self.win })
     end,
-    footer_keys = true,
+    -- <C-h> and <C-l> are plain movement and stay mapped without a legend entry.
+    footer_keys = vim.tbl_filter(
+      function(k)
+        return k ~= "<C-h>" and k ~= "<C-l>"
+      end,
+      vim.tbl_map(function(k)
+        return k[1]
+      end, M.terminal_keys())
+    ),
     -- fix_buf disabled (same reason as before): its BufWinEnter swap duplicates buffers during the
     -- float's destroy/recreate. Every key here manages focus explicitly, so nothing relies on it.
     fix_buf = false,
@@ -649,14 +755,16 @@ local function win_opts(harness)
     row = FLOAT_ROW,
     col = function()
       if zen_active() then
-        return zen_float_col()
+        return zen_float_span().col
       end
       return default_float_col()
     end,
     width = function()
-      return zen_active() and ZEN_WIDTH or FLOAT_WIDTH
+      return zen_active() and zen_float_span().width or FLOAT_WIDTH
     end,
-    height = FLOAT_HEIGHT,
+    height = function()
+      return zen_active() and ZEN_HEIGHT or FLOAT_HEIGHT
+    end,
   }
 end
 
@@ -740,7 +848,28 @@ end
 ---@param width integer
 ---@return integer col
 local function dock_col(width)
-  return math.max(0, vim.o.columns - width - 2)
+  local edge = vim.o.columns - width - 2
+  if zen_active() then
+    -- Just right of the rightmost visible harness float, by where it is headed (inst.opts, set by
+    -- resize_to) or else where it is drawn.
+    local span = zen_float_span()
+    local right = span.col + span.width + 2
+    for _, e in pairs(state.table) do
+      local i = e.inst
+      local bar = i and i._pill_win and vim.api.nvim_win_is_valid(i._pill_win)
+      if i and not bar and not i._shelf_mode and i.win and vim.api.nvim_win_is_valid(i.win) then
+        local o = i.opts or {}
+        local col, w = o.col, o.width
+        if type(col) ~= "number" or type(w) ~= "number" or w < 1 then
+          local cfg = vim.api.nvim_win_get_config(i.win)
+          col, w = cfg.col, cfg.width
+        end
+        right = math.max(right, math.floor(col) + w + 2)
+      end
+    end
+    edge = math.min(edge, right)
+  end
+  return math.max(0, edge)
 end
 
 ---The lowest dock slot no other harness's bar holds.
@@ -787,7 +916,13 @@ end
 vim.api.nvim_create_autocmd("VimResized", {
   group = auto_insert_group,
   callback = function()
-    vim.schedule(repack_dock)
+    vim.schedule(function()
+      repack_dock()
+      -- zen-mode re-lays out its window in its own VimResized handler; re-place the floats after it.
+      if zen_active() then
+        M.set_zen_width(true)
+      end
+    end)
   end,
 })
 
@@ -910,6 +1045,16 @@ local function watch_output(inst)
   vim.api.nvim_buf_attach(inst.buf, false, {
     on_lines = function()
       local focused = inst.win and vim.api.nvim_get_current_win() == inst.win
+      -- An unfocused float tails its output; the focused one stays where the user scrolled.
+      if not focused and not inst._tail_pending then
+        inst._tail_pending = true
+        vim.schedule(function()
+          inst._tail_pending = false
+          if inst.win and vim.api.nvim_get_current_win() ~= inst.win then
+            scroll_to_bottom(inst)
+          end
+        end)
+      end
       if focused or vim.uv.now() - (inst._resized_at or 0) < 500 then
         return
       end
@@ -1191,7 +1336,7 @@ end
 ---Show the end of the terminal (the prompt) in the float's window. A float focused in terminal mode
 -- already follows the terminal cursor.
 ---@param inst table the Snacks terminal instance
-local function scroll_to_bottom(inst)
+scroll_to_bottom = function(inst)
   local win = inst.win
   if not (win and vim.api.nvim_win_is_valid(win)) then
     return
@@ -1207,7 +1352,7 @@ end
 -- view and leaves only its prompt showing. The pre-shelf geometry is saved as the <C-f> retract
 -- target. While shelved, new output bounces the shelf instead of flashing it (notify_output).
 ---@param inst table the Snacks terminal instance
-local function shelve(inst)
+shelve = function(inst)
   if not (inst.win and vim.api.nvim_win_is_valid(inst.win)) then
     return
   end
@@ -1239,21 +1384,31 @@ local function unshelve(inst)
   resize_to(inst, fullscreen_rect())
 end
 
----<C-l>: toggle shelf mode, the same as double-clicking the shelf button. Turning it on shelves the
--- float right away and, if the float has focus, moves focus back the way <C-h> does. While it is on,
--- the float grows to fullscreen when it gains focus and slides back to the shelf when it loses it
--- (follow_focus). Turning it off leaves the float fullscreen.
+---<C-l>: with shelf mode on and the float focused at fullscreen inside tmux, move to the tmux pane on
+-- the right (the float keeps nvim focus and stays fullscreen); otherwise in shelf mode, nothing. With
+-- shelf mode off, go back the way <C-h> does.
 ---@param self table the Snacks terminal instance
 function M.shelf_key(self)
   if self._shelf_mode then
-    self._shelf_mode = false
-    unshelve(self)
-  else
-    self._shelf_mode = true
-    shelve(self)
-    if self.win and vim.api.nvim_get_current_win() == self.win then
-      M.go_back_key(self)
-    end
+    shelf_tmux_nav(self, "R")
+    return
+  end
+  go_back(self)
+end
+
+---Double-clicking the shelf button: turn shelf mode on and shelve the float right away (moving focus
+-- back if the float had it), or turn it off and grow the float back to fullscreen.
+---@param inst table the Snacks terminal instance
+function M.shelf_button(inst)
+  if inst._shelf_mode then
+    inst._shelf_mode = false
+    unshelve(inst)
+    return
+  end
+  inst._shelf_mode = true
+  shelve(inst)
+  if inst.win and vim.api.nvim_get_current_win() == inst.win then
+    go_back(inst)
   end
 end
 
@@ -1273,7 +1428,11 @@ follow_focus = function(inst)
     buffer = inst.buf,
     callback = function()
       vim.schedule(function()
-        if shown() and inst._shelved and vim.api.nvim_get_current_win() == inst.win then
+        if
+          shown()
+          and vim.api.nvim_get_current_win() == inst.win
+          and (inst._shelved or not at_rect(inst.win, fullscreen_rect()))
+        then
           unshelve(inst)
         end
       end)
@@ -1285,6 +1444,50 @@ follow_focus = function(inst)
       vim.schedule(function()
         if shown() and not inst._shelved and vim.api.nvim_get_current_win() ~= inst.win then
           shelve(inst)
+        end
+      end)
+    end,
+  })
+  -- The key legend (Snacks' footer) shows only while the float has focus.
+  vim.api.nvim_create_autocmd({ "WinEnter", "WinLeave" }, {
+    buffer = inst.buf,
+    callback = function()
+      vim.schedule(function()
+        local win = inst.win
+        if not (win and vim.api.nvim_win_is_valid(win)) then
+          return
+        end
+        local footer = vim.api.nvim_win_get_config(win).footer
+        local has = type(footer) == "table" and #footer > 0 or (type(footer) == "string" and footer ~= "")
+        if vim.api.nvim_get_current_win() == win then
+          if not has and inst._footer then
+            pcall(vim.api.nvim_win_set_config, win, { footer = inst._footer, footer_pos = "center" })
+          end
+        elseif has then
+          inst._footer = footer
+          pcall(vim.api.nvim_win_set_config, win, { footer = "" })
+        end
+      end)
+    end,
+  })
+  -- Zen mode with shelf mode off: the float steps aside into the gap right of zen while another
+  -- window has focus and grows back to the zen spot when it gets focus.
+  vim.api.nvim_create_autocmd({ "WinEnter", "WinLeave" }, {
+    buffer = inst.buf,
+    callback = function()
+      vim.schedule(function()
+        if M._tiled then
+          retile()
+          return
+        end
+        local bar = inst._pill_win and vim.api.nvim_win_is_valid(inst._pill_win)
+        if bar or inst._shelf_mode or not zen_active() or not (inst.win and vim.api.nvim_win_is_valid(inst.win)) then
+          return
+        end
+        local rect = auto_float_rect(inst.win)
+        if not at_rect(inst.win, rect) then
+          resize_to(inst, rect)
+          repack_dock()
         end
       end)
     end,
@@ -1336,17 +1539,28 @@ minimize_float = function(inst)
   end
   local row, col = drawn_pos(inst.win)
   local width = vim.fn.strdisplaywidth(text)
-  -- Where the float was, so restoring can grow the bar back to it. A shelf restores fullscreen.
+  -- Where the float was, so restoring can grow the bar back to it. A float in shelf mode (fullscreen
+  -- or shelved) leaves shelf mode and restores to its normal spot, the same as a <C-q> switch.
   inst._restore_rect = { row = row, col = col, width = cfg.width, height = cfg.height }
-  inst._shelf_mode = false
-  if inst._shelved then
-    inst._shelved = false
-    inst._wide = true
-    inst._restore_rect = fullscreen_rect()
-    local r = inst._restore_rect
+  if inst._shelf_mode or inst._shelved or inst._wide then
+    local r = auto_float_rect()
+    inst._restore_rect = vim.deepcopy(r)
     inst.opts.row, inst.opts.col, inst.opts.width, inst.opts.height = r.row, r.col, r.width, r.height
   end
+  inst._shelf_mode, inst._shelved, inst._wide, inst._saved_config = false, false, false, nil
   inst._bar_slot = free_slot()
+  -- Hiding the focused float lets Neovim focus any window, including another harness float, which
+  -- would then take the focused spot. Move focus off the harness floats first.
+  if vim.api.nvim_get_current_win() == inst.win then
+    local focus = require("harness-decorators.focus")
+    focus.suppress_next_leave()
+    local ok, zen = pcall(require, "zen-mode.view")
+    if zen_active() and ok and zen.win and vim.api.nvim_win_is_valid(zen.win) then
+      vim.api.nvim_set_current_win(zen.win)
+    elseif not focus.jump_to_saved() then
+      find_base_window()
+    end
+  end
   pcall(function()
     inst:hide()
   end)
@@ -1385,8 +1599,8 @@ local function bar_hit(screenrow, screencol)
   end
 end
 
----Restore a minimized harness the same way picking it in <C-q> would: every other open harness
--- float is minimized, then the switch rebinds keymaps/watcher to this harness and shows it.
+---Restore a minimized harness the same way picking it in <C-q> would: the switch rebinds
+-- keymaps/watcher to this harness and shows it. Other open floats stay open.
 ---@param inst table the Snacks terminal instance
 local function restore_from_bar(inst)
   local harness
@@ -1398,11 +1612,6 @@ local function restore_from_bar(inst)
   if not harness then
     focus_instance(inst)
     return
-  end
-  for h in pairs(state.table) do
-    if h ~= harness then
-      M.minimize(h)
-    end
   end
   require("harness-decorators.switch").switch(harness)
   require("harness-decorators.park").set_selected(harness)
@@ -1422,26 +1631,250 @@ function M.minimize(harness)
   return true
 end
 
----Resize and reposition all open harness floats for zen mode (narrower, shifted 2 cols left)
--- or back to the default when zen mode closes. Called from the zen-mode on_open/on_close.
----@param narrow boolean
-function M.set_zen_width(narrow)
-  local cols = vim.o.columns
-  local w = narrow and ZEN_WIDTH or FLOAT_WIDTH
-  local width = math.floor(cols * w)
-  local col = narrow and zen_float_col() or default_float_col()
-  for _, e in pairs(state.table) do
+---Drop shelf mode and fullscreen and point the float back at its normal spot (the zen spot while zen
+-- is open). Open floats move there; minimized ones restore there. With `harness`, only that harness
+-- is reset and tiling stays on (re-tiling if active); without it, every harness is reset and tiling
+-- ends.
+---@param harness? string
+function M.reset_layout(harness)
+  if not harness then
+    M._tiled = false
+  end
+  local rect = auto_float_rect()
+  for h, e in pairs(state.table) do
     local inst = e.inst
-    if inst and inst.win and vim.api.nvim_win_is_valid(inst.win) then
-      local ok, err = pcall(vim.api.nvim_win_set_config, inst.win, { relative = "editor", width = width })
-      if not ok then
-        M._last_zen_width_err = err
+    if inst and (not harness or h == harness) then
+      inst._shelf_mode, inst._shelved, inst._wide, inst._saved_config = false, false, false, nil
+      inst.opts = inst.opts or {}
+      inst.opts.row, inst.opts.col, inst.opts.width, inst.opts.height = rect.row, rect.col, rect.width, rect.height
+      if inst._pill_win and vim.api.nvim_win_is_valid(inst._pill_win) then
+        inst._restore_rect = vim.deepcopy(rect)
+      elseif inst.win and vim.api.nvim_win_is_valid(inst.win) and not M._tiled then
+        resize_to(inst, rect)
       end
-      pcall(vim.api.nvim_win_set_config, inst.win, { relative = "editor", col = col })
-      inst.opts.width = w
-      inst.opts.col = col
     end
   end
+  if M._tiled then
+    retile()
+  end
+end
+
+---Animate all open harness floats to their spot when zen mode opens or closes. In shelf mode the
+-- focused float goes fullscreen and any other goes to the shelf. Otherwise the float takes the zen
+-- spot (narrow) or returns to the default spot. Called from the zen-mode on_open/on_close and on an
+-- editor resize while zen is open.
+---@param narrow boolean
+function M.set_zen_width(narrow)
+  local base = default_float_rect()
+  for _, e in pairs(state.table) do
+    local inst = e.inst
+    if inst and inst.win and vim.api.nvim_win_is_valid(inst.win) and inst._shelf_mode then
+      local focused = vim.api.nvim_get_current_win() == inst.win
+      local rect = focused and fullscreen_rect() or shelf_rect()
+      inst._shelved = not focused
+      inst._wide = focused
+      resize_to(inst, rect, function()
+        if not focused then
+          scroll_to_bottom(inst)
+        end
+      end)
+    elseif not M._tiled and inst and inst.win and vim.api.nvim_win_is_valid(inst.win) then
+      local rect = vim.deepcopy(base)
+      if narrow then
+        local span = vim.api.nvim_get_current_win() == inst.win and zen_float_span() or zen_side_span()
+        rect.col, rect.width = span.col, span.width
+        rect.height = math.floor(vim.o.lines * ZEN_HEIGHT) - 2
+      end
+      resize_to(inst, rect)
+      if not narrow then
+        -- Fractions, so Snacks re-derives the default size after an editor resize.
+        inst.opts.width, inst.opts.height = FLOAT_WIDTH, FLOAT_HEIGHT
+      end
+    end
+  end
+  if M._tiled then
+    retile()
+  end
+  repack_dock()
+end
+
+---The floats tiling arranges: shown (not minimized) and outside shelf mode, sorted by harness name.
+---@return table[] insts
+local function tile_members()
+  local list = {}
+  for h, e in pairs(state.table) do
+    local i = e.inst
+    local bar = i and i._pill_win and vim.api.nvim_win_is_valid(i._pill_win)
+    if i and not bar and not i._shelf_mode and i.win and vim.api.nvim_win_is_valid(i.win) then
+      table.insert(list, { harness = h, inst = i })
+    end
+  end
+  table.sort(list, function(a, b)
+    return a.harness < b.harness
+  end)
+  return vim.tbl_map(function(m)
+    return m.inst
+  end, list)
+end
+
+---`n` rects in a grid `outer_width` wide (border included) starting at `col`, filled row by row,
+-- over the default float height: one per row up to 3, then 2 per row, then 3, so there are at most 3
+-- rows. Rows and columns split the space evenly; the last row/column takes the remainder. Cells
+-- that have a neighbour to their right or below give up one column or row as a gap.
+---@return { row: integer, col: integer, width: integer, height: integer }[]
+local function stack_rects(n, col, outer_width)
+  local total = math.floor(vim.o.lines * FLOAT_HEIGHT)
+  local per_row = math.max(1, math.ceil(n / 3))
+  local nrows = math.ceil(n / per_row)
+  local rects = {}
+  for k = 0, n - 1 do
+    local r, c = math.floor(k / per_row), k % per_row
+    local h = math.floor(total / nrows)
+    local w = math.floor(outer_width / per_row)
+    local row, x = r * h, col + c * w
+    if r == nrows - 1 then
+      h = total - row
+    else
+      h = h - 1
+    end
+    if c == per_row - 1 then
+      w = outer_width - c * w
+    else
+      w = w - 1
+    end
+    table.insert(rects, { row = row, col = x, width = math.max(1, w - 2), height = math.max(1, h - 2) })
+  end
+  return rects
+end
+
+---Lay the open harness floats out in the grid. The focused float (else the one focused last, if
+-- still open) takes its normal spot; the others fill the grid left of the zen window while zen is
+-- open, else at the far right before the dock's reserved space, with the focused float just left of
+-- the grid. With `cycle`, when the focused float and the grid are already in place, focus moves to
+-- the next float by harness name instead (the focus change re-tiles).
+---@param cycle? boolean
+retile = function(cycle)
+  local members = tile_members()
+  if #members == 0 then
+    return
+  end
+  local cur = vim.api.nvim_get_current_win()
+  local focused
+  for _, i in ipairs(members) do
+    if i.win == cur then
+      focused = i
+    end
+  end
+  local current = focused
+  -- A switch is moving focus to M._focus_target (see M.expect_focus). Until it lands, that harness
+  -- counts as focused (or, when it is not open yet, nothing does), so the float losing focus goes
+  -- straight into the grid instead of stepping aside first.
+  local pending = false
+  if M._focus_target then
+    local e = state.table[M._focus_target]
+    local target = e and e.inst
+    if target and target.win == cur then
+      M._focus_target = nil
+    else
+      pending = true
+      M._tile_focus = target
+      focused = vim.tbl_contains(members, target) and target or nil
+    end
+  end
+  if focused then
+    M._tile_focus = focused
+  elseif vim.tbl_contains(members, M._tile_focus) then
+    focused = M._tile_focus
+  end
+  local others = vim.tbl_filter(function(i)
+    return i ~= focused
+  end, members)
+
+  local focus_rect, stack
+  local ok, zen = pcall(require, "zen-mode.view")
+  local zwin = ok and zen.is_open and zen.is_open() and zen.win
+  if zwin and vim.api.nvim_win_is_valid(zwin) then
+    -- The zen spot while focused, the gap right of zen while another window has focus.
+    focus_rect = focused and auto_float_rect(not pending and focused.win or nil)
+    local zleft = math.floor(vim.api.nvim_win_get_config(zwin).col)
+    local empty = math.max(3, zleft - 1)
+    -- A cell is at most half the empty area, so a single column hugs zen.
+    local width = #others <= 3 and math.max(3, math.floor(empty / 2)) or empty
+    stack = stack_rects(#others, empty - width, width)
+    if focused and focused.win ~= cur and not pending then
+      -- Stepped aside (focus elsewhere): a grid cell's width at the grid's full height, just right
+      -- of zen. The dock moves right of it (dock_col).
+      local cell = stack[1] or stack_rects(1, 0, width)[1]
+      local tall = math.floor(vim.o.lines * FLOAT_HEIGHT) - 2
+      focus_rect = { row = 0, col = zen_side_span().col, width = cell.width, height = tall }
+    end
+  else
+    focus_rect = default_float_rect()
+    if #others > 0 then
+      local cols = vim.o.columns
+      local width = math.floor(cols * ZEN_MIN_WIDTH)
+      local col = math.max(0, cols - (BAR_MIN_TEXT + 2) - 1 - width)
+      stack = stack_rects(#others, col, width)
+      focus_rect.col = math.max(0, col - 1 - (focus_rect.width + 2))
+    end
+  end
+
+  local in_place = focused ~= nil and at_rect(focused.win, focus_rect)
+  for k, i in ipairs(others) do
+    in_place = in_place and at_rect(i.win, stack[k])
+  end
+  if cycle and in_place and current and #members > 1 then
+    for k, i in ipairs(members) do
+      if i == current then
+        -- The cycled-to float becomes the active harness, the same as picking it in <C-q>.
+        local nxt = members[k % #members + 1]
+        for h, e in pairs(state.table) do
+          if e.inst == nxt then
+            pcall(require("harness-decorators.switch").switch, h)
+          end
+        end
+        focus_instance(nxt)
+        return
+      end
+    end
+  end
+
+  if focused and not at_rect(focused.win, focus_rect) then
+    resize_to(focused, focus_rect)
+  end
+  for k, i in ipairs(others) do
+    if not at_rect(i.win, stack[k]) then
+      resize_to(i, stack[k])
+    end
+  end
+  repack_dock()
+end
+
+---Mark `harness` as about to get focus (a <C-q> pick or <C-t> cycle). Re-tiles before its focus
+-- lands treat it as the focused float; the mark clears once focus lands or after a second.
+---@param harness string
+function M.expect_focus(harness)
+  M._focus_target = harness
+  vim.defer_fn(function()
+    if M._focus_target == harness then
+      M._focus_target = nil
+    end
+  end, 1000)
+end
+
+---The <C-t> key: turn tiling on (focus changes and zen open/close keep re-tiling until
+-- reset_layout) and lay the floats out in the grid; once everything is already in place, cycle focus
+-- to the next float instead.
+function M.tile()
+  M._tiled = true
+  retile(true)
+end
+
+---Turn tiling on and lay the floats out in the grid, without the <C-t> focus cycling. Used after a
+-- <C-q> pick.
+function M.grid()
+  M._tiled = true
+  retile()
 end
 
 ---Which of a minimized bar's buttons the given 1-based screen column hits: "restore" for the restore
@@ -1602,7 +2035,7 @@ function M.mouse.double(mouse)
         if on_minimize then
           minimize_float(inst)
         else
-          M.shelf_key(inst)
+          M.shelf_button(inst)
         end
       end)
       return ""
@@ -1723,6 +2156,7 @@ end
 ---Test-only: clear the shared state table (instances AND selection bits) without touching any buffer.
 function M._reset()
   state._reset()
+  M._tiled, M._tile_focus, M._focus_target = false, nil, nil
 end
 
 return M

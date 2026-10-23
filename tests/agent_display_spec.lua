@@ -262,3 +262,34 @@ describe("agent-display: long-idle agents dim", function()
     assert.is_true(display.refresh())
   end)
 end)
+
+describe("agent-display: poll timer", function()
+  local agent_state = require("harness-decorators.agent-state")
+
+  it("Given the poll timer, When it starts, Then it polls through all_async and never the blocking all()", function()
+    local real_all, real_async = agent_state.all, agent_state.all_async
+    local sync_calls, async_calls = 0, 0
+    agent_state.all = function()
+      sync_calls = sync_calls + 1
+      return {}
+    end
+    agent_state.all_async = function(cb)
+      async_calls = async_calls + 1
+      vim.schedule(function()
+        cb({ maki = { status = "idle", pid = 2 } })
+      end)
+    end
+    display.stop_timer()
+    display._reset()
+    display.start_timer()
+    local polled = vim.wait(1000, function()
+      return display.status("maki") ~= nil
+    end, 10)
+    display.stop_timer()
+    agent_state.all, agent_state.all_async = real_all, real_async
+    display._reset()
+    assert.is_true(polled, "the async poll result must reach the display state")
+    assert.are.equal(0, sync_calls)
+    assert.is_true(async_calls >= 1)
+  end)
+end)

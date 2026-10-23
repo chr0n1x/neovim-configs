@@ -148,38 +148,91 @@ describe("zen-mode: FocusGained reopens zen after tmux pane switch", function()
     end
   )
 
+  it("Given zen is open, When FocusGained fires, Then zen mode is NOT reopened", function()
+    local buf = vim.api.nvim_create_buf(false, true)
+    local zen_win = vim.api.nvim_open_win(buf, false, {
+      relative = "editor",
+      width = 10,
+      height = 5,
+      row = 1,
+      col = 1,
+    })
+    zen_view.win = zen_win
+    zen_view.parent = vim.api.nvim_get_current_win()
+
+    local open_called = false
+    local real_open = require("zen-mode").open
+    require("zen-mode").open = function()
+      open_called = true
+    end
+
+    vim.api.nvim_exec_autocmds("FocusGained", {})
+
+    vim.wait(200, function()
+      return open_called
+    end)
+
+    require("zen-mode").open = real_open
+
+    assert.is_false(open_called, "zen-mode.open should NOT be called when zen is already open")
+
+    vim.api.nvim_win_close(zen_win, true)
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end)
+
+  it("Given zen was opened and then turned off by the user, When FocusGained fires, Then zen stays closed", function()
+    local zen = require("zen-mode")
+    zen_view.win = nil
+    zen_view.parent = nil
+    vim.cmd("ZenMode")
+    assert.is_true(zen_view.is_open() == true, "test setup: zen should be open")
+    vim.cmd("ZenMode")
+    assert.is_falsy(zen_view.is_open(), "test setup: zen should be closed")
+
+    vim.api.nvim_exec_autocmds("FocusGained", {})
+    vim.wait(200, function()
+      return zen_view.is_open() == true
+    end)
+
+    local reopened = zen_view.is_open() == true
+    if reopened then
+      zen.close()
+    end
+    assert.is_false(reopened, "zen reopened after a deliberate close")
+  end)
+
   it(
-    "Given zen is open, When FocusGained fires, Then zen mode is NOT reopened",
+    "Given zen is closed and focus is in a harness float, When FocusGained fires, Then zen reopens from its parent window, not the float",
     function()
-      local buf = vim.api.nvim_create_buf(false, true)
-      local zen_win = vim.api.nvim_open_win(buf, false, {
+      local parent_win = vim.api.nvim_get_current_win()
+      local term_buf = vim.api.nvim_create_buf(false, true)
+      local float = vim.api.nvim_open_win(term_buf, true, {
         relative = "editor",
         width = 10,
         height = 5,
         row = 1,
         col = 1,
       })
-      zen_view.win = zen_win
-      zen_view.parent = vim.api.nvim_get_current_win()
+      zen_view.win = nil
+      zen_view.parent = parent_win
 
-      local open_called = false
+      local opened_from
       local real_open = require("zen-mode").open
       require("zen-mode").open = function()
-        open_called = true
+        opened_from = vim.api.nvim_get_current_win()
       end
 
       vim.api.nvim_exec_autocmds("FocusGained", {})
 
       vim.wait(200, function()
-        return open_called
+        return opened_from ~= nil
       end)
 
       require("zen-mode").open = real_open
+      pcall(vim.api.nvim_win_close, float, true)
+      vim.api.nvim_buf_delete(term_buf, { force = true })
 
-      assert.is_false(open_called, "zen-mode.open should NOT be called when zen is already open")
-
-      vim.api.nvim_win_close(zen_win, true)
-      vim.api.nvim_buf_delete(buf, { force = true })
+      assert.are.equal(parent_win, opened_from)
     end
   )
 
@@ -204,6 +257,49 @@ describe("zen-mode: FocusGained reopens zen after tmux pane switch", function()
       require("zen-mode").open = real_open
 
       assert.is_false(open_called, "zen-mode.open should NOT be called when parent is invalid")
+    end
+  )
+end)
+
+describe("zen-mode: <leader>z from a harness float", function()
+  local zen_view
+
+  setup(function()
+    zen_view = require("zen-mode.view")
+  end)
+
+  it(
+    "Given focus is in a floating harness window over a file window, When <leader>z, Then zen wraps the file window's buffer and records it as parent",
+    function()
+      local file_win = vim.api.nvim_get_current_win()
+      local file_buf = vim.api.nvim_win_get_buf(file_win)
+      local float_buf = vim.api.nvim_create_buf(false, true)
+      local float = vim.api.nvim_open_win(float_buf, true, {
+        relative = "editor",
+        width = 10,
+        height = 3,
+        row = 1,
+        col = 1,
+      })
+
+      local keys = vim.api.nvim_replace_termcodes("<leader>z", true, false, true)
+      vim.api.nvim_feedkeys(keys, "mx", false)
+      vim.wait(200, function()
+        return zen_view.is_open() == true
+      end)
+
+      local opened = zen_view.is_open() == true
+      local zen_buf = opened and vim.api.nvim_win_get_buf(zen_view.win) or nil
+      local parent = zen_view.parent
+      if opened then
+        require("zen-mode").close()
+      end
+      pcall(vim.api.nvim_win_close, float, true)
+      pcall(vim.api.nvim_buf_delete, float_buf, { force = true })
+
+      assert.is_true(opened, "<leader>z did not open zen")
+      assert.are.equal(file_buf, zen_buf)
+      assert.are.equal(file_win, parent)
     end
   )
 end)

@@ -69,6 +69,16 @@ local function get_jump_win()
   return M.jump_win
 end
 
+---The zen-mode window while zen is open. It is a float, so the normal-window
+---searches below never pick it, and a jump there would land behind zen.
+---@return integer?
+local function zen_win()
+  local ok, view = pcall(require, "zen-mode.view")
+  if ok and view.is_open() and view.win and vim.api.nvim_win_is_valid(view.win) then
+    return view.win, view.parent
+  end
+end
+
 ---Perform the actual jump logic.
 local function jump_to_edit(data, file_path)
   -- No line number means we can't place the cursor meaningfully (early tool_use
@@ -82,7 +92,8 @@ local function jump_to_edit(data, file_path)
 
   -- Reuse the target's existing window when it is already visible. Setting that buffer on
   -- another work window would display the same buffer twice and leave a duplicate view behind.
-  local win = find_file_window(file_path) or get_jump_win()
+  local zwin, zparent = zen_win()
+  local win = zwin or find_file_window(file_path) or get_jump_win()
   if not win then
     return
   end
@@ -128,6 +139,10 @@ local function jump_to_edit(data, file_path)
   local saved_ei = vim.o.eventignore
   vim.o.eventignore = "BufLeave,BufEnter,WinEnter,WinLeave"
   local ok_switch, switch_err = pcall(vim.api.nvim_win_set_buf, win, bufnr)
+  -- Keep zen's parent on the same buffer so closing zen lands on the edited file.
+  if ok_switch and zparent and vim.api.nvim_win_is_valid(zparent) then
+    pcall(vim.api.nvim_win_set_buf, zparent, bufnr)
+  end
   vim.o.eventignore = saved_ei
 
   pcall(vim.api.nvim_del_augroup_by_id, swap_grp)

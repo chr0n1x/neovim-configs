@@ -185,14 +185,12 @@ function M.changed(a, b)
   return false
 end
 
----Run one poll (the expensive ps//proc scan), diff against the previous result, and schedule a
---statusline redraw when the state changed. Also safe to call directly in tests.
+---Store one poll result, diff it against the previous one, and schedule a statusline redraw when
+--the state changed.
+---@param all table<string, {status: string, label: string?, pid: number}>
 ---@return boolean changed
-function M.refresh()
-  local ok, all = pcall(function()
-    return require("harness-decorators.agent-state").all()
-  end)
-  if not ok or type(all) ~= "table" then
+local function apply(all)
+  if type(all) ~= "table" then
     return false
   end
   local did_change = M.changed(agents, all)
@@ -217,6 +215,24 @@ function M.refresh()
     end)
   end
   return did_change
+end
+
+---Run one blocking poll and apply it. Used by tests; the timer polls through refresh_async.
+---@return boolean changed
+function M.refresh()
+  local ok, all = pcall(function()
+    return require("harness-decorators.agent-state").all()
+  end)
+  return ok and apply(all) or false
+end
+
+---Poll with the ps snapshot taken off the main loop, then apply the result.
+function M.refresh_async()
+  pcall(function()
+    require("harness-decorators.agent-state").all_async(function(all)
+      pcall(apply, all)
+    end)
+  end)
 end
 
 ---The display state for one harness: its poll result, with status "stale" once it has been idle
@@ -287,15 +303,9 @@ function M.start_timer()
   if not poll_timer then
     poll_timer = vim.uv.new_timer()
     if poll_timer then
-      -- Run once immediately so the slot isn't empty on startup, then every POLL_MS.
-      M.refresh()
-      poll_timer:start(
-        POLL_MS,
-        POLL_MS,
-        vim.schedule_wrap(function()
-          M.refresh()
-        end)
-      )
+      -- Poll once right away so the slot isn't empty on startup, then every POLL_MS.
+      M.refresh_async()
+      poll_timer:start(POLL_MS, POLL_MS, vim.schedule_wrap(M.refresh_async))
     end
   end
 end

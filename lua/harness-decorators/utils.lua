@@ -54,6 +54,14 @@ function M.list_harnesses()
   return found
 end
 
+-- command_executable answers per executable name, valid while $PATH is unchanged. Each PATH search
+-- costs tens of ms, and the statusline poll asks about every harness on every round.
+--
+--   { path = "/usr/local/bin:/usr/bin:/bin", answers = { claude = true, pig = false } }
+--
+-- A PATH change empties answers.
+local executable_cache = { path = nil, answers = {} }
+
 ---Check whether the first token of a command string is an executable on PATH.
 ---@param cmd string The full command (e.g. "claude --model foo" or "maki -m bar")
 ---@return boolean
@@ -65,7 +73,15 @@ function M.command_executable(cmd)
   if not exe or exe == "" then
     return false
   end
-  return vim.fn.executable(exe) == 1
+  if executable_cache.path ~= vim.env.PATH then
+    executable_cache = { path = vim.env.PATH, answers = {} }
+  end
+  local answer = executable_cache.answers[exe]
+  if answer == nil then
+    answer = vim.fn.executable(exe) == 1
+    executable_cache.answers[exe] = answer
+  end
+  return answer
 end
 
 ---Scan a list of raw JSONL lines for the first one containing `needle`, decode it, and return what

@@ -168,4 +168,30 @@ describe("focus: capture / jump_to_saved / restore mechanics", function()
     focus.capture()
     assert.are.equal(before, focus.last_win, "capture should be suppressed after suppress_next_leave")
   end)
+
+  it(
+    "Given a recorded origin window, When capture runs from a floating non-terminal window (zen bg, smear-cursor), Then the restore target stays the origin",
+    function()
+      vim.api.nvim_set_current_win(origin_win)
+      focus.reset()
+      focus.capture()
+
+      local float_buf = vim.api.nvim_create_buf(false, true)
+      local float = vim.api.nvim_open_win(float_buf, true, {
+        relative = "editor",
+        width = 10,
+        height = 3,
+        row = 1,
+        col = 1,
+      })
+      focus.capture()
+      local recorded = focus.last_win
+
+      pcall(vim.api.nvim_win_close, float, true)
+      pcall(vim.api.nvim_buf_delete, float_buf, { force = true })
+      vim.api.nvim_set_current_win(origin_win)
+
+      assert.are.equal(origin_win, recorded)
+    end
+  )
 end)

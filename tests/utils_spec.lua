@@ -102,6 +102,37 @@ describe("utils.command_executable", function()
     assert.is_false(utils.command_executable(nil))
     assert.is_false(utils.command_executable(""))
   end)
+
+  it("Given an unchanged PATH, When the same command is checked twice, Then PATH is searched once", function()
+    local real = vim.fn.executable
+    local calls = 0
+    vim.fn.executable = function(exe)
+      calls = calls + 1
+      return real(exe)
+    end
+    local ok, err = pcall(function()
+      utils.command_executable("cached_cmd_probe_xyz --flag")
+      utils.command_executable("cached_cmd_probe_xyz")
+    end)
+    vim.fn.executable = real
+    assert(ok, err)
+    assert.are.equal(1, calls)
+  end)
+
+  it("Given a cached answer, When PATH changes, Then the command is looked up again", function()
+    local real_path = vim.env.PATH
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, "p")
+    vim.fn.writefile({ "#!/bin/sh" }, dir .. "/late_cmd_probe_xyz")
+    vim.fn.setfperm(dir .. "/late_cmd_probe_xyz", "rwxr-xr-x")
+    local before = utils.command_executable("late_cmd_probe_xyz")
+    vim.env.PATH = dir .. ":" .. real_path
+    local after = utils.command_executable("late_cmd_probe_xyz")
+    vim.env.PATH = real_path
+    vim.fn.delete(dir, "rf")
+    assert.is_false(before)
+    assert.is_true(after)
+  end)
 end)
 
 describe("shorten_path (2-tier display rule, shared across callers)", function()

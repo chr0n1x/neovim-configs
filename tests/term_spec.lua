@@ -475,6 +475,8 @@ describe("term: float mouse handling, minimized bars and flash", function()
         width = self.opts.width,
         height = self.opts.height,
         border = "rounded",
+        -- Snacks renders the key legend as the footer.
+        footer = { { " legend ", "SnacksFooter" } },
       })
     end
     function inst:hide()
@@ -866,7 +868,8 @@ describe("term: float mouse handling, minimized bars and flash", function()
       -- Snacks resolves a ratio as floor(columns * ratio) and calls a function value for the absolute column.
       local cols = vim.o.columns
       local col = type(win_opts.col) == "function" and win_opts.col() or math.floor(cols * win_opts.col)
-      local outer_width = math.floor(cols * win_opts.width)
+      local width = type(win_opts.width) == "function" and win_opts.width() or win_opts.width
+      local outer_width = math.floor(cols * width)
       -- A docked bar is at least 18 text columns plus its 2 border columns, flush with the last column.
       local dock_left = cols - 20
       assert.is_true(
@@ -1004,28 +1007,24 @@ describe("term: float mouse handling, minimized bars and flash", function()
     end
   )
 
-  it(
-    "Given a running harness float, When another harness is picked, Then the running one is minimized into a docked bar",
-    function()
-      sw.init("claude")
-      local inst = term.open("claude")
-      sw.switch("copilot")
-      sw.after_pick()
-      assert.is_true(
-        wait_for(function()
-          return bar_of("claude") ~= nil
-        end),
-        "claude should be minimized into a bar"
-      )
-      assert.is_nil(inst.win, "claude's float must be hidden")
-      assert.is_true(vim.api.nvim_buf_is_valid(inst.buf), "claude's process must keep running")
-      local picked = state.table.copilot and state.table.copilot.inst
-      assert.is_true(
-        picked ~= nil and picked.win ~= nil and vim.api.nvim_win_is_valid(picked.win),
-        "the picked harness's float should be open"
-      )
-    end
-  )
+  it("Given a running harness float, When another harness is picked, Then the running one stays open", function()
+    sw.init("claude")
+    local inst = term.open("claude")
+    sw.switch("copilot")
+    sw.after_pick()
+    local picked = state.table.copilot and state.table.copilot.inst
+    assert.is_true(wait_for(function()
+      return picked ~= nil or (state.table.copilot and state.table.copilot.inst) ~= nil
+    end))
+    picked = state.table.copilot.inst
+    assert.is_true(
+      picked.win ~= nil and vim.api.nvim_win_is_valid(picked.win),
+      "the picked harness's float should be open"
+    )
+    vim.wait(300)
+    assert.is_nil(bar_of("claude"), "claude must not be minimized")
+    assert.is_true(inst.win ~= nil and vim.api.nvim_win_is_valid(inst.win), "claude's float must stay open")
+  end)
   ---Drive a full press/drag/release through the mouse handlers, letting the scheduled drag apply.
   local function drag_mouse(from, to)
     local keys = term.mouse.press(from)
@@ -1219,7 +1218,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
   end)
 
   it(
-    "Given another harness's float is open, When a bar's restore button is clicked, Then the open float is minimized first",
+    "Given another harness's float is open, When a bar's restore button is clicked, Then the restored float opens and the other stays open",
     function()
       local claude = term.open("claude")
       term.open("copilot")
@@ -1231,11 +1230,13 @@ describe("term: float mouse handling, minimized bars and flash", function()
       term.mouse.release()
       assert.is_true(
         wait_for(function()
-          return copilot.win ~= nil and vim.api.nvim_win_is_valid(copilot.win) and bar_of("claude") ~= nil
+          return copilot.win ~= nil and vim.api.nvim_win_is_valid(copilot.win)
         end),
-        "copilot should open and claude should be minimized into a bar"
+        "copilot should open"
       )
-      assert.is_nil(claude.win, "claude's float must be hidden")
+      vim.wait(300)
+      assert.is_nil(bar_of("claude"), "claude must not be minimized")
+      assert.is_true(claude.win ~= nil and vim.api.nvim_win_is_valid(claude.win), "claude's float must stay open")
     end
   )
 
@@ -1345,51 +1346,70 @@ describe("term: float mouse handling, minimized bars and flash", function()
     end
   )
 
-  it(
-    "Given two running harness floats, When a third harness is picked, Then both are minimized into separate dock slots",
-    function()
-      sw.init("claude")
-      term.open("claude")
-      term.open("maki")
-      sw.switch("copilot")
-      sw.after_pick()
-      assert.is_true(
-        wait_for(function()
-          local a, b = state.table.claude.inst, state.table.maki.inst
-          return bar_of("claude") ~= nil and bar_of("maki") ~= nil and a._bar_slot ~= b._bar_slot
-        end),
-        "claude and maki should each get their own dock slot"
-      )
-      local picked = state.table.copilot and state.table.copilot.inst
-      assert.is_true(
-        picked ~= nil and picked.win ~= nil and vim.api.nvim_win_is_valid(picked.win),
-        "the picked harness's float should be open"
-      )
+  it("Given two running harness floats, When a third harness is picked, Then all three floats are open", function()
+    sw.init("claude")
+    term.open("claude")
+    term.open("maki")
+    sw.switch("copilot")
+    sw.after_pick()
+    assert.is_true(
+      wait_for(function()
+        local p = state.table.copilot and state.table.copilot.inst
+        return p ~= nil and p.win ~= nil and vim.api.nvim_win_is_valid(p.win)
+      end),
+      "the picked harness's float should be open"
+    )
+    vim.wait(300)
+    for _, h in ipairs({ "claude", "maki" }) do
+      local i = state.table[h].inst
+      assert.is_nil(bar_of(h), h .. " must not be minimized")
+      assert.is_true(i.win ~= nil and vim.api.nvim_win_is_valid(i.win), h .. "'s float must stay open")
     end
-  )
+  end)
 
   -- Shelf: the top-left border corner is the shelf button. Double-clicking it takes the float
   -- fullscreen and then shrinks it to term.shelf_rows rows at the bottom of the editor. While shelf mode
   -- is on, focusing the float grows it to fullscreen and leaving it slides it back down to the shelf.
 
   ---The <C-f> fullscreen rect for the current editor size: 5% row padding, 10% column padding.
+  ---The zen float's inner width while zen is open, else nil.
+  local function zen_inner_width()
+    local zen = require("zen-mode.view")
+    if not zen.is_open() then
+      return nil
+    end
+    local zcfg = vim.api.nvim_win_get_config(zen.win)
+    local zw = zcfg.width
+    return math.max(math.floor((math.floor(zcfg.col) - 1) / 2), zw + math.floor(zw / 10)) - 2
+  end
+
+  ---Fullscreen: 5% vertical / 10% horizontal padding; while zen is open, the zen float's width,
+  -- centered.
   local function fullscreen_rect()
     local lines, cols = vim.o.lines, vim.o.columns
-    return {
+    local rect = {
       row = math.floor(0.05 * lines),
       col = math.floor(0.1 * cols),
       width = math.floor((1 - 2 * 0.1) * cols),
       height = math.floor((1 - 2 * 0.05) * lines),
     }
+    local zw = zen_inner_width()
+    if zw then
+      rect.width, rect.col = zw, math.floor((cols - zw - 2) / 2)
+    end
+    return rect
   end
 
-  ---The shelf: term.shelf_rows rows at the very bottom of the editor, fullscreen width.
+  ---The shelf: term.shelf_rows rows at the bottom of the fullscreen rect, the normal float's width
+  -- (the zen float's while zen is open), centered.
   local function shelf_rect()
     local full = fullscreen_rect()
+    local cols = vim.o.columns
+    local w = zen_inner_width() or math.floor(cols * 0.30) - 2
     return {
       row = full.row + full.height - term.shelf_rows,
-      col = full.col,
-      width = full.width,
+      col = math.floor((cols - w - 2) / 2),
+      width = w,
       height = term.shelf_rows,
     }
   end
@@ -1401,7 +1421,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
     local w = math.floor(cols * 0.30)
     local col = math.max(0, math.min(cols - w - 2, cols - 20 - 1 - w))
     return {
-      row = math.floor(lines * 0) + 1,
+      row = 0,
       col = col,
       width = w - 2,
       height = math.floor(lines * 0.90) - 2,
@@ -1540,14 +1560,15 @@ describe("term: float mouse handling, minimized bars and flash", function()
   )
 
   it(
-    "Given a shelved float, When it is minimized and restored, Then it comes back fullscreen and not shelved",
+    "Given a shelved float, When it is minimized and restored, Then it comes back in the default spot with shelf mode and fullscreen off",
     function()
       local inst = term.open("claude")
       assert.is_true(shelve(inst), "precondition: shelved")
       term.minimize("claude")
       assert.is_true(docked("claude", 1))
-      assert.is_false(inst._shelved, "minimizing clears the shelf")
+      assert.is_false(inst._shelved == true, "minimizing clears the shelf")
       assert.is_false(inst._shelf_mode == true, "minimizing turns shelf mode off")
+      assert.is_false(inst._wide == true, "minimizing clears fullscreen")
       term.show("claude")
       assert.is_true(
         wait_for(function()
@@ -1556,35 +1577,59 @@ describe("term: float mouse handling, minimized bars and flash", function()
         "the float should reopen"
       )
       assert.is_true(
-        at_rect(inst, fullscreen_rect()),
-        "the restored float should be fullscreen: " .. vim.inspect(rect_of(inst.win))
+        at_rect(inst, default_rect()),
+        "the restored float should be in the default spot: " .. vim.inspect(rect_of(inst.win))
       )
-      assert.is_false(inst._shelved)
     end
   )
 
-  it("Given a shelved float, When <C-f> is pressed, Then it is fullscreen and no longer shelved", function()
-    local inst = term.open("claude")
-    assert.is_true(shelve(inst), "precondition: shelved")
-    term.fullscreen_key(inst)
-    assert.is_true(at_rect(inst, fullscreen_rect()), "<C-f> on a shelf goes fullscreen")
-    assert.is_false(inst._shelved)
-  end)
+  it(
+    "Given a float made fullscreen with <C-f>, When it is minimized and restored, Then it comes back in the default spot with shelf mode off",
+    function()
+      local inst = term.open("claude")
+      term.fullscreen_key(inst)
+      assert.is_true(at_rect(inst, fullscreen_rect()), "precondition: fullscreen")
+      term.minimize("claude")
+      assert.is_false(inst._shelf_mode == true)
+      assert.is_false(inst._wide == true)
+      assert.is_nil(inst._saved_config)
+      term.show("claude")
+      assert.is_true(
+        at_rect(inst, default_rect()),
+        "the restored float should be in the default spot: " .. vim.inspect(rect_of(inst.win))
+      )
+    end
+  )
 
-  it("Given an open harness float, When <C-l> is pressed, Then it shelves", function()
-    local inst = term.open("claude")
-    term.shelf_key(inst)
-    assert.is_true(at_rect(inst, shelf_rect()), "<C-l> should shelve: " .. vim.inspect(rect_of(inst.win)))
-    assert.is_true(inst._shelved == true)
-  end)
+  it(
+    "Given a shelved float (shelf mode on), When <C-f> is pressed, Then shelf mode is off and the float leaves the shelf",
+    function()
+      local inst = term.open("claude")
+      assert.is_true(shelve(inst), "precondition: shelved")
+      term.fullscreen_key(inst)
+      assert.is_false(inst._shelf_mode == true)
+      assert.is_false(inst._shelved == true)
+      assert.is_true(
+        wait_for(function()
+          local r = rect_of(inst.win)
+          return not vim.deep_equal(r, fullscreen_rect()) and not vim.deep_equal(r, shelf_rect())
+        end, 1500),
+        "the float should retract: " .. vim.inspect(rect_of(inst.win))
+      )
+    end
+  )
 
-  it("Given a shelved float, When <C-l> is pressed, Then it is fullscreen and no longer shelved", function()
-    local inst = term.open("claude")
-    assert.is_true(shelve(inst), "precondition: shelved")
-    term.shelf_key(inst)
-    assert.is_true(at_rect(inst, fullscreen_rect()), "<C-l> on a shelf goes fullscreen")
-    assert.is_false(inst._shelved)
-  end)
+  it(
+    "Given a shelved float that is not focused, When <C-l> or <C-h> is pressed, Then the shelf stays in place",
+    function()
+      local inst = term.open("claude")
+      assert.is_true(shelve(inst), "precondition: shelved")
+      term.shelf_key(inst)
+      vim.wait(400)
+      assert.are.same(shelf_rect(), rect_of(inst.win))
+      assert.is_true(inst._shelved == true)
+    end
+  )
 
   it(
     "Given shelf mode on and the float unfocused, When the float gains focus, Then it grows to fullscreen and shelf mode stays on",
@@ -1597,6 +1642,20 @@ describe("term: float mouse handling, minimized bars and flash", function()
       assert.is_true(at_rect(inst, fullscreen_rect()), "focus should grow the shelf to fullscreen")
       assert.is_true(inst._shelf_mode == true, "shelf mode stays on while focused")
       assert.is_false(inst._shelved)
+    end
+  )
+
+  it(
+    "Given shelf mode on and an unfocused float that is neither shelved nor fullscreen, When the float gains focus, Then it goes fullscreen",
+    function()
+      local work_win = vim.api.nvim_get_current_win()
+      local inst = term.open("claude")
+      vim.api.nvim_set_current_win(work_win)
+      assert.is_true(shelve(inst), "precondition: shelved")
+      vim.api.nvim_win_set_config(inst.win, { relative = "editor", row = 2, col = 10, width = 40, height = 10 })
+      inst._shelved = false
+      vim.api.nvim_set_current_win(inst.win)
+      assert.is_true(at_rect(inst, fullscreen_rect()), "focus must always unshelve: " .. vim.inspect(rect_of(inst.win)))
     end
   )
 
@@ -1616,17 +1675,17 @@ describe("term: float mouse handling, minimized bars and flash", function()
   )
 
   it(
-    "Given shelf mode on, When <C-l> is pressed, Then shelf mode is off and leaving focus keeps the float fullscreen",
+    "Given shelf mode off and the float unfocused, When focus moves into and out of it, Then the float does not move",
     function()
       local work_win = vim.api.nvim_get_current_win()
       local inst = term.open("claude")
-      assert.is_true(shelve(inst), "precondition: shelved")
-      term.shelf_key(inst)
-      assert.is_true(at_rect(inst, fullscreen_rect()), "turning shelf mode off goes fullscreen")
-      assert.is_false(inst._shelf_mode == true, "shelf mode must be off")
+      vim.api.nvim_set_current_win(work_win)
+      local before = rect_of(inst.win)
+      vim.api.nvim_set_current_win(inst.win)
+      vim.wait(200)
       vim.api.nvim_set_current_win(work_win)
       vim.wait(400)
-      assert.are.same(fullscreen_rect(), rect_of(inst.win), "with shelf mode off, leaving must not shelve")
+      assert.are.same(before, rect_of(inst.win))
     end
   )
 
@@ -1659,17 +1718,101 @@ describe("term: float mouse handling, minimized bars and flash", function()
   )
 
   it(
-    "Given a focused float with shelf mode off, When <C-l> is pressed, Then it shelves and focus goes back to where <C-h> goes",
+    "Given shelf mode on and the float focused at fullscreen, When <C-l> is pressed, Then focus moves to the tmux pane on the right, shelf mode stays on and the float stays focused at fullscreen",
+    function()
+      local work_win = vim.api.nvim_get_current_win()
+      local inst = term.open("claude")
+      vim.api.nvim_set_current_win(work_win)
+      assert.is_true(shelve(inst), "precondition: shelved")
+      vim.api.nvim_set_current_win(inst.win)
+      assert.is_true(at_rect(inst, fullscreen_rect()), "precondition: focused at fullscreen")
+
+      local real_system, real_tmux = vim.fn.system, vim.env.TMUX
+      local calls = {}
+      vim.env.TMUX = "/tmp/fake-tmux,1,0"
+      vim.fn.system = function(cmd)
+        calls[#calls + 1] = type(cmd) == "table" and table.concat(cmd, " ") or cmd
+        return ""
+      end
+      local ok, err = pcall(term.shelf_key, inst)
+      vim.fn.system, vim.env.TMUX = real_system, real_tmux
+      assert.is_true(ok, tostring(err))
+
+      assert.are.same({ "tmux select-pane -R" }, calls)
+      assert.is_true(inst._shelf_mode == true, "shelf mode must stay on")
+      vim.wait(400)
+      assert.are.equal(inst.win, vim.api.nvim_get_current_win(), "the float must keep nvim focus")
+      assert.are.same(fullscreen_rect(), rect_of(inst.win), "the float must stay fullscreen")
+    end
+  )
+
+  it(
+    "Given shelf mode on and the float focused at fullscreen, When <C-h> is pressed, Then focus moves to the tmux pane on the left, shelf mode stays on and the float stays focused at fullscreen",
+    function()
+      local work_win = vim.api.nvim_get_current_win()
+      local inst = term.open("claude")
+      vim.api.nvim_set_current_win(work_win)
+      assert.is_true(shelve(inst), "precondition: shelved")
+      vim.api.nvim_set_current_win(inst.win)
+      assert.is_true(at_rect(inst, fullscreen_rect()), "precondition: focused at fullscreen")
+
+      local real_system, real_tmux = vim.fn.system, vim.env.TMUX
+      local calls = {}
+      vim.env.TMUX = "/tmp/fake-tmux,1,0"
+      vim.fn.system = function(cmd)
+        calls[#calls + 1] = type(cmd) == "table" and table.concat(cmd, " ") or cmd
+        return ""
+      end
+      local ok, err = pcall(term.go_back_key, inst)
+      vim.fn.system, vim.env.TMUX = real_system, real_tmux
+      assert.is_true(ok, tostring(err))
+
+      assert.are.same({ "tmux select-pane -L" }, calls)
+      assert.is_true(inst._shelf_mode == true, "shelf mode must stay on")
+      vim.wait(400)
+      assert.are.equal(inst.win, vim.api.nvim_get_current_win(), "the float must keep nvim focus")
+      assert.are.same(fullscreen_rect(), rect_of(inst.win), "the float must stay fullscreen")
+    end
+  )
+
+  it(
+    "Given shelf mode on and the float focused at fullscreen, When <Esc> is pressed, Then the float slides to the shelf instead of minimizing, shelf mode stays on and focus goes back",
+    function()
+      local work_win = vim.api.nvim_get_current_win()
+      local inst = term.open("claude")
+      vim.api.nvim_set_current_win(work_win)
+      assert.is_true(shelve(inst), "precondition: shelved")
+      vim.api.nvim_set_current_win(inst.win)
+      assert.is_true(at_rect(inst, fullscreen_rect()), "precondition: focused at fullscreen")
+      require("harness-decorators.focus").last_win = work_win
+
+      term.close_key(inst)
+
+      assert.is_nil(bar_of("claude"), "must not minimize into a docked bar")
+      assert.is_true(inst._shelf_mode == true, "shelf mode must stay on")
+      assert.are.equal(work_win, vim.api.nvim_get_current_win(), "focus should go back")
+      assert.is_true(
+        wait_for(function()
+          return at_rect(inst, shelf_rect())
+        end, 1500),
+        "should slide to the shelf: " .. vim.inspect(rect_of(inst.win))
+      )
+    end
+  )
+
+  it(
+    "Given a focused float with shelf mode off, When <C-l> is pressed, Then focus goes back to where <C-h> goes and the float does not move",
     function()
       local work_win = vim.api.nvim_get_current_win()
       local inst = term.open("claude")
       vim.api.nvim_set_current_win(inst.win)
-      -- The window <C-h> returns to.
+      local before = rect_of(inst.win)
       require("harness-decorators.focus").last_win = work_win
       term.shelf_key(inst)
       assert.are.equal(work_win, vim.api.nvim_get_current_win(), "<C-l> should move focus back like <C-h>")
-      assert.is_true(at_rect(inst, shelf_rect()), "the float should shelve: " .. vim.inspect(rect_of(inst.win)))
-      assert.is_true(inst._shelf_mode == true)
+      vim.wait(400)
+      assert.are.same(before, rect_of(inst.win), "the float must not move")
+      assert.is_false(inst._shelf_mode == true)
     end
   )
 
@@ -1682,44 +1825,31 @@ describe("term: float mouse handling, minimized bars and flash", function()
     assert.is_true(inst._shelved)
   end)
 
-  it(
-    "Given a fullscreen float resized with the mouse (_wide set), When <C-f> is pressed, Then it goes fullscreen again instead of collapsing",
-    function()
-      local inst = term.open("claude")
-      term.fullscreen_key(inst)
-      assert.is_true(at_rect(inst, fullscreen_rect()), "precondition: fullscreen")
-      local pos = vim.api.nvim_win_get_position(inst.win)
-      local cfg = vim.api.nvim_win_get_config(inst.win)
-      local corner = { screenrow = pos[1] + cfg.height + 2, screencol = pos[2] + cfg.width + 2 }
-      drag_mouse(corner, { screenrow = corner.screenrow - 3, screencol = corner.screencol - 5 })
-      assert.is_true(
-        wait_for(function()
-          return vim.api.nvim_win_get_config(inst.win).width == cfg.width - 5
-        end),
-        "precondition: resized with the mouse"
-      )
-      term.fullscreen_key(inst)
-      assert.is_true(
-        at_rect(inst, fullscreen_rect()),
-        "<C-f> on a non-fullscreen rect goes fullscreen: " .. vim.inspect(rect_of(inst.win))
-      )
-      term.fullscreen_key(inst)
-      assert.is_true(
-        at_rect(inst, { row = 2, col = 10, width = 40, height = 10 }),
-        "the next <C-f> retracts to the pre-fullscreen float"
-      )
-    end
-  )
+  it("Given shelf mode off, When <C-f> is pressed, Then shelf mode is on and the float is fullscreen", function()
+    local inst = term.open("claude")
+    term.fullscreen_key(inst)
+    assert.is_true(inst._shelf_mode == true, "<C-f> must turn shelf mode on")
+    assert.is_true(at_rect(inst, fullscreen_rect()), "shelf mode starts fullscreen: " .. vim.inspect(rect_of(inst.win)))
+  end)
 
   it(
-    "Given a float at the fullscreen rect with no saved geometry, When <C-f> is pressed, Then it retracts to the default right-side float",
+    "Given shelf mode on and the float focused at fullscreen outside tmux, When <C-h> or <C-l> is pressed, Then nothing happens",
     function()
+      local work_win = vim.api.nvim_get_current_win()
       local inst = term.open("claude")
-      vim.api.nvim_win_set_config(inst.win, vim.tbl_extend("force", { relative = "editor" }, fullscreen_rect()))
-      assert.is_nil(inst._saved_config, "precondition: no saved geometry")
-      term.fullscreen_key(inst)
-      assert.is_true(at_rect(inst, default_rect()), "<C-f> on fullscreen retracts: " .. vim.inspect(rect_of(inst.win)))
-      assert.is_false(inst._wide)
+      vim.api.nvim_set_current_win(work_win)
+      assert.is_true(shelve(inst), "precondition: shelved")
+      vim.api.nvim_set_current_win(inst.win)
+      assert.is_true(at_rect(inst, fullscreen_rect()), "precondition: focused at fullscreen")
+      local real_tmux = vim.env.TMUX
+      vim.env.TMUX = nil
+      term.go_back_key(inst)
+      term.shelf_key(inst)
+      vim.env.TMUX = real_tmux
+      vim.wait(400)
+      assert.are.equal(inst.win, vim.api.nvim_get_current_win(), "focus must stay in the float")
+      assert.are.same(fullscreen_rect(), rect_of(inst.win), "the float must stay fullscreen")
+      assert.is_true(inst._shelf_mode == true)
     end
   )
 
@@ -1765,13 +1895,14 @@ describe("term: float mouse handling, minimized bars and flash", function()
       vim.api.nvim_win_set_config = real_set_config
     end)
 
-    it("narrows all open floats to 25% of columns when narrow=true", function()
+    it("Given no zen window to measure, When narrow=true, Then all open floats are 20% of the columns wide", function()
       local inst = term.open("claude")
       local cols = vim.o.columns
       term.set_zen_width(true)
-      local w = math.floor(cols * 0.25)
-      assert.are.equal(w, inst.opts.width and math.floor(cols * inst.opts.width) or nil)
-      assert.are.equal(0.25, inst.opts.width)
+      assert.are.equal(math.floor(cols * 0.20) - 2, inst.opts.width)
+      assert.is_true(wait_for(function()
+        return vim.api.nvim_win_get_config(inst.win).width == math.floor(cols * 0.20) - 2
+      end, 1500))
     end)
 
     it("restores all open floats to the default width and col when narrow=false", function()
@@ -1790,9 +1921,10 @@ describe("term: float mouse handling, minimized bars and flash", function()
       local a = term.open("claude")
       term.open("maki")
       term.set_zen_width(true)
-      assert.are.equal(0.25, a.opts.width)
+      local w = math.floor(vim.o.columns * 0.20) - 2
+      assert.are.equal(w, a.opts.width)
       local maki_entry = state.table["maki"]
-      assert.are.equal(0.25, maki_entry.inst.opts.width)
+      assert.are.equal(w, maki_entry.inst.opts.width)
     end)
 
     it("ignores harnesses with no live window", function()
@@ -1804,5 +1936,852 @@ describe("term: float mouse handling, minimized bars and flash", function()
       -- The bar is still there and the float is still minimized.
       assert.is_not_nil(inst._pill_win)
     end)
+  end)
+
+  describe("term.set_zen_width against real window geometry", function()
+    local zen_view = require("zen-mode.view")
+    local zen_buf, zen_win
+
+    before_each(function()
+      zen_buf = vim.api.nvim_create_buf(false, true)
+      local cols = vim.o.columns
+      zen_win = vim.api.nvim_open_win(zen_buf, false, {
+        relative = "editor",
+        row = 0,
+        col = math.floor(cols * 0.2),
+        width = math.floor(cols * 0.4),
+        height = 5,
+      })
+      zen_view.win = zen_win
+    end)
+
+    after_each(function()
+      zen_view.win = nil
+      pcall(vim.api.nvim_win_close, zen_win, true)
+      pcall(vim.api.nvim_buf_delete, zen_buf, { force = true })
+    end)
+
+    ---The float's outer span: first column and one past the last, border included.
+    local function outer_span(win)
+      local cfg = vim.api.nvim_win_get_config(win)
+      local bordered = cfg.border ~= nil and cfg.border ~= "none" and not vim.tbl_isempty(cfg.border)
+      local col = math.floor(cfg.col)
+      return col, col + cfg.width + (bordered and 2 or 0)
+    end
+
+    ---The zen float's expected outer span (first column, one past the last) for a zen window at
+    -- `zcol`, `zw` wide.
+    local function expected_span(cols, zcol, zw)
+      local outer = math.max(math.floor((zcol - 1) / 2), zw + math.floor(zw / 10))
+      local left = math.max(0, math.min(zcol + math.floor(zw / 4), cols - 20 - outer))
+      return left, left + outer
+    end
+
+    it(
+      "Given zen is open with room on its right, When zen mode resizes the floats, Then the float starts a quarter into the zen window, is 10% wider than it, and fills the top 70% of the screen",
+      function()
+        local old_cols = vim.o.columns
+        vim.o.columns = 300
+        vim.api.nvim_win_set_config(zen_win, { relative = "editor", row = 0, col = 40, width = 120, height = 5 })
+        local inst = term.open("claude")
+        term.set_zen_width(true)
+        local ok = wait_for(function()
+          local left, right = outer_span(inst.win)
+          local cfg = vim.api.nvim_win_get_config(inst.win)
+          return left == 70
+            and right == 202
+            and math.floor(cfg.row) == 0
+            and cfg.height + 2 == math.floor(vim.o.lines * 0.7)
+        end, 1500)
+        local got = rect_of(inst.win)
+        vim.o.columns = old_cols
+        assert.is_true(ok, "want cols 70..202, top 70%: " .. vim.inspect(got))
+      end
+    )
+
+    it(
+      "Given a narrow zen window, When zen mode resizes the floats, Then the focused float is at least as wide as the grid's widest cell",
+      function()
+        local old_cols = vim.o.columns
+        vim.o.columns = 300
+        vim.api.nvim_win_set_config(zen_win, { relative = "editor", row = 0, col = 100, width = 40, height = 5 })
+        local inst = term.open("claude")
+        term.set_zen_width(true)
+        local ok = wait_for(function()
+          local left, right = outer_span(inst.win)
+          return left == 110 and right == 159
+        end, 1500)
+        local got = rect_of(inst.win)
+        vim.o.columns = old_cols
+        assert.is_true(ok, "want cols 110..159 (outer 49 = half of the 99-col empty area): " .. vim.inspect(got))
+      end
+    )
+
+    it(
+      "Given little room right of the zen window, When zen mode resizes the floats, Then the float shifts left so it ends where the dock begins",
+      function()
+        local old_cols = vim.o.columns
+        vim.o.columns = 200
+        vim.api.nvim_win_set_config(zen_win, { relative = "editor", row = 0, col = 40, width = 120, height = 5 })
+        local inst = term.open("claude")
+        term.set_zen_width(true)
+        local ok = wait_for(function()
+          local left, right = outer_span(inst.win)
+          return left == 48 and right == 180
+        end, 1500)
+        local got = rect_of(inst.win)
+        vim.o.columns = old_cols
+        assert.is_true(ok, "want cols 48..180: " .. vim.inspect(got))
+      end
+    )
+
+    local function geom(win)
+      local c = vim.api.nvim_win_get_config(win)
+      return { row = math.floor(c.row), col = math.floor(c.col), width = c.width, height = c.height }
+    end
+
+    it(
+      "Given zen is open and the float sits unmoved in its zen spot, When <C-f> goes fullscreen and back, Then the float returns to the zen spot",
+      function()
+        local inst = term.open("claude")
+        term.set_zen_width(true)
+        local zen_spot = geom(inst.win)
+
+        term.fullscreen_key(inst)
+        vim.wait(500)
+        term.fullscreen_key(inst)
+
+        assert.is_true(
+          wait_for(function()
+            return vim.deep_equal(geom(inst.win), zen_spot)
+          end, 1500),
+          ("expected %s, got %s"):format(vim.inspect(zen_spot), vim.inspect(geom(inst.win)))
+        )
+      end
+    )
+
+    it(
+      "Given the float sits unmoved in its default spot, When <C-f> goes fullscreen, zen opens, and <C-f> retracts, Then the float lands in the zen spot",
+      function()
+        zen_view.win = nil
+        local inst = term.open("claude")
+        local lines, cols = vim.o.lines, vim.o.columns
+        local w = math.floor(cols * 0.30)
+        -- Where Snacks puts a float opened with the default options: row 0 stays 0 (Snacks only
+        -- offsets fractional rows strictly between 0 and 1), sizes are fractions minus the border.
+        vim.api.nvim_win_set_config(inst.win, {
+          relative = "editor",
+          row = 0,
+          col = math.max(0, math.min(cols - w - 2, cols - 20 - 1 - w)),
+          width = w - 2,
+          height = math.floor(lines * 0.90) - 2,
+        })
+        term.fullscreen_key(inst)
+        vim.wait(500)
+
+        zen_view.win = zen_win
+        term.fullscreen_key(inst)
+
+        local zcfg = vim.api.nvim_win_get_config(zen_win)
+        local want_l, want_r = expected_span(cols, zcfg.col, zcfg.width)
+        assert.is_true(
+          wait_for(function()
+            local left, right = outer_span(inst.win)
+            return left == want_l and right == want_r
+          end, 1500),
+          "expected the zen spot, got " .. vim.inspect(geom(inst.win))
+        )
+      end
+    )
+
+    local function place(inst, rect)
+      vim.api.nvim_win_set_config(inst.win, vim.tbl_extend("force", { relative = "editor" }, rect))
+    end
+
+    it(
+      "Given zen is open and shelf mode off, When the float loses focus, Then it shrinks from the left to just past the zen window, keeping its right edge and height",
+      function()
+        local old_cols = vim.o.columns
+        vim.o.columns = 300
+        vim.api.nvim_win_set_config(zen_win, { relative = "editor", row = 0, col = 40, width = 120, height = 5 })
+        local work_win = vim.api.nvim_get_current_win()
+        local inst = term.open("claude")
+        vim.api.nvim_set_current_win(inst.win)
+        term.set_zen_width(true)
+        local focused_ok = wait_for(function()
+          local left, right = outer_span(inst.win)
+          return left == 70 and right == 202
+        end, 1500)
+        local height = vim.api.nvim_win_get_config(inst.win).height
+        vim.api.nvim_set_current_win(work_win)
+        local ok = wait_for(function()
+          local left, right = outer_span(inst.win)
+          return left == 161 and right == 202 and vim.api.nvim_win_get_config(inst.win).height == height
+        end, 1500)
+        local got = rect_of(inst.win)
+        vim.o.columns = old_cols
+        assert.is_true(focused_ok, "precondition: focused float in the zen spot")
+        assert.is_true(ok, "want cols 161..202 at the same height: " .. vim.inspect(got))
+      end
+    )
+
+    it(
+      "Given zen is open, shelf mode off and the float moved aside, When the float gains focus, Then it grows back to the zen spot",
+      function()
+        local old_cols = vim.o.columns
+        vim.o.columns = 300
+        vim.api.nvim_win_set_config(zen_win, { relative = "editor", row = 0, col = 40, width = 120, height = 5 })
+        local work_win = vim.api.nvim_get_current_win()
+        local inst = term.open("claude")
+        vim.api.nvim_set_current_win(work_win)
+        term.set_zen_width(true)
+        local aside = wait_for(function()
+          local left, right = outer_span(inst.win)
+          return left == 161 and right == 202
+        end, 1500)
+        vim.api.nvim_set_current_win(inst.win)
+        local ok = wait_for(function()
+          local left, right = outer_span(inst.win)
+          return left == 70 and right == 202
+        end, 1500)
+        local got = rect_of(inst.win)
+        vim.o.columns = old_cols
+        assert.is_true(aside, "precondition: unfocused float moved aside")
+        assert.is_true(ok, "want cols 70..202: " .. vim.inspect(got))
+      end
+    )
+
+    it(
+      "Given a minimized harness, When zen mode opens, Then its bar docks just right of the zen float, at the top",
+      function()
+        local old_cols = vim.o.columns
+        vim.o.columns = 200
+        vim.api.nvim_win_set_config(zen_win, { relative = "editor", row = 0, col = 40, width = 120, height = 5 })
+        local inst = term.open("claude")
+        term.open("maki")
+        term.minimize("maki")
+        term.set_zen_width(true)
+        local ok = wait_for(function()
+          local bar = bar_of("maki")
+          if not bar then
+            return false
+          end
+          local _, right = outer_span(inst.win)
+          local cfg = vim.api.nvim_win_get_config(bar)
+          return math.floor(cfg.col) == right and cfg.row == dock_row(1)
+        end, 1500)
+        local _, right = outer_span(inst.win)
+        local bar = bar_of("maki")
+        local got = bar and vim.api.nvim_win_get_config(bar)
+        vim.o.columns = old_cols
+        assert.is_true(ok, ("float ends at %d, bar at %s"):format(right, vim.inspect(got and { got.row, got.col })))
+      end
+    )
+
+    it(
+      "Given zen is open and the float sits in the zen spot, When the editor is resized, Then the float is re-placed for the new size",
+      function()
+        local inst = term.open("claude")
+        term.set_zen_width(true)
+        local old_cols = vim.o.columns
+        vim.o.columns = old_cols - 30
+        vim.api.nvim_exec_autocmds("VimResized", {})
+        local zcfg = vim.api.nvim_win_get_config(zen_win)
+        local want_l, want_r = expected_span(vim.o.columns, zcfg.col, zcfg.width)
+        local ok = wait_for(function()
+          local left, right = outer_span(inst.win)
+          return left == want_l and right == want_r
+        end, 1000)
+        local _, right = outer_span(inst.win)
+        local cols = vim.o.columns
+        vim.o.columns = old_cols
+        assert.is_true(ok, ("float ends at %d, want %d"):format(right, want_r))
+      end
+    )
+
+    it(
+      "Given shelf mode on and an unfocused float at fullscreen, When zen mode opens, Then the float slides onto the shelf",
+      function()
+        local inst = term.open("claude")
+        assert.is_true(shelve(inst), "precondition: shelved")
+        place(inst, fullscreen_rect())
+        inst._shelved = false
+        term.set_zen_width(true)
+        assert.is_true(at_rect(inst, shelf_rect()), "should land on the shelf: " .. vim.inspect(rect_of(inst.win)))
+        assert.is_true(inst._shelved == true)
+      end
+    )
+
+    it(
+      "Given shelf mode on and a shelved float off its shelf rect, When zen mode opens, Then it slides back onto the shelf",
+      function()
+        local inst = term.open("claude")
+        assert.is_true(shelve(inst), "precondition: shelved")
+        local off = shelf_rect()
+        off.width, off.col = off.width - 7, off.col + 3
+        place(inst, off)
+        term.set_zen_width(true)
+        assert.is_true(at_rect(inst, shelf_rect()), "should land on the shelf: " .. vim.inspect(rect_of(inst.win)))
+      end
+    )
+
+    it("Given shelf mode on and the float focused, When zen mode opens, Then the float grows to fullscreen", function()
+      local work_win = vim.api.nvim_get_current_win()
+      local inst = term.open("claude")
+      vim.api.nvim_set_current_win(work_win)
+      assert.is_true(shelve(inst), "precondition: shelved")
+      vim.api.nvim_set_current_win(inst.win)
+      assert.is_true(at_rect(inst, fullscreen_rect()), "precondition: focused at fullscreen")
+      place(inst, shelf_rect())
+      term.set_zen_width(true)
+      assert.is_true(at_rect(inst, fullscreen_rect()), "should land fullscreen: " .. vim.inspect(rect_of(inst.win)))
+    end)
+  end)
+
+  -- Tiling readjust (<C-t>): the focused float keeps its normal spot and every other open float
+  -- stacks top to bottom, by harness name, in its own column: left of the zen window while zen is
+  -- open, else at the far right just left of the dock's reserved space (focused float moves left of
+  -- the stack). Focus changes re-tile until reset_layout.
+  describe("term.tile", function()
+    local zen_view = require("zen-mode.view")
+    local zen_buf, zen_win, old_cols
+
+    before_each(function()
+      old_cols = vim.o.columns
+      vim.o.columns = 300
+      zen_buf = vim.api.nvim_create_buf(false, true)
+      zen_win =
+        vim.api.nvim_open_win(zen_buf, false, { relative = "editor", row = 0, col = 40, width = 120, height = 5 })
+      zen_view.win = zen_win
+    end)
+
+    after_each(function()
+      term._tiled = false
+      zen_view.win = nil
+      pcall(vim.api.nvim_win_close, zen_win, true)
+      pcall(vim.api.nvim_buf_delete, zen_buf, { force = true })
+      vim.o.columns = old_cols
+    end)
+
+    ---The float's outer geometry (border included).
+    local function outer(win)
+      local c = vim.api.nvim_win_get_config(win)
+      return { row = math.floor(c.row), col = math.floor(c.col), width = c.width + 2, height = c.height + 2 }
+    end
+
+    local function lands(inst, want)
+      local ok = wait_for(function()
+        return vim.deep_equal(outer(inst.win), want)
+      end, 1500)
+      assert.is_true(ok, ("want %s, got %s"):format(vim.inspect(want), vim.inspect(outer(inst.win))))
+    end
+
+    ---The text of a float's footer (the key legend), or "" when it has none.
+    local function footer_text(win)
+      local f = vim.api.nvim_win_get_config(win).footer
+      if type(f) ~= "table" then
+        return f or ""
+      end
+      return table.concat(vim.tbl_map(function(c)
+        return type(c) == "table" and c[1] or c
+      end, f))
+    end
+
+    it("Given two harness floats with claude focused, Then only claude's float shows the key legend", function()
+      local copilot = term.open("copilot")
+      local claude = term.open("claude")
+      vim.api.nvim_set_current_win(claude.win)
+      assert.is_true(
+        wait_for(function()
+          return footer_text(claude.win) ~= "" and footer_text(copilot.win) == ""
+        end, 1000),
+        ("claude %q, copilot %q"):format(footer_text(claude.win), footer_text(copilot.win))
+      )
+      vim.api.nvim_set_current_win(copilot.win)
+      assert.is_true(
+        wait_for(function()
+          return footer_text(copilot.win) ~= "" and footer_text(claude.win) == ""
+        end, 1000),
+        "the legend should follow focus to copilot"
+      )
+    end)
+
+    it("Given a harness float, Then its legend shows <C-t> as a dot grid and leaves out <C-h> and <C-l>", function()
+      local win_opts
+      snacks.open = function(_, opts)
+        win_opts = opts.win
+        local inst = make_float_fake(vim.api.nvim_create_buf(false, true))
+        inst:show()
+        return inst
+      end
+      term.open("claude")
+      local shown = vim.tbl_map(function(k)
+        return k:lower()
+      end, win_opts.footer_keys)
+      assert.is_true(vim.tbl_contains(shown, "<c-t>"), vim.inspect(shown))
+      assert.is_false(vim.tbl_contains(shown, "<c-h>"), vim.inspect(shown))
+      assert.is_false(vim.tbl_contains(shown, "<c-l>"), vim.inspect(shown))
+      local desc
+      for _, k in ipairs(term.terminal_keys()) do
+        if k[1] == "<C-t>" then
+          desc = k.desc
+        end
+      end
+      assert.are.equal("⣿", desc)
+    end)
+
+    it(
+      "Given the floats are all in their grid spots, When <C-t> is pressed, Then focus cycles to the next float by name and wraps",
+      function()
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        local stacked = { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) }
+        local zen_spot = { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) }
+        term.tile()
+        lands(copilot, stacked)
+        lands(claude, zen_spot)
+        term.tile()
+        assert.are.equal(copilot.win, vim.api.nvim_get_current_win(), "claude -> copilot")
+        lands(claude, stacked)
+        lands(copilot, zen_spot)
+        term.tile()
+        assert.are.equal(claude.win, vim.api.nvim_get_current_win(), "copilot wraps to claude")
+      end
+    )
+
+    it(
+      "Given the floats are all in their grid spots with claude active, When <C-t> cycles focus to copilot, Then copilot becomes the active and selected harness",
+      function()
+        sw.init("claude")
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        lands(copilot, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
+        lands(claude, { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) })
+        term.tile()
+        assert.are.equal(copilot.win, vim.api.nvim_get_current_win(), "focus cycles to copilot")
+        assert.are.equal("copilot", sw.current(), "copilot is the active harness")
+        assert.are.equal("copilot", require("harness-decorators.park").selected_harness(), "copilot is selected")
+      end
+    )
+
+    it(
+      "Given the floats are all in their grid spots in zen with claude focused, When <C-t> cycles to copilot, Then claude moves straight into the grid without stepping aside first",
+      function()
+        sw.init("claude")
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        lands(copilot, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
+        lands(claude, { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) })
+        term.tile()
+        local anim = require("harness-decorators.terminal-animations")
+        local orig, targets = anim.animate_resize, {}
+        local real_is_open = zen_view.is_open
+        zen_view.is_open = function()
+          return true
+        end
+        -- Real Snacks focus can land a tick later than the call.
+        function copilot:focus()
+          vim.schedule(function()
+            vim.api.nvim_set_current_win(self.win)
+          end)
+        end
+        anim.animate_resize = function(i, rect, ...)
+          if i == claude then
+            table.insert(targets, vim.deepcopy(rect))
+          end
+          return orig(i, rect, ...)
+        end
+        term.tile()
+        vim.wait(300)
+        anim.animate_resize = orig
+        zen_view.is_open = real_is_open
+        for _, r in ipairs(targets) do
+          assert.is_true(r.col <= 70, "claude was sent right of zen first: " .. vim.inspect(targets))
+        end
+        lands(claude, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
+      end
+    )
+
+    it(
+      "Given zen is open with claude focused and copilot in the grid, When <C-q> picks copilot and its focus lands a tick later, Then claude goes straight into the grid and copilot takes the zen spot",
+      function()
+        sw.init("claude")
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        lands(copilot, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
+        local anim = require("harness-decorators.terminal-animations")
+        local orig, targets = anim.animate_resize, {}
+        anim.animate_resize = function(i, rect, ...)
+          if i == claude then
+            table.insert(targets, vim.deepcopy(rect))
+          end
+          return orig(i, rect, ...)
+        end
+        local real_is_open = zen_view.is_open
+        zen_view.is_open = function()
+          return true
+        end
+        function copilot:focus()
+          vim.schedule(function()
+            vim.api.nvim_set_current_win(self.win)
+          end)
+        end
+        sw.switch("copilot")
+        sw.after_pick()
+        vim.wait(300)
+        anim.animate_resize = orig
+        zen_view.is_open = real_is_open
+        for _, r in ipairs(targets) do
+          assert.is_true(r.col <= 70, "claude was sent right of zen: " .. vim.inspect(targets))
+        end
+        lands(claude, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
+        lands(copilot, { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) })
+      end
+    )
+
+    it(
+      "Given zen is open, the floats tiled and claude stepped aside while the <C-q> picker has focus, When copilot is picked, Then claude re-grids and copilot takes the zen spot",
+      function()
+        sw.init("claude")
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        vim.api.nvim_set_current_win(zen_win)
+        lands(claude, { row = 0, col = 161, width = 19, height = math.floor(vim.o.lines * 0.90) })
+        sw.switch("copilot")
+        sw.after_pick()
+        lands(claude, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
+        lands(copilot, { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) })
+      end
+    )
+
+    it(
+      "Given the floats are tiled but one was dragged out of its spot, When <C-t> is pressed, Then it re-grids without moving focus",
+      function()
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        local stacked = { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) }
+        lands(copilot, stacked)
+        vim.wait(300)
+        vim.api.nvim_win_set_config(copilot.win, { relative = "editor", row = 3, col = 5, width = 30, height = 8 })
+        term.tile()
+        assert.are.equal(claude.win, vim.api.nvim_get_current_win(), "focus must stay on claude")
+        lands(copilot, stacked)
+      end
+    )
+
+    it(
+      "Given an unfocused harness float scrolled up, When its terminal gets new text, Then it scrolls to the last line",
+      function()
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        local lines = {}
+        for n = 1, 100 do
+          lines[n] = "line " .. n
+        end
+        vim.api.nvim_buf_set_lines(copilot.buf, 0, -1, false, lines)
+        vim.api.nvim_win_set_cursor(copilot.win, { 1, 0 })
+        vim.api.nvim_buf_set_lines(copilot.buf, -1, -1, false, { "new output" })
+        assert.is_true(
+          wait_for(function()
+            return vim.api.nvim_win_get_cursor(copilot.win)[1] == 101
+          end, 1000),
+          "cursor at " .. vim.api.nvim_win_get_cursor(copilot.win)[1]
+        )
+      end
+    )
+
+    it("Given an unfocused harness float scrolled up, When tiling resizes it, Then it ends on the last line", function()
+      local copilot = term.open("copilot")
+      local claude = term.open("claude")
+      vim.api.nvim_set_current_win(claude.win)
+      local lines = {}
+      for n = 1, 100 do
+        lines[n] = "line " .. n
+      end
+      vim.api.nvim_buf_set_lines(copilot.buf, 0, -1, false, lines)
+      vim.wait(200)
+      vim.api.nvim_win_set_cursor(copilot.win, { 1, 0 })
+      term.tile()
+      lands(copilot, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
+      assert.is_true(
+        wait_for(function()
+          return vim.api.nvim_win_get_cursor(copilot.win)[1] == 100
+        end, 1000),
+        "cursor at " .. vim.api.nvim_win_get_cursor(copilot.win)[1]
+      )
+    end)
+
+    it(
+      "Given a focused harness float scrolled up in normal mode, When its terminal gets new text, Then it stays where the user scrolled",
+      function()
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        vim.cmd("stopinsert")
+        local lines = {}
+        for n = 1, 100 do
+          lines[n] = "line " .. n
+        end
+        vim.api.nvim_buf_set_lines(claude.buf, 0, -1, false, lines)
+        vim.api.nvim_win_set_cursor(claude.win, { 1, 0 })
+        vim.api.nvim_buf_set_lines(claude.buf, -1, -1, false, { "new output" })
+        vim.wait(300)
+        assert.are.equal(1, vim.api.nvim_win_get_cursor(claude.win)[1])
+      end
+    )
+
+    it(
+      "Given zen is open with claude's float focused, When <C-q> picks copilot, Then grid mode turns on with copilot in the zen spot and claude in the grid",
+      function()
+        sw.init("claude")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        sw.switch("copilot")
+        sw.after_pick()
+        local copilot = state.table.copilot.inst
+        assert.is_true(term._tiled == true, "grid mode must be on")
+        lands(copilot, { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) })
+        lands(claude, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
+      end
+    )
+
+    it(
+      "Given zen is open and two harness floats with claude focused, When tiled, Then claude takes the zen spot and copilot takes the half of the empty area next to the zen window",
+      function()
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        local tall = math.floor(vim.o.lines * 0.90)
+        lands(claude, { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) })
+        lands(copilot, { row = 0, col = 20, width = 19, height = tall })
+      end
+    )
+
+    it(
+      "Given zen is open and three harness floats, When tiled, Then the two unfocused ones split the left column's height, ordered by name",
+      function()
+        local maki = term.open("maki")
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        local tall = math.floor(vim.o.lines * 0.90)
+        local top = math.floor(tall / 2)
+        lands(copilot, { row = 0, col = 20, width = 19, height = top - 1 })
+        lands(maki, { row = top, col = 20, width = 19, height = tall - top })
+      end
+    )
+
+    it(
+      "Given zen is open and four unfocused harness floats, When tiled, Then they sit two per row in two rows left of zen, ordered by name",
+      function()
+        local others = {}
+        for _, h in ipairs({ "copilot", "crush", "maki", "pi" }) do
+          others[h] = term.open(h)
+        end
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        local tall = math.floor(vim.o.lines * 0.90)
+        local top = math.floor(tall / 2)
+        lands(others.copilot, { row = 0, col = 0, width = 18, height = top - 1 })
+        lands(others.crush, { row = 0, col = 19, width = 20, height = top - 1 })
+        lands(others.maki, { row = top, col = 0, width = 18, height = tall - top })
+        lands(others.pi, { row = top, col = 19, width = 20, height = tall - top })
+      end
+    )
+
+    it(
+      "Given zen is closed and four unfocused harness floats, When tiled, Then they sit two per row at the far right, left of the dock's space",
+      function()
+        zen_view.win = nil
+        local others = {}
+        for _, h in ipairs({ "copilot", "crush", "maki", "pi" }) do
+          others[h] = term.open(h)
+        end
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        local tall = math.floor(vim.o.lines * 0.90)
+        local top = math.floor(tall / 2)
+        lands(others.copilot, { row = 0, col = 219, width = 29, height = top - 1 })
+        lands(others.crush, { row = 0, col = 249, width = 30, height = top - 1 })
+        lands(others.maki, { row = top, col = 219, width = 29, height = tall - top })
+        lands(others.pi, { row = top, col = 249, width = 30, height = tall - top })
+        lands(claude, { row = 0, col = 128, width = 90, height = tall })
+      end
+    )
+
+    it(
+      "Given zen is open and the floats are tiled with claude focused, When focus goes back to the zen window, Then claude steps aside right of zen and copilot stays in the grid",
+      function()
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        vim.api.nvim_set_current_win(zen_win)
+        lands(claude, { row = 0, col = 161, width = 19, height = math.floor(vim.o.lines * 0.90) })
+        lands(copilot, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
+      end
+    )
+
+    it(
+      "Given zen is open and three floats tiled with claude focused, When focus goes back to the zen window, Then claude steps aside at a grid cell's width and the grid's full height",
+      function()
+        term.open("maki")
+        term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        vim.api.nvim_set_current_win(zen_win)
+        lands(claude, { row = 0, col = 161, width = 19, height = math.floor(vim.o.lines * 0.90) })
+      end
+    )
+
+    it(
+      "Given a zen window leaving a gap narrower than a grid cell, When the tiled focused float steps aside, Then it keeps the cell width and the dock moves right of it",
+      function()
+        vim.api.nvim_win_set_config(zen_win, { relative = "editor", row = 0, col = 100, width = 120, height = 5 })
+        term.open("maki")
+        assert.is_true(term.minimize("maki"), "precondition: maki docked")
+        term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        vim.api.nvim_set_current_win(zen_win)
+        lands(claude, { row = 0, col = 221, width = 49, height = math.floor(vim.o.lines * 0.90) })
+        assert.is_true(
+          wait_for(function()
+            local bar = bar_of("maki")
+            return bar ~= nil and math.floor(vim.api.nvim_win_get_config(bar).col) == 270
+          end, 1500),
+          "the dock should start at claude's right edge (270): "
+            .. vim.inspect(bar_of("maki") and vim.api.nvim_win_get_config(bar_of("maki")).col)
+        )
+      end
+    )
+
+    it(
+      "Given zen is open and the floats are tiled with claude focused, When claude is minimized, reopened and focus goes back to the zen window, Then claude steps aside right of zen rather than into the grid",
+      function()
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        assert.is_true(term.minimize("claude"), "precondition: claude minimized")
+        vim.wait(600)
+        term.open("claude")
+        assert.is_true(
+          wait_for(function()
+            return claude.win ~= nil
+              and vim.api.nvim_win_is_valid(claude.win)
+              and vim.api.nvim_get_current_win() == claude.win
+          end, 1500),
+          "precondition: claude reopened and focused"
+        )
+        vim.wait(300)
+        vim.api.nvim_set_current_win(zen_win)
+        lands(claude, { row = 0, col = 161, width = 19, height = math.floor(vim.o.lines * 0.90) })
+        lands(copilot, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
+      end
+    )
+
+    it(
+      "Given zen is open and the floats are tiled, When a stacked float gets focus, Then it takes the zen spot and the previously focused one joins the stack",
+      function()
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        vim.api.nvim_set_current_win(copilot.win)
+        lands(copilot, { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) })
+        lands(claude, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
+      end
+    )
+
+    it(
+      "Given zen is closed and two harness floats with claude focused, When tiled, Then copilot stacks at the far right before the dock's space and claude sits just left of it",
+      function()
+        zen_view.win = nil
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        local tall = math.floor(vim.o.lines * 0.90)
+        lands(copilot, { row = 0, col = 219, width = 60, height = tall })
+        lands(claude, { row = 0, col = 128, width = 90, height = tall })
+      end
+    )
+
+    it("Given the floats are tiled, When another harness is picked with <C-q>, Then tiling stays on", function()
+      local copilot = term.open("copilot")
+      local claude = term.open("claude")
+      vim.api.nvim_set_current_win(claude.win)
+      term.tile()
+      require("harness-decorators.switch").switch("copilot")
+      assert.is_true(term._tiled == true, "tiling must stay on")
+      assert.is_true(copilot.win ~= nil and vim.api.nvim_win_is_valid(copilot.win), "copilot stays open")
+    end)
+
+    it(
+      "Given zen is open with claude focused and copilot beside zen, When claude is minimized, Then focus leaves the harness floats and copilot keeps its unfocused spot",
+      function()
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.set_zen_width(true)
+        vim.wait(600)
+        local before = outer(copilot.win)
+        assert.is_true(term.minimize("claude"), "precondition: claude minimized")
+        vim.wait(600)
+        assert.are_not.equal(copilot.win, vim.api.nvim_get_current_win(), "copilot must not get focus")
+        assert.are.same(before, outer(copilot.win), "copilot must stay put")
+      end
+    )
+
+    it(
+      "Given the floats are tiled with claude focused, When claude is minimized, Then copilot stays in the stack",
+      function()
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        local stacked = { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) }
+        lands(copilot, stacked)
+        assert.is_true(term.minimize("claude"), "precondition: claude minimized")
+        vim.wait(600)
+        assert.are.same(stacked, outer(copilot.win), "copilot must stay in the stack")
+      end
+    )
+
+    it(
+      "Given the floats are tiled in zen, When reset_layout runs and a stacked float gets focus, Then the other float no longer moves left of zen",
+      function()
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        vim.api.nvim_set_current_win(claude.win)
+        term.tile()
+        lands(copilot, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
+        term.reset_layout()
+        vim.api.nvim_set_current_win(copilot.win)
+        vim.wait(600)
+        assert.is_true(
+          outer(claude.win).col > 39,
+          "claude should stay right of zen: " .. vim.inspect(outer(claude.win))
+        )
+      end
+    )
   end)
 end)

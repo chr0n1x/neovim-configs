@@ -287,4 +287,21 @@ describe("terminal key legend: one handler per key", function()
     assert.is_true(ok, "<C-l> legend handler raised: " .. tostring(err))
     assert.are.equal(fake, got, "<C-l> must call shelf_key with the instance")
   end)
+
+  it("Given the shared legend, Then <C-t> is a terminal-mode key bound to the tiling readjust", function()
+    local by_lhs = {}
+    for _, spec in ipairs(term_mod.terminal_keys()) do
+      by_lhs[spec[1]] = spec
+    end
+    assert.is_not_nil(by_lhs["<C-t>"], "<C-t> must be in the shared legend")
+    assert.are.equal("t", by_lhs["<C-t>"].mode, "<C-t> must be a terminal-mode key")
+    local orig, called = term_mod.tile, false
+    term_mod.tile = function()
+      called = true
+    end
+    local ok, err = pcall(by_lhs["<C-t>"][2], make_fake())
+    term_mod.tile = orig
+    assert.is_true(ok, "<C-t> legend handler raised: " .. tostring(err))
+    assert.is_true(called, "<C-t> must call term.tile")
+  end)
 end)

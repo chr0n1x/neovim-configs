@@ -11,6 +11,8 @@ return {
   dependencies = {
     {
       "3rd/image.nvim",
+      -- Its rockspec gives it a top-level spec of its own, which would load it at startup.
+      lazy = true,
       opts = {
         backend = "kitty",
         processor = "magick_cli",

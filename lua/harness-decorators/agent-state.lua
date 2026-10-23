@@ -131,13 +131,21 @@ function M.pid_from_tty_snapshot(snap, pty)
   return nil
 end
 
----Resolve the agent's pid from a terminal buffer. macOS has no /proc, so use the terminal's
----tty from ps there. Linux keeps the rdev-based /proc path as a fallback.
+---Resolve the agent's pid from a terminal buffer: the terminal job's pid, which is the command
+---Neovim launched. When that lookup fails, fall back to matching the terminal's tty in ps, then
+---to the rdev-based /proc scan (Linux only).
 ---@param bufnr number
 ---@return number? pid
 function M.pid_for_buf(bufnr)
   local chan = terminal_chan(bufnr)
-  if not chan or type(chan.pty) ~= "string" then
+  if not chan then
+    return nil
+  end
+  local ok_job, job_pid = pcall(vim.fn.jobpid, chan.id)
+  if ok_job and type(job_pid) == "number" and job_pid > 0 then
+    return job_pid
+  end
+  if type(chan.pty) ~= "string" then
     return nil
   end
 
@@ -284,9 +292,10 @@ end
 
 ---Poll every harness that has a live terminal. One ps snapshot for the whole
 --round. Result keyed by harness name.
+---@param snap? string ps snapshot to use instead of taking one
 ---@return table<string, {status: string, label: string?, pid: number}>
-function M.all()
-  local snap = M.ps_snapshot()
+function M.all(snap)
+  snap = snap or M.ps_snapshot()
   local out = {}
   for _, h in ipairs(M.harnesses()) do
     local r = M.poll(h.name, snap)
@@ -295,6 +304,22 @@ function M.all()
     end
   end
   return out
+end
+
+---M.all with the ps snapshot taken off the main loop, so the poll never blocks typing. The
+--callback runs on the main loop with the same result M.all returns.
+---@param cb fun(all: table<string, {status: string, label: string?, pid: number}>)
+function M.all_async(cb)
+  local ok = pcall(vim.system, { "ps", "-eo", "pid=,ppid=" }, { text = true }, function(res)
+    vim.schedule(function()
+      cb(M.all(res.code == 0 and res.stdout or ""))
+    end)
+  end)
+  if not ok then
+    vim.schedule(function()
+      cb(M.all(""))
+    end)
+  end
 end
 
 return M

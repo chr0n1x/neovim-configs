@@ -15,7 +15,7 @@ local _skip_buf = nil -- buffer last captured; capture() won't re-record a windo
 local _skip_restore_buf = nil -- buffer last left; restore() bails if we're still in it
 
 ---Capture the current window as the restore target. Called from WinLeave; skips
--- terminal windows and any transition the guards mark as ours to ignore.
+-- terminal and floating windows and any transition the guards mark as ours to ignore.
 --
 -- _suppress is a one-shot "skip the NEXT leave" flag (see suppress_next_leave). It is set by
 -- jump_to_saved / go_back / <leader>c to ignore the WinLeave their own window move triggers,
@@ -29,6 +29,9 @@ function M.capture()
     return
   end
   local win = vim.api.nvim_get_current_win()
+  if vim.api.nvim_win_get_config(win).relative ~= "" then
+    return
+  end
   local buf = vim.api.nvim_win_get_buf(win)
   if vim.api.nvim_buf_get_option(buf, "buftype") == "terminal" then
     return

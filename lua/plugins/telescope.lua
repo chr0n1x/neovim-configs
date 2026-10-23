@@ -18,6 +18,14 @@ return {
           "smart",
         },
         prompt_prefix = "> ",
+        -- While zen mode is open, picked files open in the zen window.
+        get_selection_window = function()
+          local ok, zen = pcall(require, "zen-mode.view")
+          if ok and zen.is_open() then
+            return zen.win
+          end
+          return 0
+        end,
         extensions_list = { "fzf", "terms", "themes" },
         mappings = {
           i = {

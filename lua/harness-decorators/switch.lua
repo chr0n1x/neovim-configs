@@ -34,7 +34,8 @@ local STATUS_DOTS = {
   unknown = { glyph = "○ ", group = agent_display.HL_UNKNOWN }, -- hollow ring
 }
 
----The work-status dot for a harness, or nil when it has no live terminal (never opened / stopped).
+---The work-status dot for a harness from the statusline's last poll (agent-display), or nil when it
+---has no live terminal (never opened / stopped) or has not been polled yet.
 ---@param name string harness name
 ---@param bufs table<string, number> harness -> live terminal buffer map
 ---@return {glyph: string, group: string}?
@@ -42,11 +43,7 @@ local function status_dot(name, bufs)
   if bufs[name] == nil then
     return nil
   end
-  local ok, state = pcall(require, "harness-decorators.agent-state")
-  if not ok or type(state.poll) ~= "function" then
-    return nil
-  end
-  local r = state.poll(name)
+  local r = agent_display.status(name)
   if not r then
     return nil
   end
@@ -84,9 +81,9 @@ function M.switch(new_harness)
     return
   end
 
-  -- Remember the outgoing harness before we overwrite current_harness; the background/foreground
-  -- notify at the end reports it by name.
-  local previous_harness = current_harness
+  pcall(function()
+    require("harness-decorators.term").expect_focus(new_harness)
+  end)
 
   -- Background the outgoing harness instead of killing it: hide ITS OWN float (PTY stays alive, so
   -- it keeps executing) and record it for resume. If focus is in the terminal window, hiding it makes
@@ -95,21 +92,26 @@ function M.switch(new_harness)
   pcall(function()
     require("harness-decorators.focus").suppress_next_leave()
   end)
-  local backgrounded = current_harness ~= nil and park.park(current_harness)
-  -- Every other running harness is backgrounded too, so only the incoming one is expanded and the
-  -- rest sit as minimized bars.
-  for _, e in ipairs(park.list()) do
-    if e.harness ~= new_harness and e.harness ~= current_harness then
-      park.park(e.harness)
+  -- zen-mode closes itself when a normal window gets focus; keep focus on the zen window while the
+  -- incoming harness is shown.
+  pcall(function()
+    local zen = require("zen-mode.view")
+    if zen.is_open() and zen.win and vim.api.nvim_win_is_valid(zen.win) then
+      vim.api.nvim_set_current_win(zen.win)
     end
-  end
+  end)
+  -- The outgoing harness's float stays open; it is "backgrounded" in that it is no longer the
+  -- active harness for keymaps and watchers.
+  pcall(function()
+    require("harness-decorators.term").reset_layout(new_harness)
+  end)
 
   -- Re-point the harness identity. The spawn command is NOT re-pointed on any global anymore: term.lua
   -- resolves each harness's command from its env module at open time, so there is no claudecode
   -- terminal_cmd / snacks_win_opts.title to update here (that was the shared-handle path). We only
   -- refresh the env cache and the NVIM_LLM_HARNESS var the watcher/adapter layer reads.
   package.loaded["harness-decorators." .. new_harness .. ".env"] = nil
-  local command = require("harness-decorators." .. new_harness .. ".env")
+  require("harness-decorators." .. new_harness .. ".env")
   vim.fn.setenv("NVIM_LLM_HARNESS", new_harness)
 
   -- Mark the incoming harness selected in the unified table now that it is active. This makes it the
@@ -147,18 +149,6 @@ function M.switch(new_harness)
     watcher.set_harness(new_harness)
     watcher.start()
   end)
-
-  -- Report background/foreground accurately: if the outgoing harness had a live terminal we
-  -- backgrounded it (its process keeps running); otherwise there was nothing to park, so this is
-  -- just a plain switch. `backgrounded` was captured at park time above.
-  if backgrounded then
-    vim.notify(
-      "harness: backgrounded " .. previous_harness .. ", foregrounded " .. new_harness .. " (" .. command .. ")",
-      vim.log.levels.INFO
-    )
-  else
-    vim.notify("harness: switched to " .. new_harness .. " (" .. command .. ")", vim.log.levels.INFO)
-  end
 end
 
 ---Run after a harness is picked from the <leader>cl picker: open the newly-selected harness's
@@ -173,10 +163,13 @@ function M.after_pick()
     require("harness-decorators").setup_auto_follow()
   end)
   park.show_selected()
+  pcall(function()
+    require("harness-decorators.term").grid()
+  end)
   -- Restore zen mode if it was open when the picker was invoked. The
   -- switch/show flow moves focus through non-float windows, which triggers
-  -- zen-mode's WinEnter close. Re-open it on the now-current (terminal)
-  -- window so the user stays in zen.
+  -- zen-mode's WinEnter close. Re-open it around zen's last parent window,
+  -- then hand focus back to the harness float.
   if zen_was_open then
     zen_was_open = false
     -- zen-mode open() runs :norm! zz which errors from terminal mode.
@@ -186,7 +179,15 @@ function M.after_pick()
       pcall(function()
         local view = require("zen-mode.view")
         if not view.is_open() then
+          local cur = vim.api.nvim_get_current_win()
+          local parent = view.parent
+          if parent and vim.api.nvim_win_is_valid(parent) then
+            vim.api.nvim_set_current_win(parent)
+          end
           require("zen-mode").open()
+          if cur ~= parent and vim.api.nvim_win_is_valid(cur) then
+            vim.api.nvim_set_current_win(cur)
+          end
         end
       end)
     end
@@ -404,11 +405,11 @@ local function make_harness_previewer(bufs, installed_set)
   })
 end
 
----Order picker rows with the active harness first, followed by definitively idle harnesses.
+---Order picker rows with the active harness first, followed by harnesses idle as of the
+---statusline's last poll.
 ---@param harnesses table[] entries from agent-state.harnesses()
 ---@return table[] ordered harness entries
 function M.order_harnesses(harnesses)
-  local state_ok, agent_state = pcall(require, "harness-decorators.agent-state")
   local ordered = vim.deepcopy(harnesses)
   local ranks = {}
   for _, h in ipairs(ordered) do
@@ -417,9 +418,9 @@ function M.order_harnesses(harnesses)
       rank = 0
     elseif not h.installed then
       rank = 3
-    elseif state_ok and type(agent_state.poll) == "function" then
-      local ok, state = pcall(agent_state.poll, h.name)
-      if ok and state and state.status == "idle" then
+    else
+      local state = agent_display.status(h.name)
+      if state and (state.status == "idle" or state.status == "stale") then
         rank = 1
       end
     end
@@ -443,9 +444,10 @@ function M.pick()
   -- Remember whether zen mode is open so after_pick can restore it: the
   -- park/minimize/show dance in M.switch briefly moves focus to a non-float
   -- window, which closes zen-mode via its WinEnter autocmd.
-  zen_was_open = pcall(function()
+  local zen_ok, zen_open = pcall(function()
     return require("zen-mode.view").is_open() == true
   end)
+  zen_was_open = zen_ok and zen_open
   local finders = require("telescope.finders")
   local conf = require("telescope.config").values
   local actions = require("telescope.actions")
@@ -493,7 +495,7 @@ function M.pick()
         -- left column thin. 0.5 was an even split, which wasted space on a tiny list.
         preview_width = 0.85,
         preview_cutoff = 12,
-        width = 0.8,
+        width = 0.4,
         height = 0.8,
       },
       finder = finders.new_table({

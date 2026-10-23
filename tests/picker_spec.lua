@@ -110,18 +110,29 @@ describe("picker: make_entry renders a work-status dot + harness name", function
   local orig_poll
 
   setup(function()
-    -- Stub agent-state.poll so the status dot is deterministic without real terminals. make_entry
-    -- otherwise reads no shared state, so no reset of the selected-harness bit is needed here.
+    -- The status dot reads the statusline's cached poll (agent-display), so the specs seed that
+    -- cache. agent-state.poll is stubbed to fail: building a row must never poll.
     display = require("harness-decorators.agent-display")
     state = require("harness-decorators.agent-state")
     orig_poll = state.poll
+    state.poll = function()
+      error("make_entry must not poll agent-state")
+    end
   end)
 
   teardown(function()
-    if orig_poll then
-      state.poll = orig_poll
-    end
+    state.poll = orig_poll
+    display._reset()
   end)
+
+  ---Seed the cached status for every harness the specs use.
+  local function cached_status(status)
+    local agents = {}
+    for _, n in ipairs({ "claude", "maki", "pi" }) do
+      agents[n] = { status = status, pid = 1 }
+    end
+    display._set_agents(agents)
+  end
 
   ---Collect the highlight ranges display() returns, keyed by group name.
   local function groups_of(name, current, bufs)
@@ -135,9 +146,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
   end
 
   it("shows a blue work-status dot before the name of a working initialized harness", function()
-    state.poll = function()
-      return { status = "working", label = nil, pid = 1 }
-    end
+    cached_status("working")
     local g = groups_of("claude", "claude", { claude = 42 })
     assert.is_not_nil(g[display.HL_WORKING], "working dot group missing")
     -- The dot is "● " (a 4-byte UTF-8 circle + space); the name starts right after it.
@@ -147,9 +156,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
   end)
 
   it("shows a green dot before the name of an idle initialized harness", function()
-    state.poll = function()
-      return { status = "idle", label = nil, pid = 1 }
-    end
+    cached_status("idle")
     local g = groups_of("maki", "claude", { maki = 42 })
     assert.is_not_nil(g[display.HL_IDLE], "idle dot group missing")
     assert.are.equal(0, g[display.HL_IDLE].start)
@@ -157,9 +164,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
   end)
 
   it("shows a hollow ring before the name of an unknown initialized harness", function()
-    state.poll = function()
-      return { status = "unknown", label = nil, pid = 1 }
-    end
+    cached_status("unknown")
     local g = groups_of("maki", "claude", { maki = 42 })
     assert.is_not_nil(g[display.HL_UNKNOWN], "unknown dot group missing")
     -- The unknown glyph is a hollow ring "○ ".
@@ -167,9 +172,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
   end)
 
   it("shows no dot for a harness that was never opened (no live buffer)", function()
-    state.poll = function()
-      return { status = "working", label = nil, pid = 1 }
-    end
+    cached_status("working")
     local g = groups_of("pi", "claude", {})
     assert.is_nil(g[display.HL_WORKING], "never-opened harness must not show a working dot")
     assert.is_nil(g[display.HL_IDLE], "never-opened harness must not show an idle dot")
@@ -178,9 +181,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
   end)
 
   it("highlights the name starting right after the dot", function()
-    state.poll = function()
-      return { status = "working", label = nil, pid = 1 }
-    end
+    cached_status("working")
     local g = groups_of("claude", "claude", { claude = 42 })
     -- The working dot is "● " (4 bytes); 'claude' is 6 bytes, so the name spans [4, 10).
     assert.are.equal(#"● ", g.HarnessTitleClaude.start, "name should start right after the dot")
@@ -197,9 +198,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
   end)
 
   it("renders an uninstalled harness with a dimmed suffix and no dot", function()
-    state.poll = function()
-      return { status = "working", label = nil, pid = 1 }
-    end
+    cached_status("working")
     local entry = sw.make_entry("claude", "claude", { claude = 42 }, false)
     local text, ranges = entry.display()
     assert.is_not_nil(text:find("(not installed)"), "display must include the not-installed suffix")
@@ -217,9 +216,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
   end)
 
   it("installed harnesses show no suffix when installed arg is omitted", function()
-    state.poll = function()
-      return { status = "idle", label = nil, pid = 1 }
-    end
+    cached_status("idle")
     local entry = sw.make_entry("claude", "claude", { claude = 42 })
     local text = entry.display()
     assert.is_nil(text:find("(not installed)"), "installed row must not show the suffix")
@@ -250,35 +247,45 @@ describe("picker: M.pick uses a horizontal layout with the expected titles (Task
     package.loaded["telescope.pickers"] = nil
   end)
 
-  it("puts the active harness before idle harnesses", function()
-    local state = require("harness-decorators.agent-state")
-    local original_poll = state.poll
-    local active = sw.current()
-    local idle = active == "maki" and "claude" or "maki"
-    local other = active == "pi" and "crush" or "pi"
-    state.poll = function(name)
-      if name == idle then
-        return { status = "idle" }
+  it(
+    "Given cached agent statuses, When rows are ordered, Then the active harness leads, idle ones follow, and nothing polls",
+    function()
+      local state = require("harness-decorators.agent-state")
+      local display = require("harness-decorators.agent-display")
+      local original_poll = state.poll
+      local active = sw.current()
+      -- The idle harness sorts after the other one by name, so only its idle status can lift it.
+      local idle = active == "pi" and "crush" or "pi"
+      local other = active == "maki" and "copilot" or "maki"
+      state.poll = function()
+        error("order_harnesses must not poll agent-state")
       end
-      return nil
+      display._set_agents({ [idle] = { status = "idle", pid = 1 } })
+
+      local ok, ordered = pcall(sw.order_harnesses, {
+        { name = other, installed = true },
+        { name = idle, installed = true },
+        { name = active, installed = true },
+      })
+      state.poll = original_poll
+      display._reset()
+      assert(ok, ordered)
+
+      assert.are.equal(active, ordered[1].name)
+      assert.are.equal(idle, ordered[2].name)
     end
-
-    local ordered = sw.order_harnesses({
-      { name = other, installed = true },
-      { name = idle, installed = true },
-      { name = active, installed = true },
-    })
-    state.poll = original_poll
-
-    assert.are.equal(active, ordered[1].name)
-    assert.are.equal(idle, ordered[2].name)
-  end)
+  )
 
   it("uses the horizontal layout strategy with the prompt on the bottom", function()
     sw.pick()
     assert.is_not_nil(captured, "M.pick did not reach telescope.pickers.new")
     assert.are.equal("horizontal", captured.layout_strategy)
     assert.are.equal("bottom", captured.layout_config.prompt_position)
+  end)
+
+  it("Given the <C-q> picker, Then it takes 40% of the editor width (half the old 80%)", function()
+    sw.pick()
+    assert.are.equal(0.4, captured.layout_config.width)
   end)
 
   it("titles the prompt 'search' and the results 'Harnesses'", function()
@@ -362,4 +369,77 @@ describe("picker: preview_header sizes the header/separator to the pane width", 
     assert.are.equal(40, #header, "an over-long label must be truncated to the pane width")
     assert.are.equal(40, char_len(sep), "separator stays at the pane width regardless of label length")
   end)
+end)
+
+describe("picker: zen mode across a <C-q> pick", function()
+  local zen_view, zen, real_is_open, real_open, opened_in, file_win, float_win
+
+  before_each(function()
+    package.loaded["telescope.pickers"] = {
+      new = function()
+        return { find = function() end }
+      end,
+    }
+    zen_view = require("zen-mode.view")
+    zen = require("zen-mode")
+    real_is_open, real_open = zen_view.is_open, zen.open
+    opened_in = nil
+    zen.open = function()
+      opened_in = vim.api.nvim_get_current_win()
+    end
+    file_win = vim.api.nvim_get_current_win()
+    float_win = vim.api.nvim_open_win(vim.api.nvim_create_buf(false, true), true, {
+      relative = "editor",
+      width = 10,
+      height = 5,
+      row = 1,
+      col = 1,
+    })
+  end)
+
+  after_each(function()
+    zen_view.is_open, zen.open = real_is_open, real_open
+    zen_view.parent = nil
+    package.loaded["telescope.pickers"] = nil
+    if vim.api.nvim_win_is_valid(float_win) then
+      vim.api.nvim_win_close(float_win, true)
+    end
+    pcall(vim.api.nvim_set_current_win, file_win)
+  end)
+
+  it("Given zen mode is closed, When a pick completes, Then zen mode stays closed", function()
+    zen_view.is_open = function()
+      return false
+    end
+    sw.pick()
+    sw.after_pick()
+    vim.cmd("stopinsert")
+    vim.wait(500, function()
+      return opened_in ~= nil
+    end)
+    assert.is_nil(opened_in, "zen must not open after a pick when it was closed before")
+  end)
+
+  it(
+    "Given zen mode is open around a file window, When a pick completes with focus in a harness float, Then zen reopens around that file window",
+    function()
+      zen_view.is_open = function()
+        return true
+      end
+      sw.pick()
+      zen_view.is_open = function()
+        return false
+      end
+      zen_view.parent = file_win
+      sw.after_pick()
+      if vim.api.nvim_win_is_valid(float_win) then
+        vim.api.nvim_set_current_win(float_win)
+      end
+      vim.cmd("stopinsert")
+      vim.wait(500, function()
+        return opened_in ~= nil
+      end)
+      assert.are.equal(file_win, opened_in, "zen must wrap the file window, not the harness float")
+    end
+  )
 end)

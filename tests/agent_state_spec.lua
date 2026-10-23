@@ -50,6 +50,44 @@ describe("agent-state: shared child-process check", function()
     assert.is_nil(agent_state.pid_from_tty_snapshot("100 1 ??", "/dev/ttys006"))
   end)
 
+  it("Given a terminal buffer, When its pid is resolved, Then it is the job pid and no ps runs", function()
+    local buf = vim.api.nvim_create_buf(false, true)
+    local job
+    vim.api.nvim_buf_call(buf, function()
+      job = vim.fn.jobstart({ "sleep", "30" }, { term = true })
+    end)
+    local real_popen, real_system = io.popen, vim.system
+    local spawned = 0
+    io.popen = function(...)
+      spawned = spawned + 1
+      return real_popen(...)
+    end
+    vim.system = function(...)
+      spawned = spawned + 1
+      return real_system(...)
+    end
+    local ok, pid = pcall(agent_state.pid_for_buf, buf)
+    io.popen, vim.system = real_popen, real_system
+    local want = vim.fn.jobpid(job)
+    vim.fn.jobstop(job)
+    vim.api.nvim_buf_delete(buf, { force = true })
+    assert(ok, pid)
+    assert.are.equal(want, pid)
+    assert.are.equal(0, spawned, "pid lookup must not spawn ps")
+  end)
+
+  it("Given all_async, When it is called, Then it returns before polling and the callback gets the results", function()
+    local got
+    agent_state.all_async(function(all)
+      got = all
+    end)
+    assert.is_nil(got, "the callback must not run on the calling stack")
+    assert.is_true(vim.wait(5000, function()
+      return got ~= nil
+    end, 10))
+    assert.are.equal("table", type(got))
+  end)
+
   it("harnesses() returns every adapter that loads (sourced from keymaps discovery)", function()
     local harnesses = agent_state.harnesses()
     -- The candidate list is utils.list_harnesses(); every one of those that ships a state.lua must
