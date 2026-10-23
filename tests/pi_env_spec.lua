@@ -67,9 +67,7 @@ describe("pi env command (flag threading from env)", function()
 
   it("appends both flags, provider before model, when both are set", function()
     set_vars(nil, "llama-cpp", "unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL")
-    assert.are.equal(
-      "pi --provider llama-cpp --model unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL",
-      helper.env_command("pi"))
+    assert.are.equal("pi --provider llama-cpp --model unsloth/Qwen3.8-27B-GGUF:UD-Q4_K_XL", helper.env_command("pi"))
   end)
 
   it("honors PI_COMMAND as a full override, even when the flag vars are set", function()

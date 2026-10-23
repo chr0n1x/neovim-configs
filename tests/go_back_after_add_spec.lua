@@ -70,8 +70,11 @@ describe("<C-h> after <leader>ca: returns to the buffer <leader>ca was pressed f
     -- -> capture MUST record the file buffer as the new restore target.
     vim.api.nvim_set_current_win(file_win)
     focus.capture()
-    assert.are.equal(file_win, focus.last_win,
-      "step 4: after <C-l> to the file buffer, capture did not re-record it - last_win is stale")
+    assert.are.equal(
+      file_win,
+      focus.last_win,
+      "step 4: after <C-l> to the file buffer, capture did not re-record it - last_win is stale"
+    )
 
     -- Step 5: <leader>ca jumps to the terminal. (focus.restore/suppress are for <leader>c;
     -- <leader>ca just moves focus, so WinLeave -> capture records... we're already in file.)
@@ -80,7 +83,10 @@ describe("<C-h> after <leader>ca: returns to the buffer <leader>ca was pressed f
 
     -- Step 6: <C-h> must return to the FILE buffer (where <leader>ca was pressed from).
     assert.is_true(focus.jump_to_saved(), "step 6: jump_to_saved failed")
-    assert.are.equal(file_win, vim.api.nvim_get_current_win(),
-      "<C-h> after <leader>ca returned to neo-tree instead of the file buffer")
+    assert.are.equal(
+      file_win,
+      vim.api.nvim_get_current_win(),
+      "<C-h> after <leader>ca returned to neo-tree instead of the file buffer"
+    )
   end)
 end)

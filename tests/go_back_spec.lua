@@ -63,8 +63,7 @@ describe("<C-h>: go back to the previous buffer", function()
     -- Simulate leaving neo-tree (origin_win) for the float: WinLeave fires capture().
     vim.api.nvim_set_current_win(origin_win)
     focus.capture()
-    assert.are.equal(origin_win, focus.last_win,
-      "leaving the origin window did not record it as the restore target")
+    assert.are.equal(origin_win, focus.last_win, "leaving the origin window did not record it as the restore target")
   end)
 
   it("<C-h> returns to the originating window after focus moved to the terminal", function()
@@ -82,8 +81,11 @@ describe("<C-h>: go back to the previous buffer", function()
     focus.suppress_next_leave()
     local moved = focus.jump_to_saved()
     assert.is_true(moved, "jump_to_saved reported no move - <C-h> would strand you in the float")
-    assert.are.equal(origin_win, vim.api.nvim_get_current_win(),
-      "<C-h> did not return to the originating window (neo-tree)")
+    assert.are.equal(
+      origin_win,
+      vim.api.nvim_get_current_win(),
+      "<C-h> did not return to the originating window (neo-tree)"
+    )
   end)
 
   it("<C-h> does not strand you when there is no saved window (fallback finds a base window)", function()
@@ -131,7 +133,10 @@ describe("<C-h>: go back to the previous buffer", function()
         count = count + 1
       end
     end
-    assert.are.equal(1, count,
-      "origin (neo-tree) buffer is shown in more than one window after <C-h> - duplication regression")
+    assert.are.equal(
+      1,
+      count,
+      "origin (neo-tree) buffer is shown in more than one window after <C-h> - duplication regression"
+    )
   end)
 end)

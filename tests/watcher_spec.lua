@@ -19,7 +19,9 @@ local function edit_line(uuid)
   local fp = vim.uv.cwd() .. "/tests/_watcher_dispatch_target.txt"
   return string.format(
     '{"type":"user","uuid":%q,"timestamp":1700000000000,"toolUseResult":{"filePath":%q,"structuredPatch":[{"oldStart":1,"oldLines":3,"newStart":1,"newLines":4,"lines":[" a"," b","+ added line"," c"]}]}}',
-    uuid, fp)
+    uuid,
+    fp
+  )
 end
 
 describe("watcher dispatch: HarnessEdit fires with the parsed fields", function()

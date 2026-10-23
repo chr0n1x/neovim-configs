@@ -41,8 +41,7 @@ describe("buffer jump: focus moves without duplication", function()
     assert.is_true(vim.api.nvim_win_is_valid(win_a), "win_a became invalid")
     vim.api.nvim_set_current_win(win_a)
     local cur = helper.current_buf()
-    assert.are.equal(buf_a, cur,
-      ("focus did not land on buf_a: expected %d, got %d"):format(buf_a, cur))
+    assert.are.equal(buf_a, cur, ("focus did not land on buf_a: expected %d, got %d"):format(buf_a, cur))
   end)
 
   it("no buffer is shown in more than one window after navigation", function()
@@ -57,8 +56,7 @@ describe("buffer jump: focus moves without duplication", function()
     for _, buf in ipairs({ buf_a, buf_b }) do
       if vim.api.nvim_buf_is_valid(buf) then
         local n = windows_showing(buf)
-        assert.is_true(n <= 1,
-          ("buffer %d is shown in %d windows (duplication)"):format(buf, n))
+        assert.is_true(n <= 1, ("buffer %d is shown in %d windows (duplication)"):format(buf, n))
       end
     end
   end)
@@ -71,7 +69,9 @@ describe("buffer jump: focus moves without duplication", function()
 
     pcall(vim.cmd, "buffer " .. buf_b)
     assert.are.equal(buf_b, helper.current_buf(), ":buffer did not switch back to buf_b")
-    assert.is_true(windows_showing(buf_b) <= 1,
-      ("buf_b duplicated after :buffer switch (%d windows)"):format(windows_showing(buf_b)))
+    assert.is_true(
+      windows_showing(buf_b) <= 1,
+      ("buf_b duplicated after :buffer switch (%d windows)"):format(windows_showing(buf_b))
+    )
   end)
 end)

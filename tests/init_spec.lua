@@ -25,10 +25,12 @@ describe("setup_auto_follow idempotency (Task 14)", function()
 
     -- Second call: must be a no-op - the sentinel state survives.
     decorators.setup_auto_follow()
-    assert.is_true(utils.key_seen("sentinel-key-2"),
-      "second setup_auto_follow must NOT reset dedup (idempotency)")
-    assert.are.equal("/home/u/.claude/projects/x/sentinel.jsonl", watcher.pinned_jsonl_path,
-      "second setup_auto_follow must NOT reset the pin (idempotency)")
+    assert.is_true(utils.key_seen("sentinel-key-2"), "second setup_auto_follow must NOT reset dedup (idempotency)")
+    assert.are.equal(
+      "/home/u/.claude/projects/x/sentinel.jsonl",
+      watcher.pinned_jsonl_path,
+      "second setup_auto_follow must NOT reset the pin (idempotency)"
+    )
 
     -- Restore so later specs see a clean slate.
     utils.reset_dedup()
@@ -54,9 +56,11 @@ describe("setup_auto_follow idempotency (Task 14)", function()
 
     -- The first call may add the autocmd (if not already present from a prior spec); the
     -- second must add none.
-    assert.are.equal(after_first, after_second,
-      ("second setup_auto_follow re-registered the HarnessEdit autocmd (%d -> %d)"):format(
-        after_first, after_second))
+    assert.are.equal(
+      after_first,
+      after_second,
+      ("second setup_auto_follow re-registered the HarnessEdit autocmd (%d -> %d)"):format(after_first, after_second)
+    )
     _ = before
   end)
 end)
@@ -79,8 +83,11 @@ describe("open_on_startup (open the harness float at nvim boot)", function()
 
     decorators.open_on_startup()
 
-    assert.are.same({ "setup", "show" }, order,
-      "open_on_startup must start the watcher (setup_auto_follow) then show the float (park.show_selected)")
+    assert.are.same(
+      { "setup", "show" },
+      order,
+      "open_on_startup must start the watcher (setup_auto_follow) then show the float (park.show_selected)"
+    )
 
     decorators.setup_auto_follow = orig_setup
     park.show_selected = orig_show

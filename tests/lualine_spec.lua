@@ -31,7 +31,11 @@ describe("lualine session component", function()
     local out = decorators.session_component("⠋")
     display._set_agents({})
     -- Only the robot emoji carries the section fill; the waiting spinner uses the working-state blue.
-    assert.are.equal("%#lualine_x_normal#🤖%* %#" .. display.HL_WORKING .. "#⠋%*", out, "no-pin claude should show the blue spinner frame")
+    assert.are.equal(
+      "%#lualine_x_normal#🤖%* %#" .. display.HL_WORKING .. "#⠋%*",
+      out,
+      "no-pin claude should show the blue spinner frame"
+    )
   end)
 
   it("Given no harness has been started, When the statusline renders, Then the slot reads '0 agents'", function()
@@ -89,14 +93,28 @@ describe("lualine session component", function()
     local working = decorators.session_component("⠋")
     -- The working state animates through the spinner frames (frame 0 -> first frame). It sits right
     -- after the emoji and before the session id; only the emoji carries the section fill.
-    assert.is_not_nil(working:find("%#lualine_x_normal#🤖%* %#" .. display.HL_WORKING .. "#" .. display.spinner[1] .. "%* deadbeef", 1, true), "known-working active agent must show the blue spinner after the emoji")
+    assert.is_not_nil(
+      working:find(
+        "%#lualine_x_normal#🤖%* %#" .. display.HL_WORKING .. "#" .. display.spinner[1] .. "%* deadbeef",
+        1,
+        true
+      ),
+      "known-working active agent must show the blue spinner after the emoji"
+    )
 
     display._set_agents({ claude = { status = "idle", label = nil, pid = 1 } })
     local idle = decorators.session_component("⠋")
-    assert.is_not_nil(idle:find("%#lualine_x_normal#🤖%* %#" .. display.HL_IDLE .. "#✓%* deadbeef", 1, true), "known-idle active agent must show the green checkmark after the emoji")
+    assert.is_not_nil(
+      idle:find("%#lualine_x_normal#🤖%* %#" .. display.HL_IDLE .. "#✓%* deadbeef", 1, true),
+      "known-idle active agent must show the green checkmark after the emoji"
+    )
 
     display._set_agents({ claude = { status = "unknown", label = nil, pid = 1 } })
     local unknown = decorators.session_component("⠋")
-    assert.are.equal("%#lualine_x_normal#🤖%* deadbeef", unknown, "unknown active-agent state must show NO dot (no hollow ring of noise)")
+    assert.are.equal(
+      "%#lualine_x_normal#🤖%* deadbeef",
+      unknown,
+      "unknown active-agent state must show NO dot (no hollow ring of noise)"
+    )
   end)
 end)

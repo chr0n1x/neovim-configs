@@ -53,8 +53,14 @@ describe("startup: env command is well-formed for the active harness", function(
     assert.is_not_nil(harness)
     local expected = helper.env_command(harness)
     local actual = helper.term_spawn_cmd(harness)
-    assert.are.equal(expected, actual,
+    assert.are.equal(
+      expected,
+      actual,
       ("term spawn cmd desync for %s: expected %q (env module), got %q"):format(
-        harness, tostring(expected), tostring(actual)))
+        harness,
+        tostring(expected),
+        tostring(actual)
+      )
+    )
   end)
 end)

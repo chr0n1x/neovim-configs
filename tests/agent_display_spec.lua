@@ -54,7 +54,10 @@ describe("agent-display: component rendering", function()
     local out = display.component()
     assert.is_not_nil(out:find("2 agents in background", 1, true), "must show the count of backgrounded agents")
     -- The dim gear marks the slot as BACKGROUND processes and sits before the status dot.
-    assert.is_not_nil(out:find("%#" .. display.HL_BACKGROUND .. "#⚙ %*", 1, true), "must lead with the background-process gear")
+    assert.is_not_nil(
+      out:find("%#" .. display.HL_BACKGROUND .. "#⚙ %*", 1, true),
+      "must lead with the background-process gear"
+    )
   end)
 
   it("singularizes to 'agent' when exactly one is backgrounded", function()
@@ -77,7 +80,14 @@ describe("agent-display: component rendering", function()
     local out = display.component()
     -- frame is 0 after _reset, so the bright phase group is used. The gear leads the status dot.
     -- The working state animates through the spinner frames (frame 0 after _reset -> first frame).
-    assert.is_not_nil(out:find("%#" .. display.HL_BACKGROUND .. "#⚙ %* %#" .. display.HL_WORKING .. "#" .. display.spinner[1] .. "%*", 1, true), "working aggregate must use the blue spinner after the gear")
+    assert.is_not_nil(
+      out:find(
+        "%#" .. display.HL_BACKGROUND .. "#⚙ %* %#" .. display.HL_WORKING .. "#" .. display.spinner[1] .. "%*",
+        1,
+        true
+      ),
+      "working aggregate must use the blue spinner after the gear"
+    )
   end)
 
   it("Given a working agent, When the statusline renders, Then the working glyph is static (no spin timer)", function()
@@ -97,7 +107,10 @@ describe("agent-display: component rendering", function()
     })
     display._set_active("claude") -- only maki (idle) is backgrounded
     local out = display.component()
-    assert.is_not_nil(out:find("%#" .. display.HL_IDLE .. "#✓%*", 1, true), "all-idle aggregate must use the green checkmark")
+    assert.is_not_nil(
+      out:find("%#" .. display.HL_IDLE .. "#✓%*", 1, true),
+      "all-idle aggregate must use the green checkmark"
+    )
   end)
 
   it("shows a hollow ring when every backgrounded agent is in the unknown state", function()
@@ -108,7 +121,10 @@ describe("agent-display: component rendering", function()
     })
     display._set_active("claude") -- maki + copilot both unknown
     local out = display.component()
-    assert.is_not_nil(out:find("%#" .. display.HL_UNKNOWN .. "#○%*", 1, true), "all-unknown aggregate must use the hollow ring")
+    assert.is_not_nil(
+      out:find("%#" .. display.HL_UNKNOWN .. "#○%*", 1, true),
+      "all-unknown aggregate must use the hollow ring"
+    )
   end)
 
   it("shows green (not blue) when a known-idle and an unknown are backgrounded but none working", function()

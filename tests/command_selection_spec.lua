@@ -33,23 +33,32 @@ describe("command selection: every harness runs its own CLI", function()
       local sw = require("harness-decorators.switch")
       sw.switch(harness)
 
-      assert.are.equal(harness, helper.active_harness(),
-        ("switcher did not record %s as active (got %s)"):format(
-          harness, tostring(helper.active_harness())))
+      assert.are.equal(
+        harness,
+        helper.active_harness(),
+        ("switcher did not record %s as active (got %s)"):format(harness, tostring(helper.active_harness()))
+      )
 
       local expected = helper.env_command(harness)
       local actual = helper.term_spawn_cmd(harness)
-      assert.is_string(expected,
-        ("%s env module returned non-string: %s"):format(harness, tostring(expected)))
-      assert.are.equal(expected, actual,
+      assert.is_string(expected, ("%s env module returned non-string: %s"):format(harness, tostring(expected)))
+      assert.are.equal(
+        expected,
+        actual,
         ("%s desync: its float must resolve %q, got %q (wrong CLI would run)"):format(
-          harness, tostring(expected), tostring(actual)))
+          harness,
+          tostring(expected),
+          tostring(actual)
+        )
+      )
 
       -- Guard against the specific A1 failure mode: a non-claude harness must never end up
       -- running "claude".
       if harness ~= "claude" then
-        assert.is_not.truthy(tostring(actual):match("^claude%s") or tostring(actual) == "claude",
-          ("%s resolved to claude's command: %q"):format(harness, tostring(actual)))
+        assert.is_not.truthy(
+          tostring(actual):match("^claude%s") or tostring(actual) == "claude",
+          ("%s resolved to claude's command: %q"):format(harness, tostring(actual))
+        )
       end
     end)
   end

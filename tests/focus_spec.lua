@@ -123,8 +123,7 @@ describe("focus: capture / jump_to_saved / restore mechanics", function()
     -- Stand in the origin window and capture. focus.last_win must become that window.
     vim.api.nvim_set_current_win(origin_win)
     focus.capture()
-    assert.are.equal(origin_win, focus.last_win,
-      "focus.capture did not record the originating window")
+    assert.are.equal(origin_win, focus.last_win, "focus.capture did not record the originating window")
   end)
 
   it("jump_to_saved returns to the captured window", function()
@@ -135,8 +134,7 @@ describe("focus: capture / jump_to_saved / restore mechanics", function()
 
     local moved = focus.jump_to_saved()
     assert.is_true(moved, "jump_to_saved reported no move")
-    assert.are.equal(origin_win, vim.api.nvim_get_current_win(),
-      "focus did not return to the originating window")
+    assert.are.equal(origin_win, vim.api.nvim_get_current_win(), "focus did not return to the originating window")
   end)
 
   it("restore does not duplicate a buffer already shown elsewhere", function()
@@ -155,8 +153,7 @@ describe("focus: capture / jump_to_saved / restore mechanics", function()
     vim.api.nvim_set_current_buf(origin_buf)
 
     local restored = focus.restore()
-    assert.is_false(restored,
-      "restore should bail when the saved buffer is already shown in another window")
+    assert.is_false(restored, "restore should bail when the saved buffer is already shown in another window")
   end)
 
   it("suppress_next_leave makes capture a no-op", function()
@@ -169,7 +166,6 @@ describe("focus: capture / jump_to_saved / restore mechanics", function()
     -- same window after suppressing - capture must still be a no-op while suppressed.
     focus.suppress_next_leave()
     focus.capture()
-    assert.are.equal(before, focus.last_win,
-      "capture should be suppressed after suppress_next_leave")
+    assert.are.equal(before, focus.last_win, "capture should be suppressed after suppress_next_leave")
   end)
 end)

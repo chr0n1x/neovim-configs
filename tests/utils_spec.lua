@@ -147,10 +147,12 @@ describe("shorten_path (2-tier display rule, shared across callers)", function()
     local rel = "relsub/file.txt"
     local abs = cwd .. "/relsub/file.txt"
     -- The relative input must come back absolute (cwd-prefixed), never as the bare relative.
-    assert.are.equal(abs, utils.shorten_path(rel),
-      ("relative input %q must be absolutized to cwd, got %q"):format(rel, utils.shorten_path(rel)))
-    assert.is_not.equal(rel, utils.shorten_path(rel),
-      "shorten_path must not pass a relative path through unchanged")
+    assert.are.equal(
+      abs,
+      utils.shorten_path(rel),
+      ("relative input %q must be absolutized to cwd, got %q"):format(rel, utils.shorten_path(rel))
+    )
+    assert.is_not.equal(rel, utils.shorten_path(rel), "shorten_path must not pass a relative path through unchanged")
   end)
 
   it("absolutizes a relative input even when cwd is under $HOME (yields ~ form, not bare)", function()
@@ -165,12 +167,12 @@ describe("shorten_path (2-tier display rule, shared across callers)", function()
     local ok, err = pcall(function()
       local got = utils.shorten_path("somefile.txt")
       -- Must be absolute-ish: starts with ~ (home-relative cwd) and contains the file name.
-      assert.is_truthy(got:match("^~") or got:match("^/"),
-        ("relative input must be absolutized, got %q"):format(got))
-      assert.is_truthy(got:match("somefile%.txt$"),
-        ("absolutized path must end with the file name, got %q"):format(got))
-      assert.is_not.equal("somefile.txt", got,
-        "must not return the bare relative name when cwd is under $HOME")
+      assert.is_truthy(got:match("^~") or got:match("^/"), ("relative input must be absolutized, got %q"):format(got))
+      assert.is_truthy(
+        got:match("somefile%.txt$"),
+        ("absolutized path must end with the file name, got %q"):format(got)
+      )
+      assert.is_not.equal("somefile.txt", got, "must not return the bare relative name when cwd is under $HOME")
     end)
     -- Always restore cwd, even on failure.
     vim.cmd("cd " .. vim.fn.fnameescape(oldcwd))
@@ -190,8 +192,11 @@ describe("shorten_path (2-tier display rule, shared across callers)", function()
       vim.uv.cwd(), -- the cwd itself (no relative tier)
     }
     for _, f in ipairs(samples) do
-      assert.are.equal(utils.shorten_path(f), ci.shorten_path(f),
-        ("ci.shorten_path diverged from utils.shorten_path for %q"):format(f))
+      assert.are.equal(
+        utils.shorten_path(f),
+        ci.shorten_path(f),
+        ("ci.shorten_path diverged from utils.shorten_path for %q"):format(f)
+      )
     end
   end)
 end)
@@ -239,7 +244,9 @@ describe("context-inject.type_into_terminal: no visible terminal opens OUR float
       local ok = pcall(vim.cmd, "terminal cat")
       assert.is_true(ok, "could not open a terminal window (cat)")
       local win = vim.api.nvim_get_current_win()
-      vim.wait(100, function() return false end, 25)
+      vim.wait(100, function()
+        return false
+      end, 25)
       return make_fake(win)
     end
     -- Record which harness term.open is asked to open.
@@ -291,20 +298,26 @@ describe("context-inject.type_into_terminal: no visible terminal opens OUR float
 
     -- Stub chansend so the (now-open) terminal's send path succeeds without a real PTY write.
     local orig_chansend = vim.fn.chansend
-    vim.fn.chansend = function(_chan, _data) return 1 end
+    vim.fn.chansend = function(_chan, _data)
+      return 1
+    end
 
     -- Capture any notify so a failure surfaces the reason (e.g. "no terminal channel").
     local orig_notify = vim.notify
     local notes = {}
-    vim.notify = function(msg) table.insert(notes, tostring(msg)) end
+    vim.notify = function(msg)
+      table.insert(notes, tostring(msg))
+    end
 
     local result = ci.type_into_terminal("@/tmp/somefile", nil, "claude")
 
     vim.fn.chansend = orig_chansend
     vim.notify = orig_notify
 
-    assert.is_not_nil(result, "type_into_terminal must succeed after opening our float (notifies: "
-      .. table.concat(notes, " | ") .. ")")
+    assert.is_not_nil(
+      result,
+      "type_into_terminal must succeed after opening our float (notifies: " .. table.concat(notes, " | ") .. ")"
+    )
     assert.are.equal(1, #opened_harnesses, "the fallback must open a terminal exactly once")
     assert.are.equal("claude", opened_harnesses[1], "the fallback must open the HARNESS's own float (claude)")
   end)
@@ -332,10 +345,14 @@ describe("context-inject.type_into_terminal: no visible terminal opens OUR float
     -- Stub the tree selection so the command has a path to send without a real tree buffer.
     local utils = require("harness-decorators.utils")
     local orig_gts = utils.get_tree_selection
-    utils.get_tree_selection = function() return { "/tmp/somefile.txt" } end
+    utils.get_tree_selection = function()
+      return { "/tmp/somefile.txt" }
+    end
 
     local orig_chansend = vim.fn.chansend
-    vim.fn.chansend = function(_chan, _data) return 1 end
+    vim.fn.chansend = function(_chan, _data)
+      return 1
+    end
 
     local ok, err = pcall(vim.cmd, "ClaudeTreeAdd")
     utils.get_tree_selection = orig_gts

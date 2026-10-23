@@ -37,18 +37,26 @@ describe("swap: switch() re-points terminal_cmd", function()
 
     sw.switch(target)
 
-    assert.are.equal(target, helper.active_harness(),
-      ("switcher did not record new harness: expected %s, got %s"):format(
-        target, tostring(helper.active_harness())))
+    assert.are.equal(
+      target,
+      helper.active_harness(),
+      ("switcher did not record new harness: expected %s, got %s"):format(target, tostring(helper.active_harness()))
+    )
 
     -- Task 7 contract: there is no global terminal_cmd to re-point. The active harness's float
     -- resolves its OWN env command at open time. After switching, that must be target's command -
     -- never the outgoing harness's (the original A1 bug was maki starting claude).
     local expected = helper.env_command(target)
     local actual = helper.term_spawn_cmd(target)
-    assert.are.equal(expected, actual,
+    assert.are.equal(
+      expected,
+      actual,
       ("after switch to %s, its float must resolve its own command: expected %q, got %q"):format(
-        target, tostring(expected), tostring(actual)))
+        target,
+        tostring(expected),
+        tostring(actual)
+      )
+    )
   end)
 
   it("switching to the same harness is a no-op (no error)", function()
@@ -63,7 +71,6 @@ describe("swap: switch() re-points terminal_cmd", function()
     local before = helper.active_harness()
     -- Should notify an error and not change state.
     pcall(sw.switch, "definitely-not-a-harness")
-    assert.are.equal(before, helper.active_harness(),
-      "switching to an unknown harness changed the active harness")
+    assert.are.equal(before, helper.active_harness(), "switching to an unknown harness changed the active harness")
   end)
 end)

@@ -80,8 +80,11 @@ describe("agent-state: shared child-process check", function()
       local ok_env, cmd = pcall(require, "harness-decorators." .. h.name .. ".env")
       if ok_env and type(cmd) == "string" then
         local exe = cmd:match("^%S+")
-        assert.are.equal(vim.fn.executable(exe) == 1, h.installed,
-          "installed flag for " .. h.name .. " must match vim.fn.executable(" .. exe .. ")")
+        assert.are.equal(
+          vim.fn.executable(exe) == 1,
+          h.installed,
+          "installed flag for " .. h.name .. " must match vim.fn.executable(" .. exe .. ")"
+        )
       end
     end
   end)
@@ -140,24 +143,15 @@ describe("agent-state: per-harness adapters (sandboxed HOME)", function()
 
     it("label: user rename wins over ai-title", function()
       vim.fn.mkdir(home .. "/.claude/sessions", "p")
-      write_file(
-        home .. "/.claude/sessions/1234.json",
-        vim.json.encode({ name = "my rename", sessionId = "sid-1" })
-      )
+      write_file(home .. "/.claude/sessions/1234.json", vim.json.encode({ name = "my rename", sessionId = "sid-1" }))
       assert.are.equal("my rename", claude.label(1234, "/x"))
     end)
 
     it("label: falls back to ai-title from the project jsonl", function()
       vim.fn.mkdir(home .. "/.claude/sessions", "p")
       vim.fn.mkdir(home .. "/.claude/projects/-proj", "p")
-      write_file(
-        home .. "/.claude/sessions/1234.json",
-        vim.json.encode({ sessionId = "sid-1" })
-      )
-      write_file(
-        home .. "/.claude/projects/-proj/sid-1.jsonl",
-        '{"ai-title":"older"}\n{"aiTitle":"Refactor auth"}\n'
-      )
+      write_file(home .. "/.claude/sessions/1234.json", vim.json.encode({ sessionId = "sid-1" }))
+      write_file(home .. "/.claude/projects/-proj/sid-1.jsonl", '{"ai-title":"older"}\n{"aiTitle":"Refactor auth"}\n')
       assert.are.equal("Refactor auth", claude.label(1234, "/x"))
     end)
 
@@ -323,7 +317,11 @@ describe("agent-state: per-harness adapters (sandboxed HOME)", function()
         return command == "sqlite3" and 1 or original_executable(command)
       end
       vim.system = function()
-        return { wait = function() return { code = 0, stdout = "d5bb8c50-400e-4b7b\n" } end }
+        return {
+          wait = function()
+            return { code = 0, stdout = "d5bb8c50-400e-4b7b\n" }
+          end,
+        }
       end
       local id = crush.session_id(1234, home .. "/project")
       vim.fn.executable = original_executable
@@ -424,20 +422,29 @@ describe("agent-state: per-harness adapters (sandboxed HOME)", function()
       pig = require("harness-decorators.pig.state")
     end)
 
-    it("Given pig has no session for the cwd, When status is polled, Then it is unknown (no child check: pig keeps a node child)", function()
-      assert.are.equal("unknown", pig.status(1234, "/x"))
-      assert.is_true(pig.no_child_check, "pig's always-alive node child would read as working")
-    end)
+    it(
+      "Given pig has no session for the cwd, When status is polled, Then it is unknown (no child check: pig keeps a node child)",
+      function()
+        assert.are.equal("unknown", pig.status(1234, "/x"))
+        assert.is_true(pig.no_child_check, "pig's always-alive node child would read as working")
+      end
+    )
 
     it("Given pig's last message is an assistant that stopped, When status is polled, Then it is idle", function()
       local dir = home .. "/.pig/agent/sessions/--pig-turn--"
       vim.fn.mkdir(dir, "p")
       local f = dir .. "/2026-01-01T00-00-00-000Z_aaaa0000-5d71-72af-bafe-f08b1ecb862f.jsonl"
-      write_file(f, '{"type":"message","message":{"role":"user"}}\n{"type":"message","message":{"role":"assistant","stopReason":"aborted"}}\n')
+      write_file(
+        f,
+        '{"type":"message","message":{"role":"user"}}\n{"type":"message","message":{"role":"assistant","stopReason":"aborted"}}\n'
+      )
       assert.are.equal("idle", pig.status(1234, "/pig-turn"))
       write_file(f, '{"type":"message","message":{"role":"assistant","stopReason":"toolUse"}}\n')
       assert.are.equal("working", pig.status(1234, "/pig-turn"))
-      write_file(f, '{"type":"message","message":{"role":"assistant","stopReason":"stop"}}\n{"type":"message","message":{"role":"user"}}\n')
+      write_file(
+        f,
+        '{"type":"message","message":{"role":"assistant","stopReason":"stop"}}\n{"type":"message","message":{"role":"user"}}\n'
+      )
       assert.are.equal("working", pig.status(1234, "/pig-turn"))
     end)
 

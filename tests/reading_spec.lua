@@ -34,9 +34,11 @@ describe("reading: file buffers load correctly", function()
     vim.wait(100)
 
     local loaded = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    assert.are.same(lines, loaded,
-      ("file content did not round-trip:\n  expected %d lines, got %d"):format(
-        #lines, #loaded))
+    assert.are.same(
+      lines,
+      loaded,
+      ("file content did not round-trip:\n  expected %d lines, got %d"):format(#lines, #loaded)
+    )
   end)
 
   it("detects filetype for a lua file", function()
@@ -50,8 +52,7 @@ describe("reading: file buffers load correctly", function()
     vim.wait(200) -- allow FileType autocmd + treesitter to settle
 
     local ft = vim.bo[buf].filetype
-    assert.are.equal("lua", ft,
-      ("expected filetype 'lua', got %q"):format(tostring(ft)))
+    assert.are.equal("lua", ft, ("expected filetype 'lua', got %q"):format(tostring(ft)))
   end)
 
   it("detects filetype for a markdown file", function()
@@ -65,7 +66,6 @@ describe("reading: file buffers load correctly", function()
     vim.wait(200)
 
     local ft = vim.bo[buf].filetype
-    assert.are.equal("markdown", ft,
-      ("expected filetype 'markdown', got %q"):format(tostring(ft)))
+    assert.are.equal("markdown", ft, ("expected filetype 'markdown', got %q"):format(tostring(ft)))
   end)
 end)

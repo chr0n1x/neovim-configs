@@ -29,8 +29,12 @@ describe("tree-select: get_selected against a stubbed neo-tree state", function(
         return {
           winid = vim.api.nvim_get_current_win(),
           tree = {
-            get_selection = function() return {} end,
-            get_node = function() return { type = "file", path = path } end,
+            get_selection = function()
+              return {}
+            end,
+            get_node = function()
+              return { type = "file", path = path }
+            end,
           },
         }
       end,
@@ -87,15 +91,20 @@ describe("tree selection: get_tree_selection returns real paths", function()
     -- Either an empty list with an error, or nil - but NOT a list containing a non-path.
     if type(files) == "table" and #files > 0 then
       for _, p in ipairs(files) do
-        assert.is_true(p:match("^/"),
-          ("tree selection outside a tree buffer returned a relative/non-absolute path: %q"):format(tostring(p)))
+        assert.is_true(
+          p:match("^/"),
+          ("tree selection outside a tree buffer returned a relative/non-absolute path: %q"):format(tostring(p))
+        )
       end
     end
     -- The important invariant: it must not silently return the current buffer's name.
     if type(files) == "table" then
       for _, p in ipairs(files) do
-        assert.is_not.equal("neo-tree", tostring(p),
-          "get_tree_selection returned the literal 'neo-tree' (a buffer name, not a path)")
+        assert.is_not.equal(
+          "neo-tree",
+          tostring(p),
+          "get_tree_selection returned the literal 'neo-tree' (a buffer name, not a path)"
+        )
       end
     end
   end)
@@ -106,8 +115,7 @@ describe("tree selection: get_tree_selection returns real paths", function()
     local target_dir = vim.uv.cwd()
     -- Ensure there's at least one regular file in cwd to select (this repo has lua files).
     local probe_file = target_dir .. "/lua/harness-decorators/utils.lua"
-    assert.is_true(vim.fn.filereadable(probe_file) == 1,
-      "test fixture file missing: " .. probe_file)
+    assert.is_true(vim.fn.filereadable(probe_file) == 1, "test fixture file missing: " .. probe_file)
 
     -- Open neo-tree in a dedicated window. Use the plugin's own open so its state is real.
     local ok_open = pcall(function()
@@ -146,10 +154,12 @@ describe("tree selection: get_tree_selection returns real paths", function()
     assert.is_not_nil(files, ("get_tree_selection returned nil files (err=%s)"):format(tostring(err)))
     for _, p in ipairs(files) do
       local ps = tostring(p)
-      assert.is_not.equal("neo-tree", ps,
-        "tree selection returned the literal 'neo-tree' buffer name instead of a path")
-      assert.is_true(ps:match("^/"),
-        ("tree selection path is not absolute: %q"):format(ps))
+      assert.is_not.equal(
+        "neo-tree",
+        ps,
+        "tree selection returned the literal 'neo-tree' buffer name instead of a path"
+      )
+      assert.is_true(ps:match("^/"), ("tree selection path is not absolute: %q"):format(ps))
     end
 
     -- Clean up the neo-tree window.

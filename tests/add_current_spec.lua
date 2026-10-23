@@ -96,7 +96,9 @@ describe("<leader>ca action: resolves % to a real file and reaches the send stag
   -- timing dependency. Restored in teardown.
   local function force_filereadable(val)
     orig_filereadable = vim.fn.filereadable
-    vim.fn.filereadable = function() return val end
+    vim.fn.filereadable = function()
+      return val
+    end
   end
 
   ---Open a plain `cat` terminal in a split so find_terminal_win() has a visible
@@ -108,7 +110,9 @@ describe("<leader>ca action: resolves % to a real file and reaches the send stag
     assert.is_true(ok, "could not open a terminal window (cat)")
     local win = vim.api.nvim_get_current_win()
     -- Give the terminal buffer a moment to register its buftype before we leave the window.
-    vim.wait(100, function() return false end, 25)
+    vim.wait(100, function()
+      return false
+    end, 25)
     vim.cmd("wincmd p")
     return win
   end
@@ -183,13 +187,17 @@ describe("<leader>ca action: resolves % to a real file and reaches the send stag
 
         -- No "not a readable file" error: % expanded to a real path and passed the gate.
         for _, n in ipairs(notes) do
-          assert.is_falsy(n:find("not a readable file", 1, true),
-            ("%s: %% did not resolve to a readable file (got %q)"):format(harness, n))
+          assert.is_falsy(
+            n:find("not a readable file", 1, true),
+            ("%s: %% did not resolve to a readable file (got %q)"):format(harness, n)
+          )
         end
 
         -- The command must have reached the send stage (chansend was called).
-        assert.is_truthy(#payloads > 0,
-          ("%s: command never reached the send stage (chansend not called)"):format(harness))
+        assert.is_truthy(
+          #payloads > 0,
+          ("%s: command never reached the send stage (chansend not called)"):format(harness)
+        )
 
         -- The per-harness context format is part of the contract this test pins. The first
         -- payload is build_context_text(expanded_path); a trailing space may be appended by
@@ -201,20 +209,26 @@ describe("<leader>ca action: resolves % to a real file and reaches the send stag
           -- $HOME, full absolute otherwise) so a tree-add types a resolvable reference;
           -- no @mention and no cwd-relative remainder.
           local expected = require("harness-decorators.utils").shorten_path(path)
-          assert.is_truthy(text:find(expected, 1, true),
-            ("maki: expected the shortened path %s, got %q"):format(expected, text))
-          assert.is_falsy(text:find("@", 1, true),
-            ("maki: unexpectedly sent an @mention, got %q"):format(text))
+          assert.is_truthy(
+            text:find(expected, 1, true),
+            ("maki: expected the shortened path %s, got %q"):format(expected, text)
+          )
+          assert.is_falsy(text:find("@", 1, true), ("maki: unexpectedly sent an @mention, got %q"):format(text))
         else
           -- claude/copilot use @file mentions.
-          assert.is_truthy(text:find("@", 1, true) and text:find(fname, 1, true),
-            ("%s: expected an @mention reference to %s, got %q"):format(harness, fname, text))
+          assert.is_truthy(
+            text:find("@", 1, true) and text:find(fname, 1, true),
+            ("%s: expected an @mention reference to %s, got %q"):format(harness, fname, text)
+          )
         end
 
         -- The command must have jumped focus to the terminal; term.lua's shared WinEnter handler
         -- owns the terminal-mode transition for this path too.
-        assert.are.equal(term_win, vim.api.nvim_get_current_win(),
-          ("%s: focus did not move to the terminal after add"):format(harness))
+        assert.are.equal(
+          term_win,
+          vim.api.nvim_get_current_win(),
+          ("%s: focus did not move to the terminal after add"):format(harness)
+        )
       end)
 
       it("add command rejects an unreadable path with an explicit error", function()
@@ -237,8 +251,10 @@ describe("<leader>ca action: resolves % to a real file and reaches the send stag
             found = true
           end
         end
-        assert.is_truthy(found,
-          ("%s: adding an unreadable path produced no explicit error (silent no-op)"):format(harness))
+        assert.is_truthy(
+          found,
+          ("%s: adding an unreadable path produced no explicit error (silent no-op)"):format(harness)
+        )
       end)
     end)
   end

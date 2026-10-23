@@ -102,8 +102,10 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
     assert.are.equal(target, helper.active_harness(), "switch did not take effect")
 
     -- The core Option A assertion: the outgoing buffer was NOT deleted (old kill_terminal did).
-    assert.is_true(vim.api.nvim_buf_is_valid(inst.buf),
-      "switch deleted the outgoing harness's terminal buffer (Option A must keep it alive)")
+    assert.is_true(
+      vim.api.nvim_buf_is_valid(inst.buf),
+      "switch deleted the outgoing harness's terminal buffer (Option A must keep it alive)"
+    )
     -- And it was recorded so a later re-pick can resume the same process. The backgrounded outgoing
     -- harness must be unselected.
     local entries = park.list()
@@ -118,8 +120,11 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
 
     -- The watcher follows ONLY the active harness. After switching to `target`, the watcher's active
     -- harness must be `target` (the foregrounded one), NOT the backgrounded `original_harness`.
-    assert.are.equal(target, utils.harness,
-      "watcher must follow the active (foregrounded) harness, not the backgrounded one")
+    assert.are.equal(
+      target,
+      utils.harness,
+      "watcher must follow the active (foregrounded) harness, not the backgrounded one"
+    )
   end)
 
   it("notifies 'backgrounded X, foregrounded Y' when a live terminal was parked", function()
@@ -135,12 +140,16 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
 
     local saw_bg_fg = false
     for _, n in ipairs(notes) do
-      if n.msg:find("backgrounded " .. start_harness, 1, true)
-        and n.msg:find("foregrounded " .. target, 1, true) then
+      if n.msg:find("backgrounded " .. start_harness, 1, true) and n.msg:find("foregrounded " .. target, 1, true) then
         saw_bg_fg = true
       end
     end
-    local msgs = table.concat(vim.tbl_map(function(n) return n.msg end, notes), " | ")
+    local msgs = table.concat(
+      vim.tbl_map(function(n)
+        return n.msg
+      end, notes),
+      " | "
+    )
     assert.is_true(saw_bg_fg, "expected a 'backgrounded X, foregrounded Y' notify; got: " .. msgs)
   end)
 
@@ -183,8 +192,11 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
     require("harness-decorators.state")._reset()
     term_mod.open(target)
 
-    assert.are.equal(helper.env_command(target), captured_cmd,
-      "opening " .. target .. "'s float after a switch must use its own env command")
+    assert.are.equal(
+      helper.env_command(target),
+      captured_cmd,
+      "opening " .. target .. "'s float after a switch must use its own env command"
+    )
   end)
 
   it("after_pick opens the newly-selected harness's terminal (picker auto-open)", function()
@@ -204,22 +216,25 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
     assert.is_true(term_mod.is_open(target), "after_pick must open the selected harness's terminal")
   end)
 
-  it("Given a harness started from the <C-q> picker, When after_pick runs, Then edit-following is set up like <leader>c does", function()
-    -- setup_auto_follow registers the HarnessEdit jump autocmds and starts the watcher; only <leader>c
-    -- called it, so a harness started from the picker never followed its edits.
-    local decorators = require("harness-decorators")
-    local orig_setup = decorators.setup_auto_follow
-    local calls = 0
-    decorators.setup_auto_follow = function()
-      calls = calls + 1
+  it(
+    "Given a harness started from the <C-q> picker, When after_pick runs, Then edit-following is set up like <leader>c does",
+    function()
+      -- setup_auto_follow registers the HarnessEdit jump autocmds and starts the watcher; only <leader>c
+      -- called it, so a harness started from the picker never followed its edits.
+      local decorators = require("harness-decorators")
+      local orig_setup = decorators.setup_auto_follow
+      local calls = 0
+      decorators.setup_auto_follow = function()
+        calls = calls + 1
+      end
+      sw.init(original_harness)
+      require("harness-decorators.state")._reset()
+      pcall(sw.switch, target)
+      sw.after_pick()
+      decorators.setup_auto_follow = orig_setup
+      assert.is_true(calls > 0, "after_pick must call setup_auto_follow")
     end
-    sw.init(original_harness)
-    require("harness-decorators.state")._reset()
-    pcall(sw.switch, target)
-    sw.after_pick()
-    decorators.setup_auto_follow = orig_setup
-    assert.is_true(calls > 0, "after_pick must call setup_auto_follow")
-  end)
+  )
 
   it("waits for Telescope's mapping to return before focusing the terminal", function()
     local called = false
@@ -236,7 +251,9 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
 
     sw.schedule_after_pick()
     assert.is_false(called, "picker terminal focus must not run inside Telescope's mapping")
-    vim.wait(100, function() return called end, 10)
+    vim.wait(100, function()
+      return called
+    end, 10)
     vim.fn.mode = original_mode
     assert.is_true(called, "picker terminal focus must run on the next event-loop turn")
     assert.is_true(mode_calls >= 3, "picker terminal focus must wait for ordinary normal mode")

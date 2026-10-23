@@ -9,14 +9,18 @@ local function edit_line(uuid)
   local fp = vim.uv.cwd() .. "/tests/_claude_parse_target.txt"
   return string.format(
     '{"type":"user","uuid":%q,"timestamp":1700000000000,"toolUseResult":{"filePath":%q,"structuredPatch":[{"oldStart":1,"oldLines":3,"newStart":1,"newLines":4,"lines":[" a"," b","+ added line"," c"]}]}}',
-    uuid, fp)
+    uuid,
+    fp
+  )
 end
 
 local function create_line(uuid)
   local fp = vim.uv.cwd() .. "/tests/_claude_create_target.txt"
   return string.format(
     '{"type":"user","uuid":%q,"timestamp":1700000000000,"toolUseResult":{"filePath":%q,"type":"create","content":"line1\\nline2"}}',
-    uuid, fp)
+    uuid,
+    fp
+  )
 end
 
 describe("claude.parse_tool_result", function()
@@ -47,7 +51,9 @@ describe("claude.parse_tool_result", function()
     local fp = "/tmp/something.tmp"
     local line = string.format(
       '{"type":"user","uuid":%q,"timestamp":1700000000000,"toolUseResult":{"filePath":%q,"structuredPatch":[{"oldStart":1,"oldLines":3,"newStart":1,"newLines":4,"lines":[" a","+ b"]}]}}',
-      "u3", fp)
+      "u3",
+      fp
+    )
     assert.is_nil(claude.parse_tool_result(line, 1))
   end)
 

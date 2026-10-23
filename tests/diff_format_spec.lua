@@ -19,9 +19,16 @@ describe("diff.diff_full_files output format (picker contract)", function()
       -- always at string position 8 (the picker reads line:sub(8,8)). Positions 6-7 are the
       -- two separator spaces; positions 1-5 hold the zero-padded line number.
       assert.is_truthy(#line >= 8, ("line too short to carry a prefix at position 8: %q"):format(line))
-      assert.are.equal("  ", line:sub(6, 7), ("positions 6-7 must be two spaces (got %q in %q)"):format(line:sub(6, 7), line))
+      assert.are.equal(
+        "  ",
+        line:sub(6, 7),
+        ("positions 6-7 must be two spaces (got %q in %q)"):format(line:sub(6, 7), line)
+      )
       -- The number field is digits (right-justified, so it may have leading spaces).
-      assert.is_truthy(line:sub(1, 5):match("^%s*%d+$"), ("positions 1-5 must be a right-justified integer: %q"):format(line))
+      assert.is_truthy(
+        line:sub(1, 5):match("^%s*%d+$"),
+        ("positions 1-5 must be a right-justified integer: %q"):format(line)
+      )
     end
   end)
 
