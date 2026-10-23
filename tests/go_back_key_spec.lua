@@ -103,7 +103,7 @@ describe("term.close_key: <Esc> hides the float (but keeps the PTY alive)", func
   end)
 end)
 
-describe("term.go_back_key: <C-h> minimizes when zen mode is active", function()
+describe("term.go_back_key: <C-h> in zen mode", function()
   local term_mod
   local focus
 
@@ -118,21 +118,27 @@ describe("term.go_back_key: <C-h> minimizes when zen mode is active", function()
     focus.reset()
   end)
 
-  it("skips the focus jump when zen mode is active (minimizes instead)", function()
-    -- With zen mode active, go_back_key minimizes the float and returns early,
-    -- so the focus jump (jump_to_saved / set_prev_win) is skipped. We assert
-    -- that focus does NOT move to the saved window, proving the early-return
-    -- path was taken.
+  it("jumps to the zen window (a float) instead of the saved parent window", function()
     term_mod._zen_active_override = true
+    -- Create a fake zen window (a float) that zen-mode.view would report.
+    local zen_buf = vim.api.nvim_create_buf(false, true)
+    local zen_win = vim.api.nvim_open_win(zen_buf, false, {
+      relative = "editor",
+      width = 10,
+      height = 5,
+      row = 1,
+      col = 1,
+    })
+    -- Patch zen-mode.view to report our fake window.
+    local zen_view = require("zen-mode.view")
+    local real_win = zen_view.win
+    zen_view.win = zen_win
+
     local origin = vim.api.nvim_get_current_win()
-    focus.last_win = origin
-    local jumped = false
     local fake = {
       buf = vim.api.nvim_create_buf(false, true),
       win = nil,
-      hide = function()
-        jumped = true
-      end,
+      hide = function() end,
       show = function() end,
       focus = function() end,
       close = function() end,
@@ -140,15 +146,21 @@ describe("term.go_back_key: <C-h> minimizes when zen mode is active", function()
 
     local ok, err = pcall(term_mod.go_back_key, fake)
     assert.is_true(ok, "go_back_key raised: " .. tostring(err))
-    -- The zen-mode path calls minimize_float which requires a valid win and
-    -- a state.table entry; with a bare fake it returns early without hiding.
-    -- What we can assert: no error was raised and the function returned
-    -- without going through the collapse + jump path.
-    assert.are.equal(origin, vim.api.nvim_get_current_win(), "focus should stay put (no jump)")
+    assert.are.equal(zen_win, vim.api.nvim_get_current_win(), "focus should land on the zen window")
+
+    -- Clean up: restore and close the fake zen window.
+    vim.api.nvim_set_current_win(origin)
+    vim.api.nvim_win_close(zen_win, true)
+    vim.api.nvim_buf_delete(zen_buf, { force = true })
+    zen_view.win = real_win
   end)
 
-  it("does the collapse + jump when zen mode is off", function()
-    term_mod._zen_active_override = false
+  it("falls back to the saved window when zen window is invalid", function()
+    term_mod._zen_active_override = true
+    local zen_view = require("zen-mode.view")
+    local real_win = zen_view.win
+    zen_view.win = nil -- no valid zen window
+
     local origin = vim.api.nvim_get_current_win()
     focus.last_win = origin
     local fake = {
@@ -162,6 +174,8 @@ describe("term.go_back_key: <C-h> minimizes when zen mode is active", function()
 
     local ok, err = pcall(term_mod.go_back_key, fake)
     assert.is_true(ok, "go_back_key raised: " .. tostring(err))
-    assert.are.equal(origin, vim.api.nvim_get_current_win(), "focus should stay on the saved window")
+    assert.are.equal(origin, vim.api.nvim_get_current_win(), "focus should fall back to saved window")
+
+    zen_view.win = real_win
   end)
 end)

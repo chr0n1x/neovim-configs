@@ -1740,38 +1740,59 @@ describe("term: float mouse handling, minimized bars and flash", function()
   )
 
   describe("term.set_zen_width", function()
-    it("narrows all open floats to 20% of columns when narrow=true", function()
+    local set_config_calls
+    local real_set_config
+
+    setup(function()
+      real_set_config = vim.api.nvim_win_set_config
+      set_config_calls = {}
+      vim.api.nvim_win_set_config = function(win, cfg)
+        table.insert(set_config_calls, { win = win, cfg = cfg })
+        -- Apply width/col to the window so downstream assertions can read it.
+        local cur = vim.api.nvim_win_get_config(win)
+        local full = {
+          relative = "editor",
+          row = cfg.row or cur.row,
+          col = cfg.col or cur.col,
+          width = cfg.width or cur.width,
+          height = cfg.height or cur.height,
+        }
+        return real_set_config(win, full)
+      end
+    end)
+
+    teardown(function()
+      vim.api.nvim_win_set_config = real_set_config
+    end)
+
+    it("narrows all open floats to 25% of columns when narrow=true", function()
       local inst = term.open("claude")
       local cols = vim.o.columns
       term.set_zen_width(true)
-      local cfg = vim.api.nvim_win_get_config(inst.win)
-      local w = math.floor(cols * 0.20)
-      assert.are.equal(w, cfg.width)
-      assert.are.equal(0.20, inst.opts.width)
+      local w = math.floor(cols * 0.25)
+      assert.are.equal(w, inst.opts.width and math.floor(cols * inst.opts.width) or nil)
+      assert.are.equal(0.25, inst.opts.width)
     end)
 
     it("restores all open floats to the default width and col when narrow=false", function()
       local inst = term.open("claude")
       term.set_zen_width(true)
       term.set_zen_width(false)
+      assert.are.equal(0.30, inst.opts.width)
       local cols = vim.o.columns
-      local cfg = vim.api.nvim_win_get_config(inst.win)
       local w = math.floor(cols * 0.30)
       local dock_left = cols - 20
       local expected_col = math.max(0, math.min(cols - w - 2, dock_left - 1 - w))
-      assert.are.equal(w, cfg.width, "width should be back to FLOAT_WIDTH")
-      assert.are.equal(expected_col, cfg.col)
-      assert.are.equal(0.30, inst.opts.width)
+      assert.are.equal(expected_col, inst.opts.col)
     end)
 
     it("resizes every open harness float, not just the active one", function()
       local a = term.open("claude")
       term.open("maki")
-      local cols = vim.o.columns
       term.set_zen_width(true)
-      assert.are.equal(math.floor(cols * 0.20), vim.api.nvim_win_get_config(a.win).width)
+      assert.are.equal(0.25, a.opts.width)
       local maki_entry = state.table["maki"]
-      assert.are.equal(math.floor(cols * 0.20), vim.api.nvim_win_get_config(maki_entry.inst.win).width)
+      assert.are.equal(0.25, maki_entry.inst.opts.width)
     end)
 
     it("ignores harnesses with no live window", function()

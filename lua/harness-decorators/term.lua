@@ -277,7 +277,7 @@ local BAR_MIN_TEXT = 18
 
 -- Default float size and spot, as fractions of the editor.
 local FLOAT_ROW, FLOAT_WIDTH, FLOAT_HEIGHT = 0, 0.30, 0.90
-local ZEN_WIDTH = 0.20
+local ZEN_WIDTH = 0.25
 
 ---The default float column: 2 cols left of the right edge, shifted further left when that would
 -- put the float under the minimized-bar dock (top-right).
@@ -311,7 +311,7 @@ local function zen_float_col()
   if space_left < w then
     return math.max(0, cols - w - 2)
   end
-  return zright + math.floor((space_left - w) / 2)
+  return zright + math.floor((space_left - w) * 0.25)
 end
 
 ---The default right-side float's rect, resolved the way Snacks resolves win_opts: a fractional size
@@ -438,16 +438,19 @@ local zen_active -- forward declaration; defined below
 local minimize_float -- forward declaration; defined below
 
 function M.go_back_key(self)
-  -- When zen mode is active, minimize instead of collapse: the docked bar is
-  -- a float, so zen mode's WinEnter autocmd doesn't close zen mode.
-  if zen_active() then
-    minimize_float(self)
-    return
-  end
   local focus = require("harness-decorators.focus")
   focus.suppress_next_leave()
   animate_collapse(self)
-  if not focus.jump_to_saved() then
+  if zen_active() then
+    -- Jump to the zen window (a float) instead of the saved parent window so
+    -- zen-mode's WinEnter autocmd doesn't close zen mode.
+    local ok, zen = pcall(require, "zen-mode.view")
+    if ok and zen.win and vim.api.nvim_win_is_valid(zen.win) then
+      vim.api.nvim_set_current_win(zen.win)
+    else
+      focus.jump_to_saved()
+    end
+  elseif not focus.jump_to_saved() then
     set_prev_win()
   end
   vim.cmd.redraw()
@@ -1430,7 +1433,11 @@ function M.set_zen_width(narrow)
   for _, e in pairs(state.table) do
     local inst = e.inst
     if inst and inst.win and vim.api.nvim_win_is_valid(inst.win) then
-      pcall(vim.api.nvim_win_set_config, inst.win, { width = width, col = col })
+      local ok, err = pcall(vim.api.nvim_win_set_config, inst.win, { relative = "editor", width = width })
+      if not ok then
+        M._last_zen_width_err = err
+      end
+      pcall(vim.api.nvim_win_set_config, inst.win, { relative = "editor", col = col })
       inst.opts.width = w
       inst.opts.col = col
     end
