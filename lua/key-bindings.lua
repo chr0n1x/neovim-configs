@@ -58,7 +58,15 @@ nmap("n", "<leader><space>", "", {
   end,
 })
 nmap("n", "<leader>q", ":q<CR>", { noremap = true, desc = "Save & close buffer (:wq)." })
-nmap("n", "<leader>qq", ":qa!<CR>", { noremap = true, desc = "Force close all. (:qa!)" })
+vim.api.nvim_create_user_command("HarnessShutdown", function()
+  require("harness-decorators").shutdown()
+end, {})
+nmap(
+  "n",
+  "<leader>qq",
+  ":HarnessShutdown<CR>",
+  { noremap = true, desc = "Shutdown: stop harnesses + watcher, then :qa!" }
+)
 nmap("n", "<leader>md", ":delm! | delm A-Z0-9<CR>", { noremap = true, desc = "Marks: Delete all." })
 nmap("n", "er", ":", { noremap = true, desc = "Quick-enter into command mode." })
 

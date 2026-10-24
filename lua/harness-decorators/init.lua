@@ -8,9 +8,28 @@ local switch = require("harness-decorators.switch")
 local title = require("harness-decorators.title")
 local focus = require("harness-decorators.focus")
 
----Callback for VimLeavePre autocmd.
-local function on_vim_leave()
+---Stop the inotify watcher and SIGTERM all running harness processes.
+---Idempotent: safe to call from both the VimLeavePre autocmd and M.shutdown().
+local function cleanup()
+  local state = require("harness-decorators.state")
+  for _, e in pairs(state.table) do
+    local inst = e.inst
+    if inst and inst.buf and vim.api.nvim_buf_is_valid(inst.buf) then
+      local chan = vim.bo[inst.buf].channel
+      if chan and chan > 0 then
+        local ok_pid, pid = pcall(vim.fn.jobpid, chan)
+        if ok_pid and pid and pid > 0 then
+          pcall(vim.uv.kill, pid, "sigterm")
+        end
+      end
+    end
+  end
   watcher.stop()
+end
+
+---VimLeavePre autocmd callback.
+local function on_vim_leave()
+  cleanup()
 end
 
 ---Startup wiring: keymaps, switch state, WinLeave/ColorScheme autocmds, adapter on_activate.
@@ -67,6 +86,13 @@ function M.setup_auto_follow()
   watcher.reset_pin_state()
 
   watcher.start()
+end
+
+---Run all shutdown cleanup (harness SIGTERM, watcher stop), then force-quit.
+---Used by <leader>qq since :qa! can race with the VimLeavePre autocmd.
+function M.shutdown()
+  cleanup()
+  vim.cmd("qa!")
 end
 
 ---Public accessor: always reads from the watcher module.
