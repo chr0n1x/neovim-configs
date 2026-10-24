@@ -210,10 +210,10 @@ local function default_float_col()
 end
 
 ---The harness float's columns while zen mode is open: starting a quarter of the way into the zen
--- window and 10% wider than it (at least as wide as the tiling grid's widest cell), shifted left
--- when needed so the minimized-bar dock fits on its right; on an editor too small for both it
--- overlaps the dock. With no zen window to measure, ZEN_MIN_WIDTH of the editor ending where the
--- dock begins.
+-- window and 90% of the zen-mode gap (the space from the zen window's right edge to the dock's
+-- left edge), shifted left when needed so the minimized-bar dock fits on its right; on an editor
+-- too small for both it overlaps the dock. With no zen window to measure, ZEN_MIN_WIDTH of the
+-- editor ending where the dock begins.
 ---@return { col: integer, width: integer } width excludes the border
 local function zen_float_span()
   local cols = vim.o.columns
@@ -223,31 +223,35 @@ local function zen_float_span()
   local zwin = require("util.zen").win()
   if zwin then
     local zcfg = vim.api.nvim_win_get_config(zwin)
-    -- At least as wide as the grid's widest cell: half the empty area left of zen (see M.tile).
-    local grid_cell = math.floor((math.floor(zcfg.col) - 1) / 2)
-    outer = math.max(grid_cell, zcfg.width + math.floor(zcfg.width / 10))
+    local zright = math.floor(zcfg.col) + zcfg.width
+    local gap = math.max(0, cols - dock_room - zright) -- the zen-mode gap
+    outer = math.max(3, math.ceil(gap * 0.9)) -- 90% of the gap, at least 3 cols
     left = math.floor(zcfg.col) + math.floor(zcfg.width / 4)
   end
   left = math.max(0, math.min(left, cols - dock_room - outer))
   return { col = left, width = outer - 2 }
 end
 
----The unfocused harness float's columns while zen mode is open: the zen spot shrunk from the left,
--- so it keeps the zen spot's right edge and starts one column right of the zen window.
+---The unfocused harness float's columns while zen mode is open: 55% of the zen-mode gap (the space
+-- from the zen window's right edge to the dock's left edge), starting one column right of the zen
+-- window.
 ---@return { col: integer, width: integer } width excludes the border
 local function zen_side_span()
   local span = zen_float_span()
-  local right = span.col + span.width + 2 -- one past the last column
   local left = span.col
   local zwin = require("util.zen").win()
   if zwin then
     local zcfg = vim.api.nvim_win_get_config(zwin)
     local zborder = zcfg.border ~= nil and zcfg.border ~= "none" and not vim.tbl_isempty(zcfg.border)
     local zright = math.floor(zcfg.col) + zcfg.width + (zborder and 2 or 0) -- first column right of zen
-    -- Leave room for the border and one text column.
-    left = math.max(left, math.min(zright + 1, right - 3))
+    local dock_room = BAR_MIN_TEXT + 2
+    local zinner_right = zright - (zborder and 2 or 0) -- zen right edge excluding border
+    local gap = math.max(0, vim.o.columns - dock_room - zinner_right) -- zen right edge to dock left edge
+    local outer = math.max(3, math.floor(gap * 0.55)) -- 55% of the gap
+    left = zright + 1 -- start just right of the zen window
+    return { col = left, width = outer - 2 }
   end
-  return { col = left, width = right - left - 2 }
+  return { col = left, width = span.width }
 end
 
 ---The default right-side float's rect, resolved the way Snacks resolves win_opts: a fractional size

@@ -1453,8 +1453,9 @@ describe("term: float mouse handling, minimized bars and flash", function()
       return nil
     end
     local zcfg = vim.api.nvim_win_get_config(zen.win)
-    local zw = zcfg.width
-    return math.max(math.floor((math.floor(zcfg.col) - 1) / 2), zw + math.floor(zw / 10)) - 2
+    local zright = math.floor(zcfg.col) + zcfg.width
+    local gap = math.max(0, vim.o.columns - 20 - zright)
+    return math.max(3, math.ceil(gap * 0.9)) - 2
   end
 
   ---Fullscreen: 5% vertical / 10% horizontal padding; while zen is open, the zen float's width,
@@ -2044,15 +2045,19 @@ describe("term: float mouse handling, minimized bars and flash", function()
     end
 
     ---The zen float's expected outer span (first column, one past the last) for a zen window at
-    -- `zcol`, `zw` wide.
-    local function expected_span(cols, zcol, zw)
-      local outer = math.max(math.floor((zcol - 1) / 2), zw + math.floor(zw / 10))
-      local left = math.max(0, math.min(zcol + math.floor(zw / 4), cols - 20 - outer))
+    -- `zcol`, `zw` wide. Focused: 90% of the zen-mode gap. Unfocused: 55% of the gap.
+    local function expected_span(cols, zcol, zw, aside)
+      local zright = zcol + zw
+      local gap = math.max(0, cols - 20 - zright)
+      local outer = aside and math.floor(gap * 0.55) or math.ceil(gap * 0.9)
+      outer = math.max(3, outer)
+      local left = aside and (zright + 1) or (zcol + math.floor(zw / 4))
+      left = math.max(0, math.min(left, cols - 20 - outer))
       return left, left + outer
     end
 
     it(
-      "Given zen is open with room on its right, When zen mode resizes the floats, Then the float starts a quarter into the zen window, is 10% wider than it, and fills the top 70% of the screen",
+      "Given zen is open with room on its right, When zen mode resizes the floats, Then the float starts a quarter into the zen window at 90% of the zen-mode gap, and fills the top 70% of the screen",
       function()
         local old_cols = vim.o.columns
         vim.o.columns = 300
@@ -2063,18 +2068,18 @@ describe("term: float mouse handling, minimized bars and flash", function()
           local left, right = outer_span(inst.win)
           local cfg = vim.api.nvim_win_get_config(inst.win)
           return left == 70
-            and right == 202
+            and right == 178
             and math.floor(cfg.row) == 0
             and cfg.height + 2 == math.floor(vim.o.lines * 0.7)
         end, 1500)
         local got = rect_of(inst.win)
         vim.o.columns = old_cols
-        assert.is_true(ok, "want cols 70..202, top 70%: " .. vim.inspect(got))
+        assert.is_true(ok, "want cols 70..178 (90% of the gap), top 70%: " .. vim.inspect(got))
       end
     )
 
     it(
-      "Given a narrow zen window, When zen mode resizes the floats, Then the focused float is at least as wide as the grid's widest cell",
+      "Given a narrow zen window, When zen mode resizes the floats, Then the focused float is 90% of the zen-mode gap",
       function()
         local old_cols = vim.o.columns
         vim.o.columns = 300
@@ -2083,16 +2088,16 @@ describe("term: float mouse handling, minimized bars and flash", function()
         term.set_zen_width(true)
         local ok = wait_for(function()
           local left, right = outer_span(inst.win)
-          return left == 110 and right == 159
+          return left == 110 and right == 236
         end, 1500)
         local got = rect_of(inst.win)
         vim.o.columns = old_cols
-        assert.is_true(ok, "want cols 110..159 (outer 49 = half of the 99-col empty area): " .. vim.inspect(got))
+        assert.is_true(ok, "want cols 110..236 (90% of the 140-col gap): " .. vim.inspect(got))
       end
     )
 
     it(
-      "Given little room right of the zen window, When zen mode resizes the floats, Then the float shifts left so it ends where the dock begins",
+      "Given little room right of the zen window, When zen mode resizes the floats, Then the float fits in the remaining gap",
       function()
         local old_cols = vim.o.columns
         vim.o.columns = 200
@@ -2101,11 +2106,11 @@ describe("term: float mouse handling, minimized bars and flash", function()
         term.set_zen_width(true)
         local ok = wait_for(function()
           local left, right = outer_span(inst.win)
-          return left == 48 and right == 180
+          return left == 70 and right == 88
         end, 1500)
         local got = rect_of(inst.win)
         vim.o.columns = old_cols
-        assert.is_true(ok, "want cols 48..180: " .. vim.inspect(got))
+        assert.is_true(ok, "want cols 70..88 (90% of the 20-col gap): " .. vim.inspect(got))
       end
     )
 
@@ -2173,7 +2178,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
     end
 
     it(
-      "Given zen is open and shelf mode off, When the float loses focus, Then it shrinks from the left to just past the zen window, keeping its right edge and height",
+      "Given zen is open and shelf mode off, When the float loses focus, Then it moves right of the zen window at 55% of the zen-mode gap, keeping its height",
       function()
         local old_cols = vim.o.columns
         vim.o.columns = 300
@@ -2184,18 +2189,18 @@ describe("term: float mouse handling, minimized bars and flash", function()
         term.set_zen_width(true)
         local focused_ok = wait_for(function()
           local left, right = outer_span(inst.win)
-          return left == 70 and right == 202
+          return left == 70 and right == 178
         end, 1500)
         local height = vim.api.nvim_win_get_config(inst.win).height
         vim.api.nvim_set_current_win(work_win)
         local ok = wait_for(function()
           local left, right = outer_span(inst.win)
-          return left == 161 and right == 202 and vim.api.nvim_win_get_config(inst.win).height == height
+          return left == 161 and right == 227 and vim.api.nvim_win_get_config(inst.win).height == height
         end, 1500)
         local got = rect_of(inst.win)
         vim.o.columns = old_cols
         assert.is_true(focused_ok, "precondition: focused float in the zen spot")
-        assert.is_true(ok, "want cols 161..202 at the same height: " .. vim.inspect(got))
+        assert.is_true(ok, "want cols 161..227 (55% of the zen-mode gap) at the same height: " .. vim.inspect(got))
       end
     )
 
@@ -2211,17 +2216,17 @@ describe("term: float mouse handling, minimized bars and flash", function()
         term.set_zen_width(true)
         local aside = wait_for(function()
           local left, right = outer_span(inst.win)
-          return left == 161 and right == 202
+          return left == 161 and right == 227
         end, 1500)
         vim.api.nvim_set_current_win(inst.win)
         local ok = wait_for(function()
           local left, right = outer_span(inst.win)
-          return left == 70 and right == 202
+          return left == 70 and right == 178
         end, 1500)
         local got = rect_of(inst.win)
         vim.o.columns = old_cols
         assert.is_true(aside, "precondition: unfocused float moved aside")
-        assert.is_true(ok, "want cols 70..202: " .. vim.inspect(got))
+        assert.is_true(ok, "want cols 70..178: " .. vim.inspect(got))
       end
     )
 
@@ -2411,7 +2416,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
         local claude = term.open("claude")
         vim.api.nvim_set_current_win(claude.win)
         local stacked = { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) }
-        local zen_spot = { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) }
+        local zen_spot = { row = 0, col = 70, width = 108, height = math.floor(vim.o.lines * 0.70) }
         term.tile()
         lands(copilot, stacked)
         lands(claude, zen_spot)
@@ -2433,7 +2438,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
         vim.api.nvim_set_current_win(claude.win)
         term.tile()
         lands(copilot, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
-        lands(claude, { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) })
+        lands(claude, { row = 0, col = 70, width = 108, height = math.floor(vim.o.lines * 0.70) })
         term.tile()
         assert.are.equal(copilot.win, vim.api.nvim_get_current_win(), "focus cycles to copilot")
         assert.are.equal("copilot", sw.current(), "copilot is the active harness")
@@ -2450,7 +2455,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
         vim.api.nvim_set_current_win(claude.win)
         term.tile()
         lands(copilot, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
-        lands(claude, { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) })
+        lands(claude, { row = 0, col = 70, width = 108, height = math.floor(vim.o.lines * 0.70) })
         term.tile()
         local anim = require("harness-decorators.terminal-animations")
         local orig, targets = anim.animate_resize, {}
@@ -2516,7 +2521,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
           assert.is_true(r.col <= 70, "claude was sent right of zen: " .. vim.inspect(targets))
         end
         lands(claude, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
-        lands(copilot, { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) })
+        lands(copilot, { row = 0, col = 70, width = 108, height = math.floor(vim.o.lines * 0.70) })
       end
     )
 
@@ -2533,7 +2538,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
         sw.switch("copilot")
         sw.after_pick()
         lands(claude, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
-        lands(copilot, { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) })
+        lands(copilot, { row = 0, col = 70, width = 108, height = math.floor(vim.o.lines * 0.70) })
       end
     )
 
@@ -2625,7 +2630,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
         sw.after_pick()
         local copilot = state.table.copilot.inst
         assert.is_true(term._tiled == true, "grid mode must be on")
-        lands(copilot, { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) })
+        lands(copilot, { row = 0, col = 70, width = 108, height = math.floor(vim.o.lines * 0.70) })
         lands(claude, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
       end
     )
@@ -2638,7 +2643,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
         vim.api.nvim_set_current_win(claude.win)
         term.tile()
         local tall = math.floor(vim.o.lines * 0.90)
-        lands(claude, { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) })
+        lands(claude, { row = 0, col = 70, width = 108, height = math.floor(vim.o.lines * 0.70) })
         lands(copilot, { row = 0, col = 20, width = 19, height = tall })
       end
     )
@@ -2780,7 +2785,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
         vim.api.nvim_set_current_win(claude.win)
         term.tile()
         vim.api.nvim_set_current_win(copilot.win)
-        lands(copilot, { row = 0, col = 70, width = 132, height = math.floor(vim.o.lines * 0.70) })
+        lands(copilot, { row = 0, col = 70, width = 108, height = math.floor(vim.o.lines * 0.70) })
         lands(claude, { row = 0, col = 20, width = 19, height = math.floor(vim.o.lines * 0.90) })
       end
     )

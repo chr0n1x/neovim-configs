@@ -30,10 +30,29 @@ Only one `make ci` can run at a time: a new run stops any `nvim-test` container 
 running. Run `stylua` from the config root so it picks up `.stylua.toml`. The CI container has no
 `lsqlite3`; the sqlite paths are covered by `tests/sqlite_state_spec.lua` with a fake module.
 
+**Fast iteration on a single spec file:** `make ci` runs the full suite (lint + style + load
+check + all specs), which is slow when you only changed one spec. To run just one spec file,
+mount a minimal runner that loads only that file:
+
+```
+# One-off: run only tests/term_spec.lua (skip lint/style/load-check, ~30s vs ~2min)
+podman run --rm \
+  -v "$(pwd):/nvim-config/nvim" \
+  -v "$(pwd)/.test-cache:/root/.local/share/nvim" \
+  -v /tmp/runner_single.lua:/tmp/runner_single.lua:ro \
+  --entrypoint bash nvim-test \
+  -c "cd /nvim-config/nvim && nvim --headless -n -i NONE -c 'luafile /tmp/runner_single.lua'"
+```
+
+where `/tmp/runner_single.lua` is a copy of `tests/runner.lua` with the `loadTestFiles` pattern
+changed to the single file (e.g. `term_spec%.lua$`). The `nvim-test` image must already be built
+(`make ci` builds it on first run). This skips lint/style/load-check - run the full `make ci`
+before committing.
+
 **Do NOT** hand-roll headless `nvim -u init.lua` probes to "confirm" behavior. They hang on
-lazy.nvim sync and give you nothing. If you need to see a failing spec, run `make ci` and read
-the failure - it will name the exact contract that broke, which is faster than any live
-probe.
+lazy.nvim sync and give you nothing. If you need to see a failing spec, run `make ci` (or the
+single-spec runner above) and read the failure - it will name the exact contract that broke,
+which is faster than any live probe.
 
 Live-instance queries (when you must inspect a running nvim): use the `nvim-ctrl` skill
 (`nvimx --server <sock> --remote-expr ...`). Never raw msgpack socket framing (the
