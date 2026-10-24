@@ -18,9 +18,11 @@ The goal of having a separate repo is so that I can manage the two configuration
 Custom plugin (`lua/harness-decorators/`) that adds:
 
 - **Auto-follow** — automatically jumps to edited files when Claude Code modifies them on disk. Watches for file changes via `inotifywait` (Linux) or `fswatch` (macOS), no manual buffer switching needed.
-- **Change history picker** — browse all edits Claude made in the current session (`<leader>cu`). Select an entry to jump to it, with a diff preview _without `git`_. Useful for reviewing changes before commit, or a list of changes that the AI flip-flops between when testing things.
-- **Lualine status** — shows the pinned Claude session name or a spinner while idle in the statusline.
-- **Floating terminal** — `claudecode.nvim` wrapper with animated resize, focus restoration on alt-tab, and `<leader>c` keymap prefix.
-- **Maki harness** — set `NVIM_LLM_HARNESS=maki` to run [maki](https://github.com/tontinton/maki) in the same floating terminal with identical `<leader>c*` keymaps; auto-follow works too (path notifications only, no diff previews or history picker).
+- **Change history picker** — browse all edits the harness made in the current session (`<leader>cu`). Select an entry to jump to it, with a diff preview _without `git`_. Useful for reviewing changes before commit, or a list of changes that the AI flip-flops between when testing things. Available for claude, copilot, maki, and pi (crush omits it).
+- **Lualine status** — shows the pinned session name, the agent's working/idle status, or a spinner while idle in the statusline.
+- **Floating terminal** — a [snacks.nvim](https://github.com/folke/snacks.nvim) terminal with animated resize, focus restoration on alt-tab, and a `<leader>c` keymap prefix.
+- **Harness roster** — set `NVIM_LLM_HARNESS` to pick which one runs in that float: `claude` (default), `copilot`, `crush`, `maki`, `pi`, or `pig`. They all share the same `<leader>c*` keymaps and auto-follow.
+
+The test suite lives in `tests/` (busted) and runs inside a container via `make ci` from this directory. `AGENTS.md` covers the workflow (BDD, red-green) and the architecture map of `lua/harness-decorators/`.
 
 **Requirements:** `inotifywait` (Linux, from `inotify-tools`) or `fswatch` (macOS, `brew install fswatch`). If neither is installed, live follow is disabled.

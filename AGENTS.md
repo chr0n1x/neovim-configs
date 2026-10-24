@@ -2,7 +2,7 @@
 
 This is the **Neovim configuration**: plugins, keymaps, terminal behavior, and
 session/possession tracking. The centerpiece is `lua/harness-decorators/`: a set of plugins that
-embed AI coding harnesses (maki, claude, copilot, crush, pi) as floats inside nvim, wire up
+embed AI coding harnesses (claude, copilot, crush, maki, pi, pig) as floats inside nvim, wire up
 keymaps to feed file context into the running agent's terminal, and auto-follow the agent's
 edits back into the editor. Everything else hangs off that. If you're changing behavior, it
 almost always lives in `harness-decorators/`.
@@ -41,7 +41,7 @@ Live-instance queries (when you must inspect a running nvim): use the `nvim-ctrl
 
 ## Architecture map (harness-decorators)
 
-One definition, many callers. Each harness (`maki`, `claude`, `copilot`, `crush`, `pi`) has
+One definition, many callers. Each harness (`claude`, `copilot`, `crush`, `maki`, `pi`, `pig`) has
 its own `<harness>/keymaps.lua` with a per-harness `build_context_text` (formatting differs:
 `@`-mention vs bare path, trailing `/` for dirs, `#L` ranges). All of them delegate the actual
 work to shared modules - so a "maki bug" is usually a shared-code bug:
@@ -64,7 +64,7 @@ work to shared modules - so a "maki bug" is usually a shared-code bug:
 `<leader>c*` keymaps, `type_into_terminal`, and the edit watcher all follow it. `switch.switch`
 adds the layout and zen-focus handling for a `<C-q>` pick on top of that.
 
-**Shared-code callout:** `shorten_path` is used by all five harnesses AND the telescope history
+**Shared-code callout:** `shorten_path` is used by all six harnesses AND the telescope history
 picker. Changing it is a cross-harness behavior change, not a fix for the one harness you're
 debugging. Always `make ci` the whole suite, not just the affected spec, and don't scope the
 fix to the harness where you saw the symptom.
@@ -86,8 +86,4 @@ commands. Search the spec by the module name before writing a new one.
   the data dir. Everything lazy.nvim / mason / possession writes lands in `.test-cache`, never
   the repo. Don't create or commit anything under the repo that looks like lazy/mason/possession
   state (stray `lazy/`, `mason/`, `possession/` dirs) - it belongs in `.test-cache`.
-- **No process spawns at startup in the test run.** `make ci` runs a headless nvim that loads
-  the full real config; `ai-harness.lua` opens the harness float at startup via
-  `open_on_startup`. That path is gated on `vim.fn.has("headless")` so the suite never spawns a
-  harness process (a spawned agent PTY never settles and hangs the container). If you add other
-  startup work that opens a terminal or external process, guard it the same way.
+
