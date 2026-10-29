@@ -1,0 +1,36 @@
+local ci = require("harness-decorators.context-inject")
+
+describe("context-inject.line_range", function()
+  it("is empty without both bounds", function()
+    assert.are.equal("", ci.line_range(nil, nil))
+    assert.are.equal("", ci.line_range(5, nil))
+    assert.are.equal("", ci.line_range(nil, 9))
+  end)
+
+  it("is a single #L when start equals end", function()
+    assert.are.equal("#L5", ci.line_range(5, 5))
+  end)
+
+  it("is #L<s>-<e> for a span", function()
+    assert.are.equal("#L5-9", ci.line_range(5, 9))
+  end)
+end)
+
+describe("context-inject.at_mention", function()
+  local utils = require("harness-decorators.utils")
+
+  it("prefixes @ and shortens a file path", function()
+    local path = vim.fn.tempname()
+    vim.fn.writefile({ "x" }, path)
+    assert.are.equal("@" .. utils.shorten_path(path), ci.at_mention(path))
+    assert.are.equal("@" .. utils.shorten_path(path) .. "#L2-3", ci.at_mention(path, 2, 3))
+  end)
+
+  it("appends a trailing slash to directories", function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir)
+    local short = utils.shorten_path(dir)
+    assert.are.equal("@" .. short .. "/", ci.at_mention(dir))
+    assert.are.equal("@" .. short .. "/#L1", ci.at_mention(dir, 1, 1))
+  end)
+end)

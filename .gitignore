@@ -1,0 +1,11 @@
+nvim/plugin/
+.test-cache/
+docs/*prd.md
+.nvimlog
+*.swp
+plugin/
+.cache/
+chroma.log
+.aider*
+.maki/
+tmp/

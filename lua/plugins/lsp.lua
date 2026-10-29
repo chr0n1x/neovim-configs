@@ -1,0 +1,185 @@
+if IN_PERF_MODE then
+  return {}
+end
+
+return {
+  {
+    "folke/lazydev.nvim",
+    ft = "lua", -- only load on lua files
+    opts = {
+      library = {
+        -- See the configuration section for more details
+        -- Load luvit types when the `vim.uv` word is found
+        { path = "${3rd}/luv/library", words = { "vim%.uv" } },
+      },
+    },
+  },
+
+  -- requires the bin
+  -- something like:
+  --   https://github.com/mrjosh/helm-ls/releases/download/v0.5.3/helm_ls_linux_arm64
+  --
+  -- above is a golang bin; praise be.
+  -- YAML LS however requires nodejs sooooo NOPE
+  { "qvalentin/helm-ls.nvim", ft = "helm" },
+
+  {
+    "mason-org/mason.nvim",
+    dependencies = {
+      "mason-org/mason-lspconfig.nvim",
+      "neovim/nvim-lspconfig",
+    },
+    config = function()
+      local lsp_capabilities = require("cmp_nvim_lsp").default_capabilities()
+
+      vim.lsp.config("*", { capabilities = lsp_capabilities })
+      vim.lsp.config("gopls", {
+        cmd = function(dispatchers, config)
+          local root = config.root_dir or vim.fn.getcwd()
+          local result = vim.system({ "go", "env", "GOROOT" }, { cwd = root, text = true }):wait()
+          if result.code ~= 0 then
+            error(("failed to resolve Go toolchain for gopls: %s"):format(result.stderr))
+          end
+
+          local path_sep = package.config:sub(1, 1) == "\\" and ";" or ":"
+          local toolchain_bin = vim.fs.joinpath(vim.trim(result.stdout), "bin")
+          local env = vim.tbl_extend("force", config.cmd_env or {}, {
+            PATH = table.concat({ toolchain_bin, (config.cmd_env or {}).PATH or vim.env.PATH or "" }, path_sep),
+          })
+
+          return vim.lsp.rpc.start({ "gopls" }, dispatchers, {
+            cwd = root,
+            env = env,
+          })
+        end,
+      })
+
+      -- Mason manages LSP server installations.
+      require("mason").setup({
+        -- https://github.com/williamboman/nvim-lsp-installer/discussions/509
+        PATH = "prepend",
+        ui = {
+          icons = {
+            package_installed = "✓",
+            package_pending = "➜",
+            package_uninstalled = "✗",
+          },
+        },
+      })
+
+      require("mason-lspconfig").setup({
+        ensure_installed = {
+          -- 'helm_ls',
+          -- 'yamlls',
+          "gopls",
+          "lua_ls",
+        },
+        handlers = {
+          function(server_name)
+            require("lspconfig")[server_name].setup({
+              capabilities = lsp_capabilities,
+            })
+          end,
+          lua_ls = function()
+            require("lspconfig").lua_ls.setup({
+              capabilities = lsp_capabilities,
+              settings = {
+                Lua = {
+                  runtime = {
+                    version = "LuaJIT",
+                  },
+                  diagnostics = {
+                    globals = { "vim" },
+                    -- Treat all diagnostic fields as readonly to avoid false positives.
+                    library = { require("vim.runtime").get_runtime_file() },
+                  },
+                  workspace = {
+                    library = {
+                      vim.env.VIMRUNTIME,
+                    },
+                  },
+                },
+              },
+            })
+          end,
+        },
+      })
+    end,
+    init = function()
+      vim.api.nvim_create_autocmd("LspAttach", {
+        group = vim.api.nvim_create_augroup("user_lsp_attach", { clear = true }),
+        callback = function(event)
+          vim.keymap.set("n", "<leader>l", function()
+            vim.lsp.buf.hover()
+          end, { buffer = event.buf, desc = "LSP commands (default: show symbol def)" })
+          vim.keymap.set("n", "<leader>ld", function()
+            vim.lsp.buf.definition()
+          end, { buffer = event.buf, desc = "LSP go to definition" })
+          vim.keymap.set("n", "gd", function()
+            vim.lsp.buf.definition()
+          end, { buffer = event.buf, desc = "LSP go to definition" })
+          vim.keymap.set("n", "<leader>lh", function()
+            vim.lsp.buf.signature_help()
+          end, { buffer = event.buf, desc = "LSP signature help" })
+          vim.keymap.set("n", "<leader>lw", function()
+            vim.lsp.buf.workspace_symbol()
+          end, { buffer = event.buf, desc = "LSP search for symbol in workspace" })
+          vim.keymap.set("n", "<leader>ldd", function()
+            vim.diagnostic.open_float()
+          end, { buffer = event.buf, desc = "LSP open diagnostics" })
+          vim.keymap.set("n", "<leader>lr", function()
+            vim.lsp.buf.references()
+          end, {
+            buffer = event.buf,
+            desc = "LSP buffer/edit symbol actions (default: show refs for current symbol)",
+          })
+          vim.keymap.set("n", "<leader>lra", function()
+            vim.lsp.buf.code_action()
+          end, { buffer = event.buf, desc = "LSP code action" })
+          vim.keymap.set("n", "<leader>lrr", function()
+            vim.lsp.buf.rename()
+          end, { buffer = event.buf, desc = "LSP rename" })
+        end,
+      })
+    end,
+  },
+
+  {
+    "folke/trouble.nvim",
+    lazy = true,
+    opts = {}, -- for default options, refer to the configuration section for custom setup.
+    cmd = "Trouble",
+    keys = {
+      {
+        "<leader>ldt",
+        "<cmd>Trouble diagnostics toggle focus=true<cr>",
+        desc = "Diagnostics (Trouble)",
+      },
+      {
+        "<leader>lx",
+        "<cmd>Trouble diagnostics toggle filter.buf=0<cr>",
+        desc = "Buffer Diagnostics (Trouble)",
+      },
+      {
+        "<leader>ls",
+        "<cmd>Trouble symbols toggle focus=false<cr>",
+        desc = "Symbols (Trouble)",
+      },
+      {
+        "<leader>ll",
+        "<cmd>Trouble lsp toggle focus=false win.position=right<cr>",
+        desc = "LSP Definitions / references / ... (Trouble)",
+      },
+      {
+        "<leader>lL",
+        "<cmd>Trouble loclist toggle<cr>",
+        desc = "Location List (Trouble)",
+      },
+      {
+        "<leader>tq",
+        "<cmd>Trouble qflist toggle<cr>",
+        desc = "Quickfix List (Trouble)",
+      },
+    },
+  },
+}

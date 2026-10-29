@@ -1,0 +1,35 @@
+FROM alpine:latest
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Neovim, static analysis tools, and build essentials. lua5.1 + luarocks
+# provide the busted test runner (installed below) as a standalone binary so specs
+# run without depending on plenary's vendored copy or on plugin sync succeeding first.
+RUN apk add --no-cache \
+    bash \
+    neovim \
+    git \
+    make \
+    luacheck \
+    stylua \
+    lua5.1 \
+    luarocks \
+    inotify-tools
+
+# busted is the standalone test runner for tests/. Installed at build time so the
+# image is self-contained; specs are plain Lua + nvim API, no plenary dependency.
+# Its luasystem dep compiles C, so gcc/musl-dev and the lua5.1 headers are needed.
+# Alpine names the binary luarocks-5.1 (no unversioned symlink), so call it directly.
+RUN apk add --no-cache gcc musl-dev lua5.1-dev && \
+    luarocks-5.1 install busted && \
+    apk del --no-network gcc musl-dev lua5.1-dev
+
+# Config is volume-mounted at $XDG_CONFIG_HOME/nvim/ = /nvim-config/nvim/
+ENV XDG_CONFIG_HOME=/nvim-config
+
+WORKDIR /nvim-config/nvim
+
+# Full CI pass in one container: static analysis (lint + style + load check) then the
+# integration specs. The host's `make ci` just mounts the codebase and runs this image, so
+# there is a single place that defines what "CI" means - no nested make, no duplicated lint.
+CMD ["bash", "tests/ci.sh"]

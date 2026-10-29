@@ -1,0 +1,61 @@
+return {
+  "nvim-telescope/telescope.nvim",
+
+  lazy = false,
+
+  dependencies = {
+    "nvim-telescope/telescope-fzf-native.nvim",
+    build = "make",
+  },
+
+  init = function()
+    local telescope = require("telescope")
+    local actions = require("telescope.actions")
+
+    telescope.setup({
+      defaults = {
+        path_display = {
+          "smart",
+        },
+        prompt_prefix = "> ",
+        -- While zen mode is open, picked files open in the zen window.
+        get_selection_window = function()
+          return require("util.zen").win() or 0
+        end,
+        extensions_list = { "fzf", "terms", "themes" },
+        mappings = {
+          i = {
+            ["<C-k>"] = actions.move_selection_previous, -- move to prev result
+            ["<C-j>"] = actions.move_selection_next, -- move to next result
+            ["<C-q>"] = actions.send_selected_to_qflist + actions.open_qflist,
+          },
+        },
+      },
+    })
+
+    local builtin = require("telescope.builtin")
+    vim.keymap.set("n", "<leader>f", builtin.treesitter, { desc = "Telescope: token." })
+    vim.keymap.set("n", "<leader>g", builtin.live_grep, { desc = "Telescope: [rip]grep cwd." })
+    vim.keymap.set("n", "<leader>p", builtin.find_files, { desc = "Telescope: search cwd for file." })
+    vim.keymap.set(
+      "n",
+      "<leader>r",
+      builtin.lsp_references,
+      { desc = "Telescope: show references for token under cursor." }
+    )
+    vim.keymap.set("n", "<leader>m", builtin.marks, { desc = "Telescope: show marks." })
+
+    telescope.load_extension("fzf")
+
+    local function pick_procs()
+      require("util.procs").pick()
+    end
+
+    vim.keymap.set("n", "<C-p>", pick_procs, { desc = "Telescope: long-running processes." })
+    vim.keymap.set("n", "<leader>P", pick_procs, { desc = "Telescope: long-running processes." })
+
+    vim.keymap.set("n", "<leader>Pr", function()
+      require("util.procs").prompt_new()
+    end, { desc = "Procs: run ad-hoc command." })
+  end,
+}
