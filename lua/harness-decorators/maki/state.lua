@@ -69,10 +69,7 @@ local function session_for_open(dir, opened_at, cwd)
   end)
 end
 
----@param pid number|string
----@param cwd string
----@return string?
-function M.label(_pid, cwd)
+local function session_file(cwd)
   local dir = sessions_dir()
   if not dir or not cwd or cwd == "" then
     return nil
@@ -83,7 +80,7 @@ function M.label(_pid, cwd)
   if ok_term and type(term.opened_at) == "function" then
     local live = session_for_open(dir, term.opened_at("maki"), cwd)
     if live then
-      return read_meta_title(live)
+      return live
     end
   end
   -- Fallback: cwd_latest.json { [cwd] = session_id } (lazy-updated, so it can lag a fresh open).
@@ -95,7 +92,20 @@ function M.label(_pid, cwd)
   if type(sid) ~= "string" or sid == "" then
     return nil
   end
-  return read_meta_title(dir .. "/" .. sid .. ".jsonl")
+  return dir .. "/" .. sid .. ".jsonl"
+end
+
+function M.inputs(_pid, cwd)
+  local path = session_file(cwd)
+  return { path = path, label_key = path, label_paths = { path } }
+end
+
+---@param pid number|string
+---@param cwd string
+---@return string?
+function M.label(pid, cwd, inputs)
+  local path = (inputs or M.inputs(pid, cwd)).path
+  return path and read_meta_title(path) or nil
 end
 
 return M

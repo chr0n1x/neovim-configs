@@ -30,8 +30,9 @@ local TITLE_SQL = "SELECT title FROM sessions ORDER BY updated_at DESC LIMIT 1"
 local ID_SQL = "SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1"
 
 describe("sqlite-backed state adapters", function()
+  local utils = require("harness-decorators.utils")
   local home, orig_home, cwd, crush, copilot, opened
-  local orig_executable, orig_system, orig_notify
+  local orig_executable, orig_system, orig_notify, orig_command_executable
 
   local function use_sqlite(rows)
     opened = {}
@@ -47,6 +48,7 @@ describe("sqlite-backed state adapters", function()
     orig_home = os.getenv("HOME")
     vim.fn.setenv("HOME", home)
     orig_executable, orig_system, orig_notify = vim.fn.executable, vim.system, vim.notify
+    orig_command_executable = utils.command_executable
     crush = require("harness-decorators.crush.state")
     copilot = require("harness-decorators.copilot.state")
     crush._reset()
@@ -55,6 +57,7 @@ describe("sqlite-backed state adapters", function()
   after_each(function()
     vim.fn.setenv("HOME", orig_home)
     vim.fn.executable, vim.system, vim.notify = orig_executable, orig_system, orig_notify
+    utils.command_executable = orig_command_executable
     package.loaded["lsqlite3"] = nil
     vim.fn.delete(home, "rf")
   end)
@@ -102,29 +105,45 @@ describe("sqlite-backed state adapters", function()
       assert.are.equal("sess-1", crush.session_id(1, cwd))
     end)
 
-    it("Given no lsqlite3 but a sqlite3 CLI, Then the trimmed CLI output", function()
+    it("Given a pending CLI query, When polled, Then it never waits and exposes the callback id next time", function()
       use_sqlite(nil)
-      local argv
-      vim.fn.executable = function(name)
-        return name == "sqlite3" and 1 or orig_executable(name)
+      local argv, callback, calls
+      calls = 0
+      utils.command_executable = function()
+        return true
       end
-      vim.system = function(cmd)
+      vim.fn.executable = function()
+        return 1
+      end
+      vim.system = function(cmd, _, cb)
+        calls = calls + 1
         argv = cmd
+        callback = cb
         return {
           wait = function()
-            return { code = 0, stdout = "  sess-cli\n" }
+            error("the statusline must not wait for sqlite3")
           end,
         }
       end
+      local ok, id = pcall(crush.session_id, 1, cwd)
+      assert(ok, id)
+      assert.is_nil(id)
+      assert.is_nil(crush.session_id(1, cwd))
+      assert.are.equal(1, calls, "a pending query must not spawn another process")
+      assert.is_function(callback)
+      callback({ code = 0, stdout = "  sess-cli\n" })
       assert.are.equal("sess-cli", crush.session_id(1, cwd))
       assert.are.same({ "sqlite3", "-readonly", cwd .. "/.crush/crush.db", ID_SQL }, argv)
+      assert.are.equal(2, calls)
+      callback({ code = 1, stdout = "" })
+      assert.are.equal("sess-cli", crush.session_id(1, cwd), "a failed refresh must keep the last known id")
     end)
 
     it("Given no reader at all, Then nil and a single warning", function()
       use_sqlite(nil)
       local notes = 0
-      vim.fn.executable = function()
-        return 0
+      utils.command_executable = function()
+        return false
       end
       vim.notify = function()
         notes = notes + 1
@@ -132,6 +151,24 @@ describe("sqlite-backed state adapters", function()
       assert.is_nil(crush.session_id(1, cwd))
       assert.is_nil(crush.session_id(1, cwd))
       assert.are.equal(1, notes)
+    end)
+
+    it("Given the cached executable helper rejects sqlite3, When resolving an id, Then no PATH probe runs", function()
+      use_sqlite(nil)
+      local helpers, probes = 0, 0
+      utils.command_executable = function(command)
+        assert.are.equal("sqlite3", command)
+        helpers = helpers + 1
+        return false
+      end
+      vim.fn.executable = function()
+        probes = probes + 1
+        return 0
+      end
+      vim.notify = function() end
+      assert.is_nil(crush.session_id(1, cwd))
+      assert.are.equal(1, helpers, "the adapter must use utils.command_executable")
+      assert.are.equal(0, probes)
     end)
   end)
 

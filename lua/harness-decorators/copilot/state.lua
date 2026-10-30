@@ -49,6 +49,17 @@ local function session_dir(pid)
   return lock and vim.fs.dirname(lock) or nil
 end
 
+function M.inputs(pid, _cwd)
+  local dir = session_dir(pid)
+  local store = store_path()
+  return {
+    dir = dir,
+    store = store,
+    label_key = dir,
+    label_paths = { store, store .. "-wal" },
+  }
+end
+
 ---Last turn marker in events.jsonl: the state set by the last turn_start/turn_end in the
 ---tail; non-marker lines are skipped.
 ---@param path string
@@ -72,8 +83,8 @@ end
 ---@param pid number|string
 ---@param cwd string
 ---@return "working"|"idle"|"unknown"
-function M.status(pid, _cwd)
-  local dir = session_dir(pid)
+function M.status(pid, _cwd, inputs)
+  local dir = (inputs or { dir = session_dir(pid) }).dir
   if not dir then
     return "unknown"
   end
@@ -88,14 +99,14 @@ end
 ---@param pid number|string
 ---@param cwd string
 ---@return string?
-function M.label(pid, _cwd)
-  local dir = session_dir(pid)
+function M.label(pid, _cwd, inputs)
+  local dir = (inputs or { dir = session_dir(pid) }).dir
   if not dir then
     return nil
   end
   local sid = vim.fs.basename(dir)
   -- Try the sqlite summary; fall back to the short id.
-  local store = store_path()
+  local store = inputs and inputs.store or store_path()
   local db, close
   if vim.uv.fs_stat(store) then
     db, close = utils.sqlite_open_ro(store)

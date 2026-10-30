@@ -5,6 +5,8 @@
 -- Per-harness adapters live in harness-decorators.<name>.state and implement:
 --   M.status(pid, cwd) returns "working" | "idle" | "unknown"
 --   M.label(pid, cwd) returns string? (nil = no label; caller falls back to name)
+-- Optional inputs(pid, cwd) is shared by status, label and session_id as their third argument.
+-- Its label_key and label_paths identify cached labels; close releases per-poll resources.
 -- Adapters may also set M.no_child_check = true when the child-process count is
 -- misleading for that harness (copilot spawns helper subprocesses even at rest).
 -- Returning "unknown" from status delegates to the shared child-process check.
@@ -14,6 +16,38 @@
 -- harness with no open float has no state entry.
 
 local M = {}
+local labels = {}
+
+local function poll_label(name, state, pid, cwd, inputs)
+  if type(state.label) ~= "function" then
+    return nil
+  end
+  local key
+  if inputs and inputs.label_key then
+    key = { inputs.label_key }
+    for _, path in ipairs(inputs.label_paths or {}) do
+      local st = vim.uv.fs_stat(path)
+      key[#key + 1] = { path, st and st.mtime or false }
+    end
+    local cached = labels[name]
+    if cached and vim.deep_equal(cached.key, key) then
+      return cached.label
+    end
+  end
+  local ok, label = pcall(state.label, pid, cwd, inputs)
+  if not ok then
+    return nil
+  end
+  if type(label) ~= "string" or label == "" then
+    label = nil
+  end
+  if key then
+    labels[name] = { key = key, label = label }
+  else
+    labels[name] = nil
+  end
+  return label
+end
 
 ---Harnesses with a state.lua, plus whether their CLI is on PATH.
 ---@return {name: string, installed: boolean}[]
@@ -250,31 +284,28 @@ function M.poll(name, snap)
 
   local cwd = type(term.cwd) == "function" and term.cwd(name) or nil
   cwd = cwd or vim.fn.getcwd()
-  local status
-  if state.no_child_check then
-    status = state.status(pid, cwd)
-  else
-    -- Adapter first; fall back to the child check when it can't decide.
-    status = state.status(pid, cwd)
-    if status == "unknown" then
-      status = M.child_status(snap or M.ps_snapshot(), pid)
+  local inputs = type(state.inputs) == "function" and state.inputs(pid, cwd) or nil
+  local ok_status, status = pcall(state.status, pid, cwd, inputs)
+  if not ok_status then
+    if inputs and type(inputs.close) == "function" then
+      inputs.close()
     end
+    error(status)
+  end
+  if not state.no_child_check and status == "unknown" then
+    status = M.child_status(snap or M.ps_snapshot(), pid)
   end
 
-  local label = nil
-  if type(state.label) == "function" then
-    local ok2, l = pcall(state.label, pid, cwd)
-    if ok2 and type(l) == "string" and l ~= "" then
-      label = l
-    end
-  end
-
+  local label = poll_label(name, state, pid, cwd, inputs)
   local session_id = nil
   if type(state.session_id) == "function" then
-    local ok2, id = pcall(state.session_id, pid, cwd)
+    local ok2, id = pcall(state.session_id, pid, cwd, inputs)
     if ok2 and type(id) == "string" and id ~= "" then
       session_id = id
     end
+  end
+  if inputs and type(inputs.close) == "function" then
+    inputs.close()
   end
 
   return { status = status, label = label, session_id = session_id, pid = pid }

@@ -11,6 +11,7 @@
 local utils = require("harness-decorators.utils")
 
 local M = {}
+local project_jsonls = {}
 
 local function sessions_dir()
   return (os.getenv("HOME") or "") .. "/.claude/sessions"
@@ -30,8 +31,8 @@ end
 ---@param pid number|string
 ---@param cwd string
 ---@return "working"|"idle"|"unknown"
-function M.status(pid, _cwd)
-  local entry = read_session(pid)
+function M.status(pid, _cwd, inputs)
+  local entry = (inputs or { entry = read_session(pid) }).entry
   if not entry then
     return "unknown" -- no session file yet: let the child check decide
   end
@@ -49,11 +50,33 @@ end
 ---@param session_id string
 ---@return string?
 local function find_project_jsonl(session_id)
-  local out = vim.fn.globpath(projects_dir(), "**/" .. session_id .. ".jsonl", true, true)
+  local root = projects_dir()
+  local key = root .. "/" .. session_id
+  local cached = project_jsonls[key]
+  if cached and vim.uv.fs_stat(cached) then
+    return cached
+  end
+  local out = vim.fn.globpath(root, "**/" .. session_id .. ".jsonl", true, true)
   if type(out) == "table" and #out > 0 then
+    project_jsonls[key] = out[1]
     return out[1]
   end
   return nil
+end
+
+function M.inputs(pid, _cwd)
+  local entry = read_session(pid)
+  local sid = entry and entry.sessionId
+  local name = entry and entry.name
+  local renamed = type(name) == "string" and name ~= "" and entry.nameSource ~= "derived"
+  local project = not renamed and type(sid) == "string" and sid ~= "" and find_project_jsonl(sid) or nil
+  local session = sessions_dir() .. "/" .. tostring(pid) .. ".json"
+  return {
+    entry = entry,
+    project = project,
+    label_key = sid or session,
+    label_paths = { session, project },
+  }
 end
 
 ---Last ai-title in a jsonl; scans the tail so the final value wins.
@@ -78,8 +101,8 @@ end
 ---@param pid number|string
 ---@param cwd string
 ---@return string?
-function M.label(pid, _cwd)
-  local entry = read_session(pid)
+function M.label(pid, _cwd, inputs)
+  local entry = (inputs or { entry = read_session(pid) }).entry
   if not entry then
     return nil
   end
@@ -92,7 +115,7 @@ function M.label(pid, _cwd)
   if type(sid) ~= "string" or sid == "" then
     return nil
   end
-  local proj = find_project_jsonl(sid)
+  local proj = (inputs or { project = find_project_jsonl(sid) }).project
   if not proj then
     return nil
   end

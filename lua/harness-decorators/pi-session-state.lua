@@ -118,16 +118,29 @@ function M.new(opts)
     return follow.session_for_cwd(cwd), follow
   end
 
+  function S.inputs(_pid, cwd)
+    local session, follow = pushed(cwd)
+    local file = not (session and session.session_id) and session_file(cwd) or nil
+    return {
+      session = session,
+      follow = follow,
+      file = file,
+      label_key = session and session.session_id or file,
+      label_paths = { file },
+    }
+  end
+
   ---@param _pid number|string
   ---@param cwd string
   ---@return "working"|"idle"|"unknown"
-  function S.status(_pid, cwd)
-    local s = pushed(cwd)
+  function S.status(pid, cwd, inputs)
+    inputs = inputs or S.inputs(pid, cwd)
+    local s = inputs.session
     if s and (s.status == "working" or s.status == "idle") then
       return s.status
     end
     if opts.turn_status then
-      local f = session_file(cwd)
+      local f = inputs.file
       return f and turn_status(f) or "unknown"
     end
     return "unknown"
@@ -136,17 +149,18 @@ function M.new(opts)
   ---@param _pid number|string
   ---@param cwd string
   ---@return string?
-  function S.label(_pid, cwd)
+  function S.label(pid, cwd, inputs)
     if not cwd or cwd == "" then
       return nil
     end
 
-    local s, follow = pushed(cwd)
+    inputs = inputs or S.inputs(pid, cwd)
+    local s, follow = inputs.session, inputs.follow
     if s and s.session_id then
       return follow.short_uuid(s.session_id)
     end
 
-    local f = session_file(cwd)
+    local f = inputs.file
     if not f then
       return nil
     end

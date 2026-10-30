@@ -16,6 +16,7 @@ local utils = require("harness-decorators.utils")
 local M = {}
 
 local missing_reader_notified = false
+local cli_sessions = {}
 
 local function notify_missing_reader()
   if missing_reader_notified then
@@ -27,6 +28,17 @@ end
 
 function M._reset()
   missing_reader_notified = false
+  cli_sessions = {}
+end
+
+local function query(db, sql)
+  if not db then
+    return nil, false
+  end
+  local ok, row = pcall(function()
+    return db:prepare(sql):get()
+  end)
+  return ok and row or nil, ok
 end
 
 ---@param cwd string
@@ -47,7 +59,10 @@ end
 ---@param sql string
 ---@return table? row nil when there is no row
 ---@return boolean ok false when there is no db, no lsqlite3, or the query failed
-local function first_row(cwd, sql)
+local function first_row(cwd, sql, inputs)
+  if inputs then
+    return query(inputs.db, sql)
+  end
   local path = db_path(cwd)
   if not path then
     return nil, false
@@ -56,9 +71,7 @@ local function first_row(cwd, sql)
   if not db then
     return nil, false
   end
-  local ok, row = pcall(function()
-    return db:prepare(sql):get()
-  end)
+  local row, ok = query(db, sql)
   close()
   if not ok then
     return nil, false
@@ -66,11 +79,59 @@ local function first_row(cwd, sql)
   return row, true
 end
 
+local function cli_session_id(path)
+  if not utils.command_executable("sqlite3") then
+    notify_missing_reader()
+    return nil
+  end
+  local cached = cli_sessions[path]
+  if not cached then
+    cached = {}
+    cli_sessions[path] = cached
+  end
+  if not cached.pending then
+    cached.pending = true
+    local ok = pcall(vim.system, {
+      "sqlite3",
+      "-readonly",
+      path,
+      "SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1",
+    }, { text = true }, function(result)
+      cached.pending = false
+      if result.code == 0 then
+        local id = (result.stdout or ""):match("^%s*(.-)%s*$")
+        cached.id = id ~= "" and id or nil
+      end
+    end)
+    if not ok then
+      cached.pending = false
+    end
+  end
+  return cached.id
+end
+
+function M.inputs(_pid, cwd)
+  local path = db_path(cwd)
+  local inputs = { label_paths = path and { path, path .. "-wal" } or {} }
+  if not path then
+    return inputs
+  end
+  local db, close = utils.sqlite_open_ro(path)
+  inputs.db = db
+  inputs.close = db and close or nil
+  local row = query(db, "SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1")
+  local id = row and row[1]
+  inputs.session_id = type(id) == "string" and id ~= "" and id or cli_session_id(path)
+  inputs.label_key = inputs.session_id or path
+  return inputs
+end
+
 ---@param pid number|string
 ---@param cwd string
 ---@return "working"|"idle"|"unknown"
-function M.status(_pid, cwd)
-  local row, ok = first_row(cwd, "SELECT finished_at FROM messages ORDER BY created_at DESC, rowid DESC LIMIT 1")
+function M.status(_pid, cwd, inputs)
+  local row, ok =
+    first_row(cwd, "SELECT finished_at FROM messages ORDER BY created_at DESC, rowid DESC LIMIT 1", inputs)
   if not ok then
     return "unknown" -- no project db or reader: let the child check decide
   end
@@ -83,8 +144,8 @@ end
 ---@param pid number|string
 ---@param cwd string
 ---@return string?
-function M.label(_pid, cwd)
-  local row = first_row(cwd, "SELECT title FROM sessions ORDER BY updated_at DESC LIMIT 1")
+function M.label(_pid, cwd, inputs)
+  local row = first_row(cwd, "SELECT title FROM sessions ORDER BY updated_at DESC LIMIT 1", inputs)
   local title = row and row[1]
   if type(title) == "string" and title ~= "" then
     return title
@@ -95,34 +156,15 @@ end
 ---@param pid number|string
 ---@param cwd string
 ---@return string?
-function M.session_id(_pid, cwd)
-  local db_path_ = db_path(cwd)
-  if not db_path_ then
-    return nil
+function M.session_id(pid, cwd, inputs)
+  if inputs then
+    return inputs.session_id
   end
-  local row = first_row(cwd, "SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1")
-  if row and type(row[1]) == "string" and row[1] ~= "" then
-    return row[1]
+  inputs = M.inputs(pid, cwd)
+  if inputs.close then
+    inputs.close()
   end
-  if vim.fn.executable("sqlite3") ~= 1 then
-    notify_missing_reader()
-    return nil
-  end
-  local result = vim
-    .system({
-      "sqlite3",
-      "-readonly",
-      db_path_,
-      "SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1",
-    }, { text = true })
-    :wait()
-  if result.code == 0 then
-    local session_id = result.stdout:match("^%s*(.-)%s*$")
-    if session_id ~= "" then
-      return session_id
-    end
-  end
-  return nil
+  return inputs.session_id
 end
 
 return M

@@ -373,36 +373,40 @@ describe("agent-state: per-harness adapters (sandboxed HOME)", function()
       assert.is_nil(crush.label(1234, "/no-such-dir"))
     end)
 
-    it("session id falls back to the sqlite3 CLI when lsqlite3 is unavailable", function()
+    it("session id uses the last completed sqlite3 CLI result when lsqlite3 is unavailable", function()
       vim.fn.mkdir(home .. "/project/.crush", "p")
       local db_path = home .. "/project/.crush/crush.db"
       write_file(db_path, "fixture")
-      local original_executable = vim.fn.executable
+      local utils = require("harness-decorators.utils")
+      local original_executable = utils.command_executable
       local original_system = vim.system
-      vim.fn.executable = function(command)
-        return command == "sqlite3" and 1 or original_executable(command)
+      utils.command_executable = function()
+        return true
       end
-      vim.system = function()
-        return {
-          wait = function()
-            return { code = 0, stdout = "d5bb8c50-400e-4b7b\n" }
-          end,
-        }
+      local callback
+      vim.system = function(_, _, cb)
+        callback = cb
       end
-      local id = crush.session_id(1234, home .. "/project")
-      vim.fn.executable = original_executable
+      crush._reset()
+      local initial = crush.session_id(1234, home .. "/project")
+      callback({ code = 0, stdout = "d5bb8c50-400e-4b7b\n" })
+      local updated = crush.session_id(1234, home .. "/project")
+      utils.command_executable = original_executable
       vim.system = original_system
-      assert.are.equal("d5bb8c50-400e-4b7b", id)
+      crush._reset()
+      assert.is_nil(initial)
+      assert.are.equal("d5bb8c50-400e-4b7b", updated)
     end)
 
     it("notifies once when no SQLite reader is available", function()
       vim.fn.mkdir(home .. "/project/.crush", "p")
       write_file(home .. "/project/.crush/crush.db", "fixture")
-      local original_executable = vim.fn.executable
+      local utils = require("harness-decorators.utils")
+      local original_executable = utils.command_executable
       local original_notify = vim.notify
       local notes = {}
-      vim.fn.executable = function(command)
-        return command == "sqlite3" and 0 or original_executable(command)
+      utils.command_executable = function()
+        return false
       end
       vim.notify = function(message)
         notes[#notes + 1] = message
@@ -410,7 +414,7 @@ describe("agent-state: per-harness adapters (sandboxed HOME)", function()
       crush._reset()
       crush.session_id(1234, home .. "/project")
       crush.session_id(1234, home .. "/project")
-      vim.fn.executable = original_executable
+      utils.command_executable = original_executable
       vim.notify = original_notify
       assert.are.equal(1, #notes)
       assert.is_not_nil(notes[1]:find("sqlite3", 1, true))
@@ -425,6 +429,28 @@ describe("agent-state: per-harness adapters (sandboxed HOME)", function()
 
     it("status is always unknown (rides the child check)", function()
       assert.are.equal("unknown", pi.status(1234, "/x"))
+    end)
+
+    it("Given pushed pi state, When status and label are read, Then the pushed status and short id win", function()
+      local module = "harness-decorators.pi.follow"
+      local original = package.loaded[module]
+      local session = { status = "working", session_id = "abcdef12-3456" }
+      package.loaded[module] = {
+        session_for_cwd = function()
+          return session
+        end,
+        short_uuid = function(id)
+          return id:sub(1, 8)
+        end,
+      }
+      local ok, err = pcall(function()
+        assert.are.equal("working", pi.status(1234, "/pushed"))
+        assert.are.equal("abcdef12", pi.label(1234, "/pushed"))
+        session.status = "idle"
+        assert.are.equal("idle", pi.status(1234, "/pushed"))
+      end)
+      package.loaded[module] = original
+      assert(ok, err)
     end)
 
     it("label: returns the short (8-char) uuid parsed from the session filename", function()
