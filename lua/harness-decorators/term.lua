@@ -1100,6 +1100,15 @@ function M.open(harness, opts)
   e.inst = inst
   mark_harness_buffer(harness, inst)
   watch_output(inst)
+  if inst.buf and vim.api.nvim_buf_is_valid(inst.buf) then
+    vim.api.nvim_create_autocmd("BufWipeout", {
+      buffer = inst.buf,
+      once = true,
+      callback = function()
+        vim.schedule(M.prune)
+      end,
+    })
+  end
   follow_focus(inst)
   follow_lifecycle(harness, inst)
   schedule_enter_terminal_mode(inst.win, inst.buf)
@@ -1785,7 +1794,7 @@ end
 
 ---Close a minimized harness: remove its bar and send SIGTERM to the process in its terminal. Snacks
 -- keeps a terminal buffer open after a non-zero exit (SIGTERM exits with 143), so the buffer is wiped
--- here once the process has exited; park.list then drops the harness and the next <leader>c or <C-q>
+-- here once the process has exited; the wipe prunes the harness's record and the next <leader>c or <C-q>
 -- pick starts a fresh session.
 ---@param inst table the Snacks terminal instance
 local function close_harness(inst)
@@ -2009,22 +2018,28 @@ function M.is_open(harness)
   return e ~= nil and is_live(e.inst)
 end
 
----Live instances sorted by name. Records whose instance exited are dropped; never-opened records
----(inst nil) are kept so their selection bit survives.
----@return { harness: string, bufnr: number }[]
-function M.list()
-  local out = {}
+---Drop records whose instance exited. Never-opened records (inst nil) are kept so their selection
+---bit survives.
+function M.prune()
   local dead = {}
   for harness, e in pairs(state.table) do
-    if is_live(e.inst) then
-      table.insert(out, { harness = harness, bufnr = e.inst.buf })
-    elseif e.inst ~= nil then
-      -- exited: drop
+    if e.inst ~= nil and not is_live(e.inst) then
       table.insert(dead, harness) -- collect; removing during pairs() is undefined
     end
   end
   for _, h in ipairs(dead) do
     state.table[h] = nil
+  end
+end
+
+---Live instances sorted by name. Read-only: exited records are pruned when their buffer goes away.
+---@return { harness: string, bufnr: number }[]
+function M.list()
+  local out = {}
+  for harness, e in pairs(state.table) do
+    if is_live(e.inst) then
+      table.insert(out, { harness = harness, bufnr = e.inst.buf })
+    end
   end
   table.sort(out, function(a, b)
     return a.harness < b.harness
