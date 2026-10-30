@@ -476,6 +476,83 @@ describe("utils.close_timer", function()
   end)
 end)
 
+describe("utils.sqlite_open_ro lsqlite3 lookup", function()
+  local saved_loaded, saved_preload, searches, module
+
+  before_each(function()
+    saved_loaded, saved_preload = package.loaded["lsqlite3"], package.preload["lsqlite3"]
+    package.loaded["lsqlite3"], package.preload["lsqlite3"] = nil, nil
+    searches, module = 0, nil
+    utils._reset_sqlite()
+    table.insert(package.loaders, 1, function(name)
+      if name ~= "lsqlite3" then
+        return nil
+      end
+      searches = searches + 1
+      if not module then
+        error("lsqlite3 not found by spec searcher")
+      end
+      return function()
+        return module
+      end
+    end)
+  end)
+
+  after_each(function()
+    table.remove(package.loaders, 1)
+    package.loaded["lsqlite3"], package.preload["lsqlite3"] = saved_loaded, saved_preload
+    utils._reset_sqlite()
+  end)
+
+  it(
+    "Given lsqlite3 cannot be required, When sqlite_open_ro is called twice, Then the module search runs once and both calls return nil and the same error",
+    function()
+      local db1, err1 = utils.sqlite_open_ro("/tmp/a.db")
+      local db2, err2 = utils.sqlite_open_ro("/tmp/b.db")
+      assert.is_nil(db1)
+      assert.is_nil(db2)
+      assert.are.equal("lsqlite3 not available", err1)
+      assert.are.equal(err1, err2)
+      assert.are.equal(1, searches)
+    end
+  )
+
+  it(
+    "Given lsqlite3 can be required, When sqlite_open_ro is called twice, Then the module search runs once and the same module opens both",
+    function()
+      local used = {}
+      module = {
+        open = function(uri)
+          used[#used + 1] = module
+          return { uri = uri }
+        end,
+      }
+      local db1 = utils.sqlite_open_ro("/tmp/a.db")
+      local db2 = utils.sqlite_open_ro("/tmp/b.db")
+      assert.are.equal("file:/tmp/a.db?mode=ro", db1.uri)
+      assert.are.equal("file:/tmp/b.db?mode=ro", db2.uri)
+      assert.are.same({ module, module }, used)
+      assert.are.equal(1, searches)
+    end
+  )
+
+  it(
+    "Given lsqlite3 is available but the open fails, When sqlite_open_ro is called twice, Then both calls try to open",
+    function()
+      local opens = 0
+      module = {
+        open = function()
+          opens = opens + 1
+          error("disk I/O error")
+        end,
+      }
+      assert.is_nil((utils.sqlite_open_ro("/tmp/a.db")))
+      assert.is_nil((utils.sqlite_open_ro("/tmp/a.db")))
+      assert.are.equal(2, opens)
+    end
+  )
+end)
+
 describe("utils.newest_by_mtime", function()
   local function touch(path, mtime)
     vim.fn.writefile({}, path)

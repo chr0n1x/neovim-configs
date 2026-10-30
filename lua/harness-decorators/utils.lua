@@ -229,13 +229,38 @@ function M.read_first_line_table(path)
   return nil
 end
 
+local sqlite_missing = false
+
+---lsqlite3 from package.loaded, else one require per session. A failed require is not stored in
+---package.loaded, so its result is remembered here; a module placed in package.loaded later still wins.
+---@return table?
+local function lsqlite3()
+  local loaded = package.loaded["lsqlite3"]
+  if type(loaded) == "table" then
+    return loaded
+  end
+  if sqlite_missing then
+    return nil
+  end
+  local ok, sqlite = pcall(require, "lsqlite3")
+  if ok and type(sqlite) == "table" then
+    return sqlite
+  end
+  sqlite_missing = true
+  return nil
+end
+
+function M._reset_sqlite()
+  sqlite_missing = false
+end
+
 ---Open a SQLite db read-only through lsqlite3, leaving a live WAL db undisturbed.
 ---@param path string
 ---@return table? db
 ---@return function|string close_or_err close function, or an error when lsqlite3 or the open fails
 function M.sqlite_open_ro(path)
-  local ok_sqlite, sqlite = pcall(require, "lsqlite3")
-  if not ok_sqlite or type(sqlite) ~= "table" then
+  local sqlite = lsqlite3()
+  if not sqlite then
     return nil, "lsqlite3 not available"
   end
   local ok_db, db = pcall(function()
