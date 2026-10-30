@@ -335,7 +335,7 @@ end
 local function resize_to(inst, rect, on_done)
   inst._resized_at = vim.uv.now()
   inst.opts.row, inst.opts.col, inst.opts.width, inst.opts.height = rect.row, rect.col, rect.width, rect.height
-  require("harness-decorators.terminal-animations").animate_resize(inst, rect, nil, function()
+  require("harness-decorators.terminal-animations").animate_resize(inst, rect, function()
     inst._resized_at = vim.uv.now()
     -- An unfocused float keeps tailing its output at the new size.
     if inst.win and vim.api.nvim_get_current_win() ~= inst.win then
@@ -680,59 +680,14 @@ local function win_opts(harness)
   }
 end
 
-local BAR_ANIM_MS = 300
-
----Animate a bar from its current position/size to `to` ({ row, col, width, height }), snapping to
--- `to` on the last frame and then calling on_done. An animation already running on the same bar is
--- stopped first, so the new one starts from wherever the bar is now. Without animation.nvim it snaps
--- immediately.
+---Animate a bar to `to` ({ row, col, width, height }), then call on_done (see
+-- terminal-animations.animate_win).
 ---@param inst table the Snacks terminal instance that owns the bar
 ---@param win integer the bar window
 ---@param to { row: integer, col: integer, width: integer, height: integer }
 ---@param on_done? fun()
 local function animate_win(inst, win, to, on_done)
-  if inst._bar_anim then
-    inst._bar_anim:finish()
-    inst._bar_anim = nil
-  end
-  local function set(cfg)
-    if vim.api.nvim_win_is_valid(win) then
-      pcall(vim.api.nvim_win_set_config, win, vim.tbl_extend("force", { relative = "editor" }, cfg))
-    end
-  end
-  local ok_anim, Animation = pcall(require, "animation")
-  if not ok_anim then
-    set(to)
-    if on_done then
-      on_done()
-    end
-    return
-  end
-  local cur = vim.api.nvim_win_get_config(win)
-  local from = { row = math.floor(cur.row), col = math.floor(cur.col), width = cur.width, height = cur.height }
-  local finished = false
-  inst._bar_anim = Animation(BAR_ANIM_MS, 60, require("animation.easing").in_out_sine, function(f)
-    if not vim.api.nvim_win_is_valid(win) then
-      return true
-    end
-    if f >= 1 then
-      if not finished then
-        finished = true
-        set(to)
-        if on_done then
-          on_done()
-        end
-      end
-      return
-    end
-    set({
-      row = math.floor(from.row + f * (to.row - from.row)),
-      col = math.floor(from.col + f * (to.col - from.col)),
-      width = math.max(1, math.floor(from.width + f * (to.width - from.width))),
-      height = math.max(1, math.floor(from.height + f * (to.height - from.height))),
-    })
-  end)
-  inst._bar_anim:run()
+  require("harness-decorators.terminal-animations").animate_win(inst, "_bar_anim", win, to, nil, on_done)
 end
 
 ---True when zen mode is currently open. M._zen_active_override lets specs force the value.
