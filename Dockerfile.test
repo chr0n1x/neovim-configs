@@ -14,7 +14,12 @@ RUN apk add --no-cache \
     stylua \
     lua5.1 \
     luarocks \
-    inotify-tools
+    inotify-tools \
+    tree-sitter-markdown
+
+# lazy.nvim builds rockspec plugins (image.nvim) with `luarocks` from PATH and falls back to
+# hererocks, which needs python, when it is missing. Alpine names the binary luarocks-5.1.
+RUN ln -s /usr/bin/luarocks-5.1 /usr/local/bin/luarocks
 
 # busted is the standalone test runner for tests/. Installed at build time so the
 # image is self-contained; specs are plain Lua + nvim API, no plenary dependency.
