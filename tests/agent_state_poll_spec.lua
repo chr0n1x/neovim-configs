@@ -33,6 +33,9 @@ describe("agent-state poll inputs", function()
             return {
               bind = function() end,
               get = function()
+                if type(rows[sql]) == "function" then
+                  return rows[sql]()
+                end
                 return rows[sql]
               end,
             }
@@ -231,4 +234,120 @@ describe("agent-state poll inputs", function()
     assert.are.equal("New summary", agent_state.poll("copilot", "").label)
     assert.are.equal(2, opened.count)
   end)
+
+  for _, name in ipairs({ "crush", "copilot" }) do
+    it(
+      "Given " .. name .. "'s first label query fails, When polled again without file changes, Then it retries",
+      function()
+        local sql, fallback
+        local rows = {}
+        if name == "crush" then
+          write(home .. "/project/.crush/crush.db", {})
+          rows["SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1"] = { "crush-session" }
+          rows["SELECT finished_at FROM messages ORDER BY created_at DESC, rowid DESC LIMIT 1"] = {}
+          sql = "SELECT title FROM sessions ORDER BY updated_at DESC LIMIT 1"
+        else
+          write(home .. "/.copilot/session-state/abcdef123456/inuse.1234.lock", {})
+          write(home .. "/.copilot/session-store.db", {})
+          sql = "SELECT summary FROM sessions WHERE id=?"
+          fallback = "abcdef12"
+        end
+        local calls = 0
+        rows[sql] = function()
+          calls = calls + 1
+          if calls == 1 then
+            error("temporary label query failure")
+          end
+          return name == "crush" and { "Recovered title" } or "Recovered title"
+        end
+        local opened = {}
+        sqlite(rows, opened)
+        assert.are.equal(fallback, agent_state.poll(name, "").label)
+        assert.are.equal("Recovered title", agent_state.poll(name, "").label)
+        assert.are.equal("Recovered title", agent_state.poll(name, "").label)
+        assert.are.equal(2, calls, "failed reads must retry, then successful reads may be cached")
+        assert.are.equal(opened.count, opened.closed, "every borrowed database must close")
+      end
+    )
+
+    it(
+      "Given " .. name .. "'s label query succeeds without a title, When polled twice, Then absence is cached",
+      function()
+        local sql, fallback
+        local rows = {}
+        if name == "crush" then
+          write(home .. "/project/.crush/crush.db", {})
+          rows["SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1"] = { "empty-title-session" }
+          sql = "SELECT title FROM sessions ORDER BY updated_at DESC LIMIT 1"
+        else
+          write(home .. "/.copilot/session-state/abcdef123456/inuse.1234.lock", {})
+          write(home .. "/.copilot/session-store.db", {})
+          sql = "SELECT summary FROM sessions WHERE id=?"
+          fallback = "abcdef12"
+        end
+        local opened = {}
+        sqlite(rows, opened)
+        assert.are.equal(fallback, agent_state.poll(name, "").label)
+        assert.are.equal(fallback, agent_state.poll(name, "").label)
+        assert.are.equal(1, opened[sql], "a successful query with no title may be cached")
+      end
+    )
+  end
+
+  for _, name in ipairs({ "claude", "maki" }) do
+    it(
+      "Given " .. name .. "'s title file cannot be opened once, When polled again, Then it retries unchanged metadata",
+      function()
+        local path, title
+        if name == "claude" then
+          path = claude_session("retry-title")
+          title = "Title for retry-title"
+        else
+          local dir = home .. "/.maki/sessions"
+          replace(vim.env, "XDG_STATE_HOME", nil)
+          write(dir .. "/cwd_latest.json", { vim.json.encode({ [home .. "/project"] = "retry-title" }) })
+          path = dir .. "/retry-title.jsonl"
+          title = "Recovered maki"
+          write(path, { '{"t":"meta","title":"Recovered maki"}' })
+        end
+        local open, calls = io.open, 0
+        replace(io, "open", function(file, ...)
+          if file == path then
+            calls = calls + 1
+            if calls == 1 then
+              return nil, "temporarily unreadable"
+            end
+          end
+          return open(file, ...)
+        end)
+        assert.is_nil(agent_state.poll(name, "").label)
+        assert.are.equal(title, agent_state.poll(name, "").label)
+        assert.are.equal(title, agent_state.poll(name, "").label)
+        assert.are.equal(2, calls, "an unreadable title must not be cached as absent")
+      end
+    )
+
+    it("Given " .. name .. "'s readable file has no title, When polled twice, Then absence is cached", function()
+      local path
+      if name == "claude" then
+        path = claude_session("no-title")
+      else
+        local dir = home .. "/.maki/sessions"
+        replace(vim.env, "XDG_STATE_HOME", nil)
+        write(dir .. "/cwd_latest.json", { vim.json.encode({ [home .. "/project"] = "no-title" }) })
+        path = dir .. "/no-title.jsonl"
+      end
+      write(path, { '{"type":"message"}' })
+      local open, calls = io.open, 0
+      replace(io, "open", function(file, ...)
+        if file == path then
+          calls = calls + 1
+        end
+        return open(file, ...)
+      end)
+      assert.is_nil(agent_state.poll(name, "").label)
+      assert.is_nil(agent_state.poll(name, "").label)
+      assert.are.equal(1, calls, "a successful read with no title may be cached")
+    end)
+  end
 end)

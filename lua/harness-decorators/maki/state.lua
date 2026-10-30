@@ -28,8 +28,14 @@ end
 ---Last meta title in a session jsonl.
 ---@param path string
 ---@return string?
-local function read_meta_title(path)
+local function read_meta_title(path, inputs)
+  if inputs then
+    inputs.label_cacheable = false
+  end
   return utils.read_tail_lines(path, 256 * 1024, function(line)
+    if inputs then
+      inputs.label_cacheable = true
+    end
     if line:find('"t":"meta"', 1, true) or line:find('"t": "meta"', 1, true) then
       local ok, entry = pcall(vim.json.decode, line)
       if ok and type(entry) == "table" and type(entry.title) == "string" and entry.title ~= "" then
@@ -105,7 +111,7 @@ end
 ---@return string?
 function M.label(pid, cwd, inputs)
   local path = (inputs or M.inputs(pid, cwd)).path
-  return path and read_meta_title(path) or nil
+  return path and read_meta_title(path, inputs) or nil
 end
 
 return M

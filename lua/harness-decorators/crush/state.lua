@@ -145,7 +145,10 @@ end
 ---@param cwd string
 ---@return string?
 function M.label(_pid, cwd, inputs)
-  local row = first_row(cwd, "SELECT title FROM sessions ORDER BY updated_at DESC LIMIT 1", inputs)
+  local row, ok = first_row(cwd, "SELECT title FROM sessions ORDER BY updated_at DESC LIMIT 1", inputs)
+  if inputs then
+    inputs.label_cacheable = ok
+  end
   local title = row and row[1]
   if type(title) == "string" and title ~= "" then
     return title

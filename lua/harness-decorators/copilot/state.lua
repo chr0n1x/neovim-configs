@@ -108,8 +108,14 @@ function M.label(pid, _cwd, inputs)
   -- Try the sqlite summary; fall back to the short id.
   local store = inputs and inputs.store or store_path()
   local db, close
+  if inputs then
+    inputs.label_cacheable = true
+  end
   if vim.uv.fs_stat(store) then
     db, close = utils.sqlite_open_ro(store)
+    if inputs then
+      inputs.label_cacheable = db ~= nil
+    end
   end
   if db then
     local ok_q, res = pcall(function()
@@ -118,6 +124,9 @@ function M.label(pid, _cwd, inputs)
       return stmt:get()
     end)
     close()
+    if inputs then
+      inputs.label_cacheable = ok_q
+    end
     if ok_q and type(res) == "string" and res ~= "" then
       return res
     end

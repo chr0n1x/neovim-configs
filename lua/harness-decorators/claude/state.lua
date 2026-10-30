@@ -82,8 +82,14 @@ end
 ---Last ai-title in a jsonl; scans the tail so the final value wins.
 ---@param path string
 ---@return string?
-local function read_ai_title(path)
+local function read_ai_title(path, inputs)
+  if inputs then
+    inputs.label_cacheable = false
+  end
   return utils.read_tail_lines(path, 256 * 1024, function(line)
+    if inputs then
+      inputs.label_cacheable = true
+    end
     -- Match the value, not the key: claude writes "aiTitle": with a space after
     -- the colon, so a compact-key pattern would never hit. Only a real aiTitle line returns a
     -- non-nil title; anything else falls through to nil so an earlier match is NOT overwritten by a
@@ -119,7 +125,7 @@ function M.label(pid, _cwd, inputs)
   if not proj then
     return nil
   end
-  return read_ai_title(proj)
+  return read_ai_title(proj, inputs)
 end
 
 return M

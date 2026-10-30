@@ -7,6 +7,7 @@
 --   M.label(pid, cwd) returns string? (nil = no label; caller falls back to name)
 -- Optional inputs(pid, cwd) is shared by status, label and session_id as their third argument.
 -- Its label_key and label_paths identify cached labels; close releases per-poll resources.
+-- label can set inputs.label_cacheable = false after a failed or unconfirmed read.
 -- Adapters may also set M.no_child_check = true when the child-process count is
 -- misleading for that harness (copilot spawns helper subprocesses even at rest).
 -- Returning "unknown" from status delegates to the shared child-process check.
@@ -41,7 +42,7 @@ local function poll_label(name, state, pid, cwd, inputs)
   if type(label) ~= "string" or label == "" then
     label = nil
   end
-  if key then
+  if key and inputs.label_cacheable ~= false then
     labels[name] = { key = key, label = label }
   else
     labels[name] = nil
