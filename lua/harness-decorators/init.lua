@@ -99,6 +99,7 @@ end
 ---Startup wiring: keymaps, switch state, WinLeave/ColorScheme autocmds, adapter on_activate.
 ---@param harness string the active harness name (NVIM_LLM_HARNESS or "claude")
 function M.setup(harness)
+  local adapter = require("harness-decorators." .. harness)
   keymaps.apply(keymaps.build(harness))
   switch.init(harness)
 
@@ -114,7 +115,7 @@ function M.setup(harness)
     end,
   })
 
-  switch.activate_adapter(harness)
+  switch.activate_adapter(harness, adapter)
 end
 
 ---True once the jump autocmds and VimLeavePre handler have been registered for this nvim

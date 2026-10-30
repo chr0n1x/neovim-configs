@@ -309,3 +309,162 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
     end
   )
 end)
+
+describe("switch activation failure boundaries", function()
+  local watcher = require("harness-decorators.watcher")
+  local state = require("harness-decorators.state")
+  local saved, steps, notes
+  local modules = {
+    "harness-decorators.pi",
+    "harness-decorators.pi.env",
+    "harness-decorators.pi.keymaps",
+    "harness-decorators.watcher",
+  }
+
+  local function leader_maps()
+    local maps = {}
+    local prefix = (vim.g.mapleader or " ") .. "c"
+    for _, mode in ipairs({ "n", "v" }) do
+      for _, m in ipairs(vim.api.nvim_get_keymap(mode)) do
+        if m.lhs:sub(1, #prefix) == prefix then
+          maps[#maps + 1] = { mode = mode, lhs = m.lhs, rhs = m.rhs, callback = m.callback, desc = m.desc }
+        end
+      end
+    end
+    table.sort(maps, function(a, b)
+      return a.mode .. a.lhs < b.mode .. b.lhs
+    end)
+    return maps
+  end
+
+  local function activation_state()
+    return {
+      current = sw.current(),
+      harness = utils.harness,
+      env = vim.env.NVIM_LLM_HARNESS,
+      selected = require("harness-decorators.park").selected_harness(),
+      maps = leader_maps(),
+    }
+  end
+
+  local function working_pi(hook)
+    local adapter = setmetatable({ on_activate = hook or function() end }, {
+      __index = saved.modules["harness-decorators.pi"].loaded,
+    })
+    package.loaded["harness-decorators.pi"] = adapter
+    package.preload["harness-decorators.pi"] = function()
+      return adapter
+    end
+  end
+
+  before_each(function()
+    -- Load the real adapter once before replacing its loader; the stub inherits its contract.
+    require("harness-decorators.pi")
+    saved = {
+      current = sw.current(),
+      harness = utils.harness,
+      env = vim.env.NVIM_LLM_HARNESS,
+      records = state.table,
+      stop = watcher.stop,
+      start = watcher.start,
+      notify = vim.notify,
+      modules = {},
+    }
+    for _, module in ipairs(modules) do
+      saved.modules[module] = { loaded = package.loaded[module], preload = package.preload[module] }
+    end
+    steps, notes = {}, {}
+    watcher.stop = function()
+      steps[#steps + 1] = "stop"
+    end
+    watcher.start = function()
+      steps[#steps + 1] = "start:" .. utils.harness
+    end
+    vim.notify = function(message, level)
+      notes[#notes + 1] = { message = tostring(message), level = level }
+    end
+    state._reset()
+    watcher.set_harness("claude")
+    sw.init("claude")
+    vim.env.NVIM_LLM_HARNESS = "claude"
+    keymaps.clear()
+    keymaps.apply(keymaps.build("claude"))
+  end)
+
+  after_each(function()
+    for _, module in ipairs(modules) do
+      local original = saved.modules[module]
+      package.loaded[module], package.preload[module] = original.loaded, original.preload
+    end
+    watcher.stop, watcher.start = saved.stop, saved.start
+    vim.notify = saved.notify
+    watcher.set_harness(saved.harness)
+    sw.init(saved.current)
+    state.table = saved.records
+    vim.env.NVIM_LLM_HARNESS = saved.env
+    keymaps.clear()
+    keymaps.apply(keymaps.build(saved.harness))
+  end)
+
+  for _, module in ipairs(modules) do
+    it(
+      "Given a broken "
+        .. module
+        .. " loader, When pi is activated, Then claude stays active and a later retry succeeds",
+      function()
+        working_pi()
+        local before = activation_state()
+        package.loaded[module] = nil
+        package.preload[module] = function()
+          error("activation import failed: " .. module)
+        end
+        local ok, err = pcall(sw.activate, "pi")
+        assert.is_false(ok, "an activation import failure must raise")
+        assert.is_truthy(tostring(err):find("activation import failed", 1, true))
+        assert.are.same(before, activation_state(), "failed imports must preserve claude selection, env and mappings")
+        assert.are.same({}, steps, "failed imports must not stop or start the watcher")
+
+        local original = saved.modules[module]
+        package.loaded[module], package.preload[module] = original.loaded, original.preload
+        working_pi()
+        sw.activate("pi")
+        assert.are.equal("pi", sw.current())
+        assert.are.equal("pi", utils.harness)
+        assert.are.equal("pi", vim.env.NVIM_LLM_HARNESS)
+        assert.are.equal("pi", require("harness-decorators.park").selected_harness())
+        assert.are.equal("pi", vim.fn.maparg("<leader>c", "n", false, true).desc)
+        assert.are.same({ "stop", "start:pi" }, steps)
+      end
+    )
+  end
+
+  it(
+    "Given a throwing activation hook, When pi is activated, Then the watcher is still re-pointed without an escaping error",
+    function()
+      working_pi(function()
+        error("hook cannot install extension")
+      end)
+      assert.has_no.errors(function()
+        sw.activate("pi")
+      end)
+      assert.are.equal("pi", utils.harness)
+      assert.are.equal("pi", sw.current())
+      assert.are.same({ "stop", "start:pi" }, steps)
+    end
+  )
+
+  it("Given a throwing activation hook, When pi is activated, Then one warning names the harness and error", function()
+    local calls = 0
+    working_pi(function()
+      calls = calls + 1
+      error("hook cannot install extension")
+    end)
+    sw.activate("pi")
+    sw.activate("pi")
+    assert.are.equal(1, calls, "activating the current harness must not rerun its hook")
+    assert.are.equal(1, #notes, "a failed hook must emit one notification")
+    assert.are.equal(vim.log.levels.WARN, notes[1].level)
+    assert.is_truthy(notes[1].message:find("^pi: "))
+    assert.is_truthy(notes[1].message:find("hook cannot install extension", 1, true))
+  end)
+end)

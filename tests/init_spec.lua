@@ -64,3 +64,61 @@ describe("setup_auto_follow idempotency (Task 14)", function()
     _ = before
   end)
 end)
+
+describe("setup activation contracts", function()
+  local switch = require("harness-decorators.switch")
+  local keymaps = require("harness-decorators.keymaps")
+  local state = require("harness-decorators.state")
+  local saved
+
+  before_each(function()
+    saved = {
+      current = switch.current(),
+      harness = utils.harness,
+      records = state.table,
+      pi = require("harness-decorators.pi"),
+      autocmds = {},
+    }
+    saved.hook = saved.pi.on_activate
+    for _, autocmd in ipairs(vim.api.nvim_get_autocmds({ event = { "WinLeave", "ColorScheme" } })) do
+      if autocmd.id then
+        saved.autocmds[autocmd.id] = true
+      end
+    end
+    state._reset()
+  end)
+
+  after_each(function()
+    saved.pi.on_activate = saved.hook
+    for _, autocmd in ipairs(vim.api.nvim_get_autocmds({ event = { "WinLeave", "ColorScheme" } })) do
+      if autocmd.id and not saved.autocmds[autocmd.id] then
+        vim.api.nvim_del_autocmd(autocmd.id)
+      end
+    end
+    switch.init(saved.current)
+    state.table = saved.records
+    keymaps.clear()
+    keymaps.apply(keymaps.build(saved.harness))
+  end)
+
+  it("Given a pi startup hook, When setup pi runs, Then on_activate runs exactly once", function()
+    local calls = 0
+    saved.pi.on_activate = function()
+      calls = calls + 1
+    end
+    decorators.setup("pi")
+    assert.are.equal(1, calls)
+    assert.are.equal("pi", switch.current())
+    assert.are.equal("pi", vim.fn.maparg("<leader>c", "n", false, true).desc)
+  end)
+
+  it("Given an unknown startup harness, When setup runs, Then a clear error names that harness", function()
+    local name = "missing-startup-harness"
+    local ok, err = pcall(decorators.setup, name)
+    assert.is_false(ok, "an unknown startup harness must raise")
+    assert.is_truthy(
+      tostring(err):find("module 'harness-decorators." .. name .. "' not found", 1, true),
+      "the error must identify the missing adapter, not its keymaps"
+    )
+  end)
+end)

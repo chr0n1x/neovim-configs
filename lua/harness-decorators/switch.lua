@@ -76,10 +76,14 @@ end
 ---Run the adapter's optional on_activate hook (only pi defines it: symlinks its edit-following
 ---extension into pi's extensions dir). A failing hook does not abort the caller.
 ---@param harness string
-function M.activate_adapter(harness)
-  local adapter = require("harness-decorators." .. harness)
+---@param adapter? table Preloaded adapter when imports must finish before state changes.
+function M.activate_adapter(harness, adapter)
+  adapter = adapter or require("harness-decorators." .. harness)
   if type(adapter.on_activate) == "function" then
-    pcall(adapter.on_activate)
+    local ok, err = pcall(adapter.on_activate)
+    if not ok then
+      vim.notify(harness .. ": activation hook failed: " .. tostring(err), vim.log.levels.WARN)
+    end
   end
 end
 
@@ -91,23 +95,26 @@ function M.activate(new_harness)
     return
   end
 
-  -- Reload the env module and export NVIM_LLM_HARNESS for the watcher.
+  -- Finish imports before changing selection or bindings so a failed load can be retried.
+  local adapter = require("harness-decorators." .. new_harness)
+  local watcher = require("harness-decorators.watcher")
   package.loaded["harness-decorators." .. new_harness .. ".env"] = nil
   require("harness-decorators." .. new_harness .. ".env")
+  local specs = keymaps.build(new_harness)
+
   vim.fn.setenv("NVIM_LLM_HARNESS", new_harness)
 
   -- The next <leader>c (or after_pick) shows or spawns it.
   park.set_selected(new_harness)
 
   keymaps.clear()
-  keymaps.apply(keymaps.build(new_harness))
+  keymaps.apply(specs)
   current_harness = new_harness
 
-  M.activate_adapter(new_harness)
+  M.activate_adapter(new_harness, adapter)
 
   -- Re-point the watcher; only the active harness is followed.
   pcall(function()
-    local watcher = require("harness-decorators.watcher")
     watcher.stop()
     watcher.set_harness(new_harness)
     watcher.start()
