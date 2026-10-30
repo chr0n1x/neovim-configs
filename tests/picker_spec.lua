@@ -135,8 +135,8 @@ describe("picker: make_entry renders a work-status dot + harness name", function
   end
 
   ---Collect the highlight ranges display() returns, keyed by group name.
-  local function groups_of(name, current, bufs)
-    local entry = sw.make_entry(name, current, bufs)
+  local function groups_of(name, bufs)
+    local entry = sw.make_entry(name, bufs)
     local _, ranges = entry.display()
     local out = {}
     for _, r in ipairs(ranges or {}) do
@@ -147,7 +147,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
 
   it("shows a blue work-status dot before the name of a working initialized harness", function()
     cached_status("working")
-    local g = groups_of("claude", "claude", { claude = 42 })
+    local g = groups_of("claude", { claude = 42 })
     assert.is_not_nil(g[display.HL_WORKING], "working dot group missing")
     -- The dot is "● " (a 4-byte UTF-8 circle + space); the name starts right after it.
     assert.are.equal(0, g[display.HL_WORKING].start)
@@ -157,7 +157,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
 
   it("shows a green dot before the name of an idle initialized harness", function()
     cached_status("idle")
-    local g = groups_of("maki", "claude", { maki = 42 })
+    local g = groups_of("maki", { maki = 42 })
     assert.is_not_nil(g[display.HL_IDLE], "idle dot group missing")
     assert.are.equal(0, g[display.HL_IDLE].start)
     assert.is_not_nil(g.HarnessTitleMaki, "name must still be colored")
@@ -165,7 +165,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
 
   it("shows a hollow ring before the name of an unknown initialized harness", function()
     cached_status("unknown")
-    local g = groups_of("maki", "claude", { maki = 42 })
+    local g = groups_of("maki", { maki = 42 })
     assert.is_not_nil(g[display.HL_UNKNOWN], "unknown dot group missing")
     -- The unknown glyph is a hollow ring "○ ".
     assert.are.equal(#"○ ", g[display.HL_UNKNOWN].stop)
@@ -173,7 +173,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
 
   it("shows no dot for a harness that was never opened (no live buffer)", function()
     cached_status("working")
-    local g = groups_of("pi", "claude", {})
+    local g = groups_of("pi", {})
     assert.is_nil(g[display.HL_WORKING], "never-opened harness must not show a working dot")
     assert.is_nil(g[display.HL_IDLE], "never-opened harness must not show an idle dot")
     -- Only the name is highlighted (no dot group).
@@ -182,7 +182,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
 
   it("highlights the name starting right after the dot", function()
     cached_status("working")
-    local g = groups_of("claude", "claude", { claude = 42 })
+    local g = groups_of("claude", { claude = 42 })
     -- The working dot is "● " (4 bytes); 'claude' is 6 bytes, so the name spans [4, 10).
     assert.are.equal(#"● ", g.HarnessTitleClaude.start, "name should start right after the dot")
     assert.are.equal(#"● " + #"claude", g.HarnessTitleClaude.stop)
@@ -191,7 +191,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
   it("falls back to plain text when the harness has no title group", function()
     -- An unknown harness name has no HarnessTitle<Name> group; display must not error and returns
     -- just the text (no highlight ranges).
-    local entry = sw.make_entry("unknown", "unknown", {})
+    local entry = sw.make_entry("unknown", {})
     local text, ranges = entry.display()
     assert.is_string(text)
     assert.is_nil(ranges)
@@ -199,7 +199,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
 
   it("renders an uninstalled harness with a dimmed suffix and no dot", function()
     cached_status("working")
-    local entry = sw.make_entry("claude", "claude", { claude = 42 }, false)
+    local entry = sw.make_entry("claude", { claude = 42 }, false)
     local text, ranges = entry.display()
     assert.is_not_nil(text:find("(not installed)"), "display must include the not-installed suffix")
     -- The suffix range uses the HarnessPickerNotInstalled group.
@@ -217,7 +217,7 @@ describe("picker: make_entry renders a work-status dot + harness name", function
 
   it("installed harnesses show no suffix when installed arg is omitted", function()
     cached_status("idle")
-    local entry = sw.make_entry("claude", "claude", { claude = 42 })
+    local entry = sw.make_entry("claude", { claude = 42 })
     local text = entry.display()
     assert.is_nil(text:find("(not installed)"), "installed row must not show the suffix")
   end)

@@ -9,7 +9,7 @@ function M.find_terminal_win()
     local ok, cfg = pcall(vim.api.nvim_win_get_config, win)
     if not (ok and cfg and cfg.hide) then
       local buf = vim.api.nvim_win_get_buf(win)
-      if vim.api.nvim_buf_get_option(buf, "buftype") == "terminal" then
+      if vim.bo[buf].buftype == "terminal" then
         return win
       end
     end
@@ -63,10 +63,10 @@ end
 function M.type_into_terminal(text, opts, harness)
   local separate_space = opts and opts.separate_space or false
 
-  local ok_term, term = pcall(require, "harness-decorators.term")
+  local term = require("harness-decorators.term")
   ---This harness's own visible window, or any terminal window when the harness has no float.
   local function target_win()
-    local buf = ok_term and term.bufnr(harness)
+    local buf = term.bufnr(harness)
     if not buf then
       return M.find_terminal_win()
     end
@@ -81,9 +81,7 @@ function M.type_into_terminal(text, opts, harness)
   local win = target_win()
   if not win then
     -- Open or re-show this harness's float.
-    if ok_term then
-      term.open(harness)
-    end
+    term.open(harness)
     win = target_win()
     if not win then
       vim.notify(harness .. ": terminal did not open", vim.log.levels.WARN)
@@ -239,7 +237,6 @@ end
 ---    harness writes a path reference.
 ---  separate_space? boolean: send the trailing space as its own PTY write (see type_into_terminal).
 ---  add? boolean: declare <Harness>Add, <leader>ca in normal mode and the visual-mode <leader>ca.
----  visual_desc? string: description of the visual-mode key (default "Send selection to <Harness>").
 ---  history? boolean: declare <leader>cu.
 ---  resume? boolean: declare <leader>cr (opens the float with --resume).
 ---@return table[] keymap specs
@@ -274,7 +271,7 @@ function M.harness_keymaps(opts)
       "<leader>ca",
       M.send_visual_selection(send, opts.format),
       mode = "v",
-      desc = opts.visual_desc or ("Send selection to " .. name),
+      desc = (harness == "claude" and "Send to " or "Send selection to ") .. name,
     })
   end
   table.insert(specs, keymaps.tree_add_spec(harness, name .. "TreeAdd"))

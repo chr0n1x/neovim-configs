@@ -27,6 +27,19 @@ local function ensure_hl()
   end
 end
 
+---Namespace for the preview highlight extmarks.
+local PREVIEW_NS = vim.api.nvim_create_namespace("harness_history_preview")
+
+---Highlight columns [col, end_col) of one buffer row.
+---@param bufnr number
+---@param group string
+---@param row number 0-based row
+---@param col number
+---@param end_col number
+local function highlight(bufnr, group, row, col, end_col)
+  vim.api.nvim_buf_set_extmark(bufnr, PREVIEW_NS, row, col, { end_col = end_col, hl_group = group })
+end
+
 ---Build a Telescope previewer that renders diffs from the sidecar file.
 local function make_previewer()
   local previewers = require("telescope.previewers")
@@ -43,17 +56,18 @@ local function make_previewer()
         return
       end
 
-      vim.api.nvim_buf_set_option(bufnr, "modifiable", true)
-      vim.api.nvim_buf_set_option(bufnr, "filetype", "diff")
+      vim.bo[bufnr].modifiable = true
+      vim.bo[bufnr].filetype = "diff"
 
       ensure_hl()
+      vim.api.nvim_buf_clear_namespace(bufnr, PREVIEW_NS, 0, -1)
 
       local e = entry.value
       if not e.sidecar_path or (not e.event_uuid and not e.event_id) then
         vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {
           "(no sidecar data available for this entry)",
         })
-        vim.api.nvim_buf_set_option(bufnr, "modifiable", false)
+        vim.bo[bufnr].modifiable = false
         return
       end
 
@@ -84,8 +98,8 @@ local function make_previewer()
       -- and the path starts right after.
       local sep = e.time_str
       local date_len = #sep
-      vim.api.nvim_buf_add_highlight(bufnr, 0, SIDECAR_DATE_HL, 0, 0, date_len)
-      vim.api.nvim_buf_add_highlight(bufnr, 0, SIDECAR_PATH_HL, 0, date_len, -1)
+      highlight(bufnr, SIDECAR_DATE_HL, 0, 0, date_len)
+      highlight(bufnr, SIDECAR_PATH_HL, 0, date_len, #header_line)
 
       -- Line 1: blank separator - skip.
       -- Lines 2+: diff content from extract_diff.
@@ -97,20 +111,20 @@ local function make_previewer()
         if line ~= nil and line ~= "" then
           local prefix = line:sub(8, 8)
           if prefix == "+" then
-            vim.api.nvim_buf_add_highlight(bufnr, 0, SIDECAR_DIFF_ADD, buf_line, 0, -1)
+            highlight(bufnr, SIDECAR_DIFF_ADD, buf_line, 0, #line)
           elseif prefix == "-" then
-            vim.api.nvim_buf_add_highlight(bufnr, 0, SIDECAR_DIFF_DEL, buf_line, 0, -1)
+            highlight(bufnr, SIDECAR_DIFF_DEL, buf_line, 0, #line)
           else
             -- Context or no number: dim the leading number.
             local _, ne = line:find("^%s*[0-9]+")
             if ne then
-              vim.api.nvim_buf_add_highlight(bufnr, 0, SIDECAR_DIFF_NUM, buf_line, 0, ne + 1)
+              highlight(bufnr, SIDECAR_DIFF_NUM, buf_line, 0, math.min(ne + 1, #line))
             end
           end
         end
       end
 
-      vim.api.nvim_buf_set_option(bufnr, "modifiable", false)
+      vim.bo[bufnr].modifiable = false
     end,
   })
 end

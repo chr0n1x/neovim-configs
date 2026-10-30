@@ -114,13 +114,7 @@ function M.setup(harness)
     end,
   })
 
-  -- Optional per-adapter activation hook. Only pi defines on_activate (symlinks its
-  -- edit-following extension into pi's extensions dir); guarded so every other harness
-  -- and the stub base are unaffected.
-  local ok_ad, adapter = pcall(require, "harness-decorators." .. harness)
-  if ok_ad and type(adapter.on_activate) == "function" then
-    pcall(adapter.on_activate)
-  end
+  switch.activate_adapter(harness)
 end
 
 ---True once the jump autocmds and VimLeavePre handler have been registered for this nvim
@@ -177,15 +171,14 @@ end
 ---@return string
 function M.session_component(frame)
   local path = M.get_pinned_path()
+  local display = require("harness-decorators.agent-display")
   if not path then
-    local ok_c, display_c = pcall(require, "harness-decorators.agent-display")
-    if ok_c and display_c.count() == 0 then
+    if display.count() == 0 then
       return "0 agents"
     end
-    local ok_a, adapter = pcall(require, "harness-decorators." .. utils.harness)
-    if ok_a and adapter and not adapter.projects_dir() then
-      local ok_d, display = pcall(require, "harness-decorators.agent-display")
-      local state = ok_d and display.status(utils.harness) or nil
+    local adapter = require("harness-decorators." .. utils.harness)
+    if not adapter.projects_dir() then
+      local state = display.status(utils.harness)
       local status = state and display.dot_for(state.status) or nil
       local identity = (state and state.session_id) or utils.harness
       local prefix = "%#lualine_x_normal#🤖%*"
@@ -193,8 +186,7 @@ function M.session_component(frame)
     end
     -- The robot emoji carries the section highlight (see plugins/lualine.lua), so it is the only part
     -- of this slot with the section fill. The spinner uses the working-dot blue.
-    local ok_d, display = pcall(require, "harness-decorators.agent-display")
-    local spin_hl = (ok_d and display.HL_WORKING) or ""
+    local spin_hl = display.HL_WORKING
     return "%#lualine_x_normal#🤖%*" .. " %#" .. spin_hl .. "#" .. frame .. "%*"
   end
   -- Harness-aware session id (copilot's is the parent dir, not the filename stem).
@@ -204,12 +196,9 @@ function M.session_component(frame)
   end
   -- Show working/idle status or the stale-idle ring; omit unknown status.
   local dot = ""
-  local ok_d, display = pcall(require, "harness-decorators.agent-display")
-  if ok_d then
-    local state = display.status(utils.harness)
-    if state and type(display.dot_for) == "function" then
-      dot = display.dot_for(state.status) or ""
-    end
+  local state = display.status(utils.harness)
+  if state and type(display.dot_for) == "function" then
+    dot = display.dot_for(state.status) or ""
   end
   -- Dot sits between the robot and the session id.
   local prefix = "%#lualine_x_normal#🤖%*" .. (dot ~= "" and " " .. dot or "") .. " "

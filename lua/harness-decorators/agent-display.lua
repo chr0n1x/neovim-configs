@@ -15,6 +15,11 @@ local SPINNER = { "●" }
 
 M.spinner = SPINNER
 
+-- Status glyphs: a dot while working, a checkmark (not an emoji) when idle or done, a hollow ring
+-- when unknown. Shared by the statusline and the harness picker.
+local GLYPH = { working = SPINNER[1], idle = "✓", unknown = "○" }
+M.GLYPH = GLYPH
+
 -- Live poll results, keyed by harness name: { [name] = {status=, label=, pid=} }.
 local agents = {}
 -- Whether the overview is shown at all (toggled by <leader>co). Defaults on.
@@ -69,11 +74,7 @@ local function active_harness()
   if active_override ~= nil then
     return active_override
   end
-  local ok, park = pcall(require, "harness-decorators.park")
-  if not ok then
-    return nil
-  end
-  return park.selected_harness()
+  return require("harness-decorators.park").selected_harness()
 end
 
 ---The backgrounded (non-active) live agents, as a list of {name, status}.
@@ -123,12 +124,11 @@ end
 ---@return string
 local function dot(state)
   if state == "working" then
-    return "%#" .. HL_WORKING .. "#" .. SPINNER[1] .. "%*"
+    return "%#" .. HL_WORKING .. "#" .. GLYPH.working .. "%*"
   elseif state == "idle" then
-    -- Idle/done reads as a checkmark (not an emoji) - the agent finished and is waiting.
-    return "%#" .. HL_IDLE .. "#✓%*"
+    return "%#" .. HL_IDLE .. "#" .. GLYPH.idle .. "%*"
   end
-  return "%#" .. HL_UNKNOWN .. "#○%*"
+  return "%#" .. HL_UNKNOWN .. "#" .. GLYPH.unknown .. "%*"
 end
 
 ---Dot markup for the active agent; nil when unknown.
@@ -202,18 +202,16 @@ end
 ---Run one blocking poll and apply it. Used by tests; the timer polls through refresh_async.
 ---@return boolean changed
 function M.refresh()
-  local ok, all = pcall(function()
-    return require("harness-decorators.agent-state").all()
-  end)
+  local state = require("harness-decorators.agent-state")
+  local ok, all = pcall(state.all)
   return ok and apply(all) or false
 end
 
 ---Poll with the ps snapshot taken off the main loop, then apply the result.
 function M.refresh_async()
-  pcall(function()
-    require("harness-decorators.agent-state").all_async(function(all)
-      pcall(apply, all)
-    end)
+  local state = require("harness-decorators.agent-state")
+  pcall(state.all_async, function(all)
+    pcall(apply, all)
   end)
 end
 

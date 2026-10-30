@@ -310,6 +310,10 @@ describe("harness keymaps: declared keys and context formats", function()
       end)
 
       after_each(function()
+        local buf = vim.fn.bufnr(file)
+        if buf ~= -1 then
+          vim.api.nvim_buf_delete(buf, { force = true })
+        end
         vim.fn.delete(file)
         vim.fn.delete(dir, "d")
       end)
@@ -374,6 +378,24 @@ describe("harness keymaps: declared keys and context formats", function()
           assert.are.equal(1, #sent)
           assert.are.equal(expected_text(harness, vim.fn.expand("%:p")), sent[1].text)
         end)
+
+        it(
+          "Given a visual line selection, When the send key runs, Then it sends this harness's range format",
+          function()
+            local specs = keymaps.build(harness)
+            vim.cmd("edit " .. vim.fn.fnameescape(file))
+            vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three", "four" })
+            vim.api.nvim_win_set_cursor(0, { 2, 0 })
+            vim.cmd("normal! Vj")
+            for _, spec in ipairs(specs) do
+              if spec[1] == "<leader>ca" and spec.mode == "v" then
+                spec[2]()
+              end
+            end
+            assert.are.equal(1, #sent)
+            assert.are.equal(expected_text(harness, file, "#L2-3"), sent[1].text)
+          end
+        )
       else
         it("declares no Add command", function()
           keymaps.build(harness)

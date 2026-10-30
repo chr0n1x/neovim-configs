@@ -11,11 +11,11 @@ local agent_display = require("harness-decorators.agent-display")
 local current_harness = nil
 local zen_was_open = false
 
--- Status glyphs for picker rows; same states and groups as agent-display.
+-- Status glyphs for picker rows (each followed by a space); same states and groups as agent-display.
 local STATUS_DOTS = {
-  working = { glyph = "● ", group = agent_display.HL_WORKING }, -- blue
-  idle = { glyph = "✓ ", group = agent_display.HL_IDLE }, -- green checkmark (done/idle)
-  unknown = { glyph = "○ ", group = agent_display.HL_UNKNOWN }, -- hollow ring
+  working = { glyph = agent_display.GLYPH.working .. " ", group = agent_display.HL_WORKING },
+  idle = { glyph = agent_display.GLYPH.idle .. " ", group = agent_display.HL_IDLE },
+  unknown = { glyph = agent_display.GLYPH.unknown .. " ", group = agent_display.HL_UNKNOWN },
 }
 
 ---The work-status dot for a harness from the statusline's last poll (agent-display), or nil when it
@@ -57,14 +57,10 @@ function M.switch(new_harness)
     return
   end
 
-  pcall(function()
-    require("harness-decorators.term").expect_focus(new_harness)
-  end)
+  pcall(require("harness-decorators.term").expect_focus, new_harness)
 
   -- Focus may move during the switch; keep focus.capture from recording it.
-  pcall(function()
-    require("harness-decorators.focus").suppress_next_leave()
-  end)
+  pcall(require("harness-decorators.focus").suppress_next_leave)
   -- zen-mode closes itself when a normal window gets focus; keep focus on the zen window while the
   -- incoming harness is shown.
   local zwin = require("util.zen").win()
@@ -73,10 +69,18 @@ function M.switch(new_harness)
   end
   -- The outgoing harness's float stays open; it is "backgrounded" in that it is no longer the
   -- active harness for keymaps and watchers.
-  pcall(function()
-    require("harness-decorators.term").reset_layout(new_harness)
-  end)
+  pcall(require("harness-decorators.term").reset_layout, new_harness)
   M.activate(new_harness)
+end
+
+---Run the adapter's optional on_activate hook (only pi defines it: symlinks its edit-following
+---extension into pi's extensions dir). A failing hook does not abort the caller.
+---@param harness string
+function M.activate_adapter(harness)
+  local adapter = require("harness-decorators." .. harness)
+  if type(adapter.on_activate) == "function" then
+    pcall(adapter.on_activate)
+  end
 end
 
 ---Make new_harness the active harness: selection, <leader>c* keymaps, adapter on_activate and the
@@ -99,14 +103,7 @@ function M.activate(new_harness)
   keymaps.apply(keymaps.build(new_harness))
   current_harness = new_harness
 
-  -- Optional per-adapter activation hook (only pi defines it: symlinks its edit-following
-  -- extension into pi's extensions dir). Guarded so other harnesses are unaffected.
-  pcall(function()
-    local adapter = require("harness-decorators." .. new_harness)
-    if type(adapter.on_activate) == "function" then
-      adapter.on_activate()
-    end
-  end)
+  M.activate_adapter(new_harness)
 
   -- Re-point the watcher; only the active harness is followed.
   pcall(function()
@@ -121,13 +118,9 @@ end
 function M.after_pick()
   -- Same first step as <leader>c: register the edit-jump autocmds and start the watcher (once per
   -- session), so a harness started from the picker follows its edits too.
-  pcall(function()
-    require("harness-decorators").setup_auto_follow()
-  end)
+  pcall(require("harness-decorators").setup_auto_follow)
   park.show_selected()
-  pcall(function()
-    require("harness-decorators.term").grid()
-  end)
+  pcall(require("harness-decorators.term").grid)
   -- Restore zen mode if it was open when the picker was invoked. The
   -- switch/show flow moves focus through non-float windows, which triggers
   -- zen-mode's WinEnter close. Re-open it around zen's last parent window,
@@ -197,11 +190,10 @@ end
 ---highlighted independently so the selected-row dimming (TelescopeSelection links to Visual, no fg)
 ---leaves both colored. Uninstalled harnesses render dimmed with a "(not installed)" suffix.
 ---@param name string harness name
----@param _active? string unused; kept for positional callers
 ---@param bufs table<string, number> map of harness name to live terminal buffer (from collect_terminal_bufs)
 ---@param installed? boolean whether the harness CLI is on PATH (default true)
 ---@return table entry { value, ordinal, display }
-function M.make_entry(name, _active, bufs, installed)
+function M.make_entry(name, bufs, installed)
   if installed == nil then
     installed = true
   end
@@ -226,7 +218,7 @@ function M.make_entry(name, _active, bufs, installed)
       -- Dim the "(not installed)" suffix with a dedicated group.
       if not installed then
         local suffix_start = #prefix + #name
-        table.insert(ranges, { { suffix_start, #text }, "HarnessPickerNotInstalled" })
+        table.insert(ranges, { { suffix_start, #text }, title.picker_not_installed_group })
       end
       return text, ranges
     end,
@@ -385,7 +377,7 @@ function M.pick()
       finder = finders.new_table({
         results = harnesses,
         entry_maker = function(h)
-          return M.make_entry(h.name, current_harness, bufs, h.installed)
+          return M.make_entry(h.name, bufs, h.installed)
         end,
       }),
       sorter = conf.generic_sorter({}),

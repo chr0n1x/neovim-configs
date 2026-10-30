@@ -80,10 +80,7 @@ local function agent_overview_spec()
   return {
     "<leader>co",
     function()
-      local ok = pcall(require, "harness-decorators.agent-display")
-      if ok then
-        require("harness-decorators.agent-display").toggle()
-      end
+      require("harness-decorators.agent-display").toggle()
     end,
     desc = "Toggle agent overview",
     mode = { "n" },
@@ -95,26 +92,19 @@ local function focus_spec(harness)
   return {
     "<leader>c",
     function()
-      local ok = pcall(require, "harness-decorators")
-      if ok then
-        vim.schedule(function()
-          require("harness-decorators").setup_auto_follow()
-        end)
-      end
+      local harnesses = require("harness-decorators")
+      vim.schedule(function()
+        harnesses.setup_auto_follow()
+      end)
       -- Suppress capture for the WinLeave this press triggers, restore the last
       -- normal-mode buffer first (the show below then focuses the terminal window
       -- over it, so the work buffer stays visible underneath), and clear the
       -- suppression once the restore has run.
-      local fok, focus = pcall(require, "harness-decorators.focus")
-      if fok then
-        focus.suppress_next_leave()
-        focus.restore()
-      end
+      local focus = require("harness-decorators.focus")
+      focus.suppress_next_leave()
+      focus.restore()
       -- Show the selected harness's own float.
-      local pok, park = pcall(require, "harness-decorators.park")
-      if pok then
-        park.show_selected()
-      end
+      require("harness-decorators.park").show_selected()
     end,
     desc = harness,
     mode = { "n", "x" },

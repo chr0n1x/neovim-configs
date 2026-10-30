@@ -51,8 +51,8 @@ describe("context-inject.type_into_terminal: PTY writes", function()
       table.insert(writes, data)
       return chan_result
     end
-    vim.notify = function(msg)
-      table.insert(notes, tostring(msg))
+    vim.notify = function(msg, level)
+      table.insert(notes, { message = tostring(msg), level = level })
     end
   end)
 
@@ -100,6 +100,51 @@ describe("context-inject.type_into_terminal: PTY writes", function()
   it("warns and returns nil when the channel is closed", function()
     chan_result = 0
     assert.is_nil(ci.type_into_terminal("@a.lua", nil, "pig"))
-    assert.is_truthy(notes[1] and notes[1]:find("terminal channel is closed", 1, true))
+    assert.is_truthy(notes[1] and notes[1].message:find("terminal channel is closed", 1, true))
+    assert.are.equal(vim.log.levels.WARN, notes[1].level)
+  end)
+end)
+
+describe("in-repo module load errors", function()
+  local function failing_require(module, callback)
+    local loaded, preload = package.loaded[module], package.preload[module]
+    package.loaded[module] = nil
+    package.preload[module] = function()
+      error("broken owned module")
+    end
+    local ok, err = pcall(callback)
+    package.loaded[module], package.preload[module] = loaded, preload
+    assert.is_false(ok, "an owned module load error must reach the caller")
+    assert.is_truthy(tostring(err):find("broken owned module", 1, true))
+  end
+
+  it("Given a broken terminal module, When context is sent, Then the load error is raised", function()
+    failing_require("harness-decorators.term", function()
+      ci.type_into_terminal("@a.lua", nil, "pig")
+    end)
+  end)
+
+  it("Given a broken display module, When the overview key runs, Then the load error is raised", function()
+    local specs = require("harness-decorators.keymaps").build("pig")
+    failing_require("harness-decorators.agent-display", function()
+      for _, spec in ipairs(specs) do
+        if spec[1] == "<leader>co" then
+          spec[2]()
+        end
+      end
+    end)
+  end)
+
+  it("Given a broken state module, When the display refreshes, Then the load error is raised", function()
+    local display = require("harness-decorators.agent-display")
+    failing_require("harness-decorators.agent-state", display.refresh)
+    failing_require("harness-decorators.agent-state", display.refresh_async)
+  end)
+
+  it("Given a broken display module, When the session slot renders, Then the load error is raised", function()
+    local harnesses = require("harness-decorators")
+    failing_require("harness-decorators.agent-display", function()
+      harnesses.session_component(".")
+    end)
   end)
 end)

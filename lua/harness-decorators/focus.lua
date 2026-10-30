@@ -28,7 +28,7 @@ function M.capture()
     return
   end
   local buf = vim.api.nvim_win_get_buf(win)
-  if vim.api.nvim_buf_get_option(buf, "buftype") == "terminal" then
+  if vim.bo[buf].buftype == "terminal" then
     return
   end
   if _skip_buf and buf == _skip_buf then

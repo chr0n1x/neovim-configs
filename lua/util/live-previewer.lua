@@ -35,9 +35,9 @@ function M.new(opts)
       return
     end
     local lines = opts.lines(entry, winid)
-    vim.api.nvim_buf_set_option(bufnr, "modifiable", true)
+    vim.bo[bufnr].modifiable = true
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-    vim.api.nvim_buf_set_option(bufnr, "modifiable", false)
+    vim.bo[bufnr].modifiable = false
     if vim.api.nvim_win_is_valid(winid) then
       pcall(vim.api.nvim_win_set_cursor, winid, { #lines, 0 })
       colorize(winid)
