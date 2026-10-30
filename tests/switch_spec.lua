@@ -439,6 +439,31 @@ describe("switch activation failure boundaries", function()
   end
 
   it(
+    "Given keymaps.build throws for pi, When pi is activated, Then claude stays active with its maps and a later retry succeeds",
+    function()
+      working_pi()
+      local before = activation_state()
+      local orig_build = keymaps.build
+      keymaps.build = function(h)
+        if h == "pi" then
+          error("keymaps build failed")
+        end
+        return orig_build(h)
+      end
+      local ok, err = pcall(sw.activate, "pi")
+      keymaps.build = orig_build
+      assert.is_false(ok, "a keymaps build failure must raise")
+      assert.is_truthy(tostring(err):find("keymaps build failed", 1, true))
+      assert.are.same(before, activation_state(), "a failed build must preserve claude selection, env and mappings")
+      assert.are.same({}, steps, "a failed build must not stop or start the watcher")
+
+      sw.activate("pi")
+      assert.are.equal("pi", sw.current())
+      assert.are.same({ "stop", "start:pi" }, steps)
+    end
+  )
+
+  it(
     "Given a throwing activation hook, When pi is activated, Then the watcher is still re-pointed without an escaping error",
     function()
       working_pi(function()
