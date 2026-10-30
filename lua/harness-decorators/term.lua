@@ -4,8 +4,6 @@ local M = {}
 
 local state = require("harness-decorators.state")
 
-local auto_insert_group = vim.api.nvim_create_augroup("HarnessTerminalAutoInsert", { clear = true })
-
 local function mark_harness_buffer(harness, inst)
   if inst and inst.buf and vim.api.nvim_buf_is_valid(inst.buf) then
     vim.b[inst.buf].harness_terminal = harness
@@ -53,9 +51,7 @@ local function enter_terminal_mode(win, buf, waited)
   vim.cmd.startinsert()
 end
 
--- Forward-declared so the autocmds below (defined before the real function in file order) can
--- close over it. Reassigned to the real implementation further down; autocmd callbacks only run
--- after the module is fully loaded, by which point this local points at the real function.
+-- Forward-declared so the functions below can close over it before its definition.
 local schedule_enter_terminal_mode
 
 local function harness_terminal_buf()
@@ -65,47 +61,6 @@ local function harness_terminal_buf()
   end
   return nil
 end
-
-vim.api.nvim_create_autocmd("WinEnter", {
-  group = auto_insert_group,
-  callback = function()
-    local buf = harness_terminal_buf()
-    if buf then
-      schedule_enter_terminal_mode(vim.api.nvim_get_current_win(), buf)
-      -- The focused float's harness is the active one, so <leader>c* sends and edit jumps follow it.
-      -- A pending switch (M._focus_target, see M.expect_focus) wins: closing the <C-q> picker lands
-      -- focus back on the old float just before the pick moves it to the new one.
-      vim.schedule(function()
-        local harness = vim.api.nvim_buf_is_valid(buf) and vim.b[buf].harness_terminal
-        local sw = require("harness-decorators.switch")
-        local pending = M._focus_target ~= nil and M._focus_target ~= harness
-        if
-          type(harness) == "string"
-          and not pending
-          and vim.api.nvim_get_current_buf() == buf
-          and harness ~= sw.current()
-        then
-          pcall(sw.activate, harness)
-        end
-      end)
-    end
-  end,
-})
-
--- Re-focusing nvim (e.g. clicking the window, switching from another terminal) restores terminal
--- insert mode: some window managers and remote setups drop terminal insert mode on focus loss.
-vim.api.nvim_create_autocmd("FocusGained", {
-  group = auto_insert_group,
-  callback = function()
-    local buf = harness_terminal_buf()
-    -- A user who pressed <C-n> deliberately wants normal mode; FocusGained must not yank them back
-    -- into insert (schedule_enter_terminal_mode clears the flag, so only the deliberate re-focus
-    -- paths may reset it).
-    if buf and not vim.b[buf].harness_terminal_normal_mode then
-      schedule_enter_terminal_mode(vim.api.nvim_get_current_win(), buf)
-    end
-  end,
-})
 
 ---Enter terminal mode for (win, buf) on the next tick: snacks.open and a re-focus both return before
 -- the window/buffer has settled, so a synchronous startinsert does not reliably stick. The
@@ -164,18 +119,17 @@ local float_util = require("harness-decorators.float-util")
 local dock = require("harness-decorators.dock")
 local has_bar, repack_dock, close_pill, minimize_float =
   dock.has_bar, dock.repack_dock, dock.close_pill, dock.minimize_float
-local bar_hit, bar_button = dock.bar_hit, dock.bar_button
 local find_base_window, grip_title = float_util.find_base_window, float_util.grip_title
 
 local layout = require("harness-decorators.layout")
-local BAR_HEIGHT, BAR_MIN_TEXT = layout.BAR_HEIGHT, layout.BAR_MIN_TEXT
+local BAR_MIN_TEXT = layout.BAR_MIN_TEXT
 local FLOAT_ROW, FLOAT_WIDTH, FLOAT_HEIGHT = layout.FLOAT_ROW, layout.FLOAT_WIDTH, layout.FLOAT_HEIGHT
 local ZEN_MIN_WIDTH, ZEN_HEIGHT = layout.ZEN_MIN_WIDTH, layout.ZEN_HEIGHT
 local zen_active, zen_float_span, zen_side_span = layout.zen_active, layout.zen_float_span, layout.zen_side_span
 local default_float_col, default_float_rect = layout.default_float_col, layout.default_float_rect
 local fullscreen_rect, shelf_rect, auto_float_rect = layout.fullscreen_rect, layout.shelf_rect, layout.auto_float_rect
 local retract_rect, at_rect = layout.retract_rect, layout.at_rect
-local stack_rects, drawn_pos = layout.stack_rects, layout.drawn_pos
+local stack_rects = layout.stack_rects
 
 -- term.shelf_rows and term._zen_active_override are spec knobs kept on M; they live in layout.
 local layout_knobs = { shelf_rows = "shelf_rows", _zen_active_override = "zen_active_override" }
@@ -511,19 +465,6 @@ local function win_opts(harness)
   }
 end
 
-vim.api.nvim_create_autocmd("VimResized", {
-  group = auto_insert_group,
-  callback = function()
-    vim.schedule(function()
-      repack_dock()
-      -- zen-mode re-lays out its window in its own VimResized handler; re-place the floats after it.
-      if zen_active() then
-        M.set_zen_width(true)
-      end
-    end)
-  end,
-})
-
 local flash_ns = vim.api.nvim_create_namespace("harness_flash")
 
 ---Blink the float's border (or its minimized bar) a few times with HarnessFlash. The border blinks
@@ -735,6 +676,7 @@ end
 ---@param opts? { args?: string } Extra CLI args appended to the spawn command (e.g. "--continue").
 ---@return table? instance nil if Snacks is unavailable or the harness has no command
 function M.open(harness, opts)
+  M.setup()
   local existing = entry(harness).inst
   if is_live(existing) then
     focus_instance(existing)
@@ -788,108 +730,6 @@ end
 
 for harness, e in pairs(state.table) do
   mark_harness_buffer(harness, e.inst)
-end
-
--- Mouse drag on a harness float's border: the top border (the title bar) moves the float, and the
--- left, right and bottom borders resize it from that edge (bottom corners resize both ways). The
--- mappings are global expr maps because the click can come from any window/mode; anything that is
--- not a border drag is passed through unchanged. Requires 'mouse' to include n/t (see <leader>M).
-local drag = nil
-local MIN_WIDTH, MIN_HEIGHT = 20, 5
-
----The live harness instance whose border contains the given 1-based screen pos, and which edges
--- of it were grabbed.
---
--- A grab on the bottom-right corner returns:
--- ```lua
--- inst, { move = false, left = false, right = true, bottom = true }
--- ```
---
--- Clicks inside the float's text area return nil.
----@return table? inst
----@return table? edges
-local function border_hit(screenrow, screencol)
-  for _, e in pairs(state.table) do
-    local inst = e.inst
-    if is_live(inst) and inst.win and vim.api.nvim_win_is_valid(inst.win) then
-      local cfg = vim.api.nvim_win_get_config(inst.win)
-      if cfg.relative == "editor" then
-        local top, left = drawn_pos(inst.win)
-        top, left = top + 1, left + 1
-        local bottom, right = top + cfg.height + 1, left + cfg.width + 1
-        if screenrow >= top and screenrow <= bottom and screencol >= left and screencol <= right then
-          local edges = {
-            move = screenrow == top,
-            left = screenrow ~= top and screencol == left,
-            right = screenrow ~= top and screencol == right,
-            bottom = screenrow == bottom,
-          }
-          if edges.move or edges.left or edges.right or edges.bottom then
-            return inst, edges
-          end
-        end
-      end
-    end
-  end
-end
-
----Apply the in-progress drag to the float: move it, or resize it from the grabbed edges, clamped to
--- the editor. The new geometry is also written to inst.opts so Snacks keeps it across hide/show and
--- VimResized, and the fullscreen baseline is dropped so the next <C-f> collapse returns here instead
--- of the pre-drag geometry. Dragging a minimized bar moves the bar, and the float reopens there.
-local function drag_to(mouse)
-  if not drag then
-    return
-  end
-  local inst = drag.inst
-  local dr, dc = mouse.screenrow - drag.screenrow, mouse.screencol - drag.screencol
-  if drag.pill_win and vim.api.nvim_win_is_valid(drag.pill_win) then
-    if inst._bar_slot then
-      inst._bar_slot = nil
-      repack_dock()
-    end
-    local row = math.max(0, math.min(drag.row + dr, vim.o.lines - vim.o.cmdheight - BAR_HEIGHT))
-    local col = math.max(0, math.min(drag.col + dc, vim.o.columns - drag.width))
-    pcall(vim.api.nvim_win_set_config, drag.pill_win, { relative = "editor", row = row, col = col })
-    local rect = inst._restore_rect or { width = 0, height = 0 }
-    inst.opts.row = math.max(0, math.min(row, vim.o.lines - vim.o.cmdheight - rect.height - 2))
-    inst.opts.col = math.max(0, math.min(col, vim.o.columns - rect.width - 2))
-    rect.row, rect.col = inst.opts.row, inst.opts.col
-    return
-  end
-  if not (inst and inst.win and vim.api.nvim_win_is_valid(inst.win)) then
-    drag = nil
-    return
-  end
-  local row, col, width, height = drag.row, drag.col, drag.width, drag.height
-  local edges = drag.edges
-  if edges.move then
-    row = math.max(0, math.min(row + dr, vim.o.lines - vim.o.cmdheight - height - 2))
-    col = math.max(0, math.min(col + dc, vim.o.columns - width - 2))
-  end
-  if edges.bottom then
-    height = math.max(MIN_HEIGHT, math.min(height + dr, vim.o.lines - vim.o.cmdheight - row - 2))
-  end
-  if edges.right then
-    width = math.max(MIN_WIDTH, math.min(width + dc, vim.o.columns - col - 2))
-  end
-  if edges.left then
-    col = math.max(0, math.min(col + dc, drag.col + drag.width - MIN_WIDTH))
-    width = drag.width + drag.col - col
-  end
-  inst._resized_at = vim.uv.now()
-  pcall(vim.api.nvim_win_set_config, inst.win, {
-    relative = "editor",
-    row = row,
-    col = col,
-    width = width,
-    height = height,
-  })
-  inst.opts.row, inst.opts.col, inst.opts.width, inst.opts.height = row, col, width, height
-  if not drag.wide then
-    inst._saved_config = nil
-  end
-  inst._wide = false
 end
 
 ---Show the end of the terminal (the prompt) in the float's window. A float focused in terminal mode
@@ -1324,143 +1164,6 @@ local function close_harness(inst)
   end
 end
 
----Mouse handlers for the harness floats and their minimized bars. Each takes a getmousepos()-shaped
--- position and returns the keys the mapping should produce: "" when the event was handled here, or
--- the original mouse key to pass it through. The mappings below call these with vim.fn.getmousepos();
--- specs call them directly with made-up positions, since headless Neovim gets no real mouse input.
-M.mouse = {}
-
--- True from a press these handlers consumed until its release. The drag and release events of that
--- click are swallowed too: passed through, Neovim would move the cursor to the window under the
--- mouse, which after a restore or close is the editor window the bar was floating over.
-local press_consumed = false
-
----@param mouse { screenrow: integer, screencol: integer }
----@return string keys
-function M.mouse.press(mouse)
-  press_consumed = true
-  local minimized, bar = bar_hit(mouse.screenrow, mouse.screencol)
-  local button = minimized and bar_button(minimized, bar, mouse.screencol)
-  if button then
-    drag = nil
-    vim.schedule(function()
-      if button == "close" then
-        close_harness(minimized)
-      else
-        restore_from_bar(minimized)
-      end
-    end)
-    return ""
-  end
-  if minimized then
-    if minimized._bar_anim then
-      minimized._bar_anim:finish()
-      minimized._bar_anim = nil
-    end
-    local row, col = drawn_pos(bar)
-    drag = {
-      inst = minimized,
-      pill_win = bar,
-      screenrow = mouse.screenrow,
-      screencol = mouse.screencol,
-      row = row,
-      col = col,
-      width = vim.api.nvim_win_get_width(bar) + 2,
-    }
-    return ""
-  end
-  local inst, edges = border_hit(mouse.screenrow, mouse.screencol)
-  if not inst then
-    drag = nil
-    press_consumed = false
-    return "<LeftMouse>"
-  end
-  local cfg = vim.api.nvim_win_get_config(inst.win)
-  local row, col = drawn_pos(inst.win)
-  drag = {
-    inst = inst,
-    edges = edges,
-    wide = inst._wide,
-    screenrow = mouse.screenrow,
-    screencol = mouse.screencol,
-    row = row,
-    col = col,
-    width = cfg.width,
-    height = cfg.height,
-  }
-  return ""
-end
-
----@param mouse { screenrow: integer, screencol: integer }
----@return string keys
-function M.mouse.drag(mouse)
-  if not drag then
-    return press_consumed and "" or "<LeftDrag>"
-  end
-  vim.schedule(function()
-    drag_to(mouse)
-  end)
-  return ""
-end
-
----@return string keys
-function M.mouse.release()
-  local consumed = press_consumed or drag ~= nil
-  press_consumed = false
-  drag = nil
-  return consumed and "" or "<LeftRelease>"
-end
-
----@param mouse { screenrow: integer, screencol: integer }
----@return string keys
-function M.mouse.double(mouse)
-  local minimized, bar = bar_hit(mouse.screenrow, mouse.screencol)
-  if minimized then
-    press_consumed = true
-    -- The buttons already fired on the first click of the double-click.
-    if not bar_button(minimized, bar, mouse.screencol) then
-      vim.schedule(function()
-        restore_from_bar(minimized)
-      end)
-    end
-    return ""
-  end
-  local inst, edges = border_hit(mouse.screenrow, mouse.screencol)
-  if inst and edges.move then
-    local _, col = drawn_pos(inst.win)
-    local on_minimize = mouse.screencol == col + vim.api.nvim_win_get_config(inst.win).width + 2
-    local on_shelf = mouse.screencol == col + 1
-    if on_minimize or on_shelf then
-      drag = nil
-      press_consumed = true
-      vim.schedule(function()
-        if on_minimize then
-          minimize_float(inst)
-        else
-          M.shelf_button(inst)
-        end
-      end)
-      return ""
-    end
-  end
-  return "<2-LeftMouse>"
-end
-
-local drag_modes = { "n", "t" }
-local drag_desc = "Move/resize harness float by its border"
-vim.keymap.set(drag_modes, "<LeftMouse>", function()
-  return M.mouse.press(vim.fn.getmousepos())
-end, { expr = true, desc = drag_desc })
-vim.keymap.set(drag_modes, "<LeftDrag>", function()
-  return M.mouse.drag(vim.fn.getmousepos())
-end, { expr = true, desc = drag_desc })
-vim.keymap.set(drag_modes, "<LeftRelease>", function()
-  return M.mouse.release()
-end, { expr = true, desc = drag_desc })
-vim.keymap.set(drag_modes, "<2-LeftMouse>", function()
-  return M.mouse.double(vim.fn.getmousepos())
-end, { expr = true, desc = "Minimize/restore harness float" })
-
 ---@param harness string
 ---@return number?
 function M.opened_at(harness)
@@ -1556,5 +1259,83 @@ function M._reset()
   state._reset()
   M._tiled, M._tile_focus, M._focus_target = false, nil, nil
 end
+
+local setup_done = false
+
+---Register what the floats need editor-wide: the WinEnter/FocusGained terminal-mode autocmds, the
+-- VimResized re-layout, and the mouse maps. Runs once, on the first M.open, so requiring this module
+-- registers nothing.
+function M.setup()
+  if setup_done then
+    return
+  end
+  setup_done = true
+  local group = vim.api.nvim_create_augroup("HarnessTerminalAutoInsert", { clear = true })
+  vim.api.nvim_create_autocmd("WinEnter", {
+    group = group,
+    callback = function()
+      local buf = harness_terminal_buf()
+      if buf then
+        schedule_enter_terminal_mode(vim.api.nvim_get_current_win(), buf)
+        -- The focused float's harness is the active one, so <leader>c* sends and edit jumps follow it.
+        -- A pending switch (M._focus_target, see M.expect_focus) wins: closing the <C-q> picker lands
+        -- focus back on the old float just before the pick moves it to the new one.
+        vim.schedule(function()
+          local harness = vim.api.nvim_buf_is_valid(buf) and vim.b[buf].harness_terminal
+          local sw = require("harness-decorators.switch")
+          local pending = M._focus_target ~= nil and M._focus_target ~= harness
+          if
+            type(harness) == "string"
+            and not pending
+            and vim.api.nvim_get_current_buf() == buf
+            and harness ~= sw.current()
+          then
+            pcall(sw.activate, harness)
+          end
+        end)
+      end
+    end,
+  })
+
+  -- Re-focusing nvim (e.g. clicking the window, switching from another terminal) restores terminal
+  -- insert mode: some window managers and remote setups drop terminal insert mode on focus loss.
+  vim.api.nvim_create_autocmd("FocusGained", {
+    group = group,
+    callback = function()
+      local buf = harness_terminal_buf()
+      -- A user who pressed <C-n> deliberately wants normal mode; FocusGained must not yank them back
+      -- into insert (schedule_enter_terminal_mode clears the flag, so only the deliberate re-focus
+      -- paths may reset it).
+      if buf and not vim.b[buf].harness_terminal_normal_mode then
+        schedule_enter_terminal_mode(vim.api.nvim_get_current_win(), buf)
+      end
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("VimResized", {
+    group = group,
+    callback = function()
+      vim.schedule(function()
+        repack_dock()
+        -- zen-mode re-lays out its window in its own VimResized handler; re-place the floats after it.
+        if zen_active() then
+          M.set_zen_width(true)
+        end
+      end)
+    end,
+  })
+
+  M.mouse.setup()
+end
+
+M.mouse = require("harness-decorators.mouse")
+M.mouse.bind({
+  is_live = is_live,
+  restore_from_bar = restore_from_bar,
+  close_harness = close_harness,
+  shelf_button = function(inst)
+    M.shelf_button(inst)
+  end,
+})
 
 return M
