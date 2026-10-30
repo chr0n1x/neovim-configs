@@ -7,6 +7,9 @@ local stub = require("harness-decorators.stub-adapter")
 
 local M = setmetatable({}, { __index = stub })
 
+---Title color: light cerulean.
+M.title_color = "#6eb9f0"
+
 -- ==========================================================================
 -- PATHS
 -- ==========================================================================

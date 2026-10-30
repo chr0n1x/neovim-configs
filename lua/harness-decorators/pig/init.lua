@@ -6,4 +6,7 @@
 -- Context keymaps live in pig/keymaps.lua; status + session label in pig/state.lua.
 local M = setmetatable({}, { __index = require("harness-decorators.stub-adapter") })
 
+---Title color: green, same as the idle checkmark (agent-display AgentDotIdle).
+M.title_color = "#3ddc6e"
+
 return M

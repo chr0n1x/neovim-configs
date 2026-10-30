@@ -10,7 +10,12 @@
 --
 -- The remaining adapter functions are inherited from the shared stub base (stub-adapter.lua)
 -- and are never reached while projects_dir() is nil.
-local M = setmetatable({}, { __index = require("harness-decorators.stub-adapter") })
+local stub = require("harness-decorators.stub-adapter")
+
+local M = setmetatable({}, { __index = stub })
+
+---Title color: white (pi.dev logo).
+M.title_color = "#ffffff"
 
 -- The pi extension pushes structured edit events into Neovim, so the generic filesystem watcher
 -- must not warn or attempt to start for this adapter.
@@ -48,7 +53,7 @@ function M.extract_diff(ev)
   if ev and type(ev.diff) == "string" and ev.diff ~= "" then
     return ev.diff
   end
-  return "(no diff data available)"
+  return stub.NO_DIFF
 end
 
 -- ==========================================================================

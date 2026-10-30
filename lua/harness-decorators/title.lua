@@ -3,22 +3,22 @@ local utils = require("harness-decorators.utils")
 
 local M = {}
 
--- Per-harness title colors (private; only used by the helpers below). Match
--- tmux/scripts/tmux-agent-pick.sh (agent_color).
-local colors = {
-  claude = "#f0965f", -- light rust
-  maki = "#6eb9f0", -- light cerulean
-  copilot = "#aa78ff", -- purple
-  crush = "#ff60ff", -- charm magenta
-  pi = "#ffffff", -- white (pi.dev logo)
-  pig = "#3ddc6e", -- green, same as the idle checkmark (agent-display AgentDotIdle)
-}
+---A harness's title color from its adapter's title_color, or nil for an unknown harness.
+---@param name string
+---@return string?
+local function color_for(name)
+  local ok, adapter = pcall(require, "harness-decorators." .. name)
+  if ok and type(adapter) == "table" and type(adapter.title_color) == "string" then
+    return adapter.title_color
+  end
+  return nil
+end
 
 ---Define the HarnessTitle<Name> hl group for a harness. Uses `default` so a
 ---later ColorScheme change can still override it, while a plain link would be
 ---clobbered by any scheme that links its own groups to Normal.
 function M.define(name)
-  local color = colors[name]
+  local color = color_for(name)
   if not color then
     return nil
   end
@@ -42,7 +42,7 @@ M.picker_not_installed_group = "HarnessPickerNotInstalled"
 
 ---Define groups for all known harnesses (used at LazyDone and on ColorScheme).
 function M.define_all()
-  for name in pairs(colors) do
+  for _, name in ipairs(utils.list_harnesses()) do
     M.define(name)
   end
   vim.api.nvim_set_hl(0, M.picker_not_installed_group, { default = true, fg = "#5b6270" })
