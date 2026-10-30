@@ -1,0 +1,2 @@
+# Dockerfile.test copies nothing from the repo, so send an empty build context.
+*

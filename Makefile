@@ -25,9 +25,11 @@ style:
 fix:
 	@stylua lua/
 
-# Full CI: build the image if needed, then run it once with the codebase + test cache
-# mounted. The container runs tests/ci.sh (lint + style + load check + integration specs) -
-# a single in-container definition of CI. No nested make; the host only mounts and invokes.
+# Full CI: build the image, then run it once with the codebase + test cache mounted. The build
+# runs every time so Dockerfile.test changes reach an existing image; an unchanged Dockerfile is
+# a layer-cache hit. .dockerignore keeps the build context empty. The container runs tests/ci.sh
+# (lint + style + load check + integration specs) - a single in-container definition of CI. No
+# nested make; the host only mounts and invokes.
 #
 # Two mounts only. The repo mount is the nvim config dir (XDG_CONFIG_HOME=/nvim-config).
 # The .test-cache mount is the nvim DATA dir (~/.local/share/nvim); XDG_DATA_HOME is NOT
@@ -38,8 +40,7 @@ fix:
 # destination, leaving empty lazy/mason/possession strays in the tree.
 ci:
 	@test -x "$$(command -v $(PODMAN))" || { echo "podman not found"; exit 1; }
-	@$(PODMAN) images --format '{{.Repository}}:{{.Tag}}' | grep -qF "$(IMAGE_TAG)" || \
-		$(PODMAN) build --file $(DOCKERFILE) --tag "$(IMAGE_TAG)" -q .
+	@$(PODMAN) build --file $(DOCKERFILE) --tag "$(IMAGE_TAG)" -q . >/dev/null
 	@# kill any stuck container from a prior run
 	@$(PODMAN) ps -a --filter "ancestor=$(IMAGE_TAG)" --format '{{.ID}}' | xargs -r $(PODMAN) stop 2>/dev/null || true
 	@# .test-cache must exist on the host before bind-mount (podman creates a missing mount
