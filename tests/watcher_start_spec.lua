@@ -225,5 +225,28 @@ describe("watcher.start", function()
         assert(ok, err)
       end
     )
+
+    it(
+      "Given the active harness set to copilot without set_harness, When the watcher starts, Then it watches copilot's sessions dir",
+      function()
+        installed = { inotifywait = true }
+        local home = tmpdir .. "/home"
+        vim.fn.mkdir(home .. "/.copilot/session-state", "p")
+        local orig_home = vim.fn.getenv("HOME")
+        vim.fn.setenv("HOME", home)
+        local active = require("harness-decorators.active")
+
+        local ok, err = pcall(function()
+          active.set("copilot")
+          watcher.start()
+          assert.is_true(#spawned > 0, "a watcher was spawned")
+          assert.is_true(has(spawned[#spawned].args, home .. "/.copilot/session-state"))
+        end)
+
+        active.set("claude")
+        vim.fn.setenv("HOME", orig_home)
+        assert(ok, err)
+      end
+    )
   end)
 end)

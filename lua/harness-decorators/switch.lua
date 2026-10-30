@@ -97,7 +97,7 @@ function M.activate(new_harness)
 
   -- Finish imports before changing selection or bindings so a failed load can be retried.
   local adapter = require("harness-decorators." .. new_harness)
-  local watcher = require("harness-decorators.watcher")
+  require("harness-decorators.watcher")
   package.loaded["harness-decorators." .. new_harness .. ".env"] = nil
   require("harness-decorators." .. new_harness .. ".env")
   local specs = keymaps.build(new_harness)
@@ -109,16 +109,13 @@ function M.activate(new_harness)
 
   keymaps.clear()
   keymaps.apply(specs)
+  local old = active.get()
   active.set(new_harness)
 
   M.activate_adapter(new_harness, adapter)
 
-  -- Re-point the watcher; only the active harness is followed.
-  pcall(function()
-    watcher.stop()
-    watcher.set_harness(new_harness)
-    watcher.start()
-  end)
+  -- Observers such as the watcher (it registers on load) re-point themselves.
+  active.notify(new_harness, old)
 end
 
 ---After a pick: start following and show the selected harness.

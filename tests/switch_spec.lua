@@ -464,6 +464,35 @@ describe("switch activation failure boundaries", function()
   )
 
   it(
+    "Given the watcher restart throws, When pi is activated, Then the hook and env still ran and one WARN names the watcher",
+    function()
+      local hook_ran = false
+      working_pi(function()
+        hook_ran = true
+      end)
+      watcher.stop = function()
+        error("watcher stop failed")
+      end
+      local orig_log = utils.log
+      local logged = {}
+      utils.log = function(msg, level)
+        logged[#logged + 1] = { msg = msg, level = level }
+      end
+      local ok, err = pcall(sw.activate, "pi")
+      utils.log = orig_log
+      assert(ok, err)
+      assert.is_true(hook_ran)
+      assert.are.equal("pi", vim.env.NVIM_LLM_HARNESS)
+      assert.are.equal("pi", sw.current())
+      local warns = vim.tbl_filter(function(l)
+        return l.level == vim.log.levels.WARN and l.msg:find("activate: watcher failed", 1, true) ~= nil
+      end, logged)
+      assert.are.equal(1, #warns)
+      assert.truthy(warns[1].msg:find("watcher stop failed", 1, true))
+    end
+  )
+
+  it(
     "Given a throwing activation hook, When pi is activated, Then the watcher is still re-pointed without an escaping error",
     function()
       working_pi(function()

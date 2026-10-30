@@ -1,10 +1,14 @@
 local utils = require("harness-decorators.utils")
 local parser = require("harness-decorators.jsonl-parser")
+local active = require("harness-decorators.active")
 
----Harness adapter: per-harness paths, session identification and JSONL dialect
+---The active harness's adapter: per-harness paths, session identification and JSONL dialect
 ---parsing. The watcher is harness-agnostic - every dialect-specific decision
 ---goes through the adapter interface (see docs/ai/agents/adapter-structure.md).
-local adapter = require("harness-decorators." .. utils.harness)
+---@return table
+local function adapter()
+  return require("harness-decorators." .. active.get())
+end
 local sidecar = require("harness-decorators.sidecar")
 local edit_jump = require("harness-decorators.edit-jump")
 
@@ -101,7 +105,7 @@ local pending_notifications = {}
 ---Returns "match" (this is our session), "mismatch" (definitely not), or
 ---"unknown" (no evidence either way yet).
 local function session_ownership(lines, jsonl_path)
-  return adapter.session_ownership(M.nvim_cwd, lines, jsonl_path)
+  return adapter().session_ownership(M.nvim_cwd, lines, jsonl_path)
 end
 
 ---Extract the session id a set of JSONL lines declare for themselves (the pin key).
@@ -110,7 +114,7 @@ end
 ---@param lines string[]
 ---@return string?
 local function declared_session_id(lines)
-  local ok, id = pcall(adapter.session_id_from_lines, lines)
+  local ok, id = pcall(adapter().session_id_from_lines, lines)
   if ok and type(id) == "string" and #id > 0 then
     return id
   end
@@ -333,7 +337,7 @@ function M.process_jsonl_write(jsonl_path)
       try_pin_session(jsonl_path, declared_session_id({}))
 
       local base = file_size
-      local ok, result = pcall(adapter.on_pin, jsonl_path, file_size)
+      local ok, result = pcall(adapter().on_pin, jsonl_path, file_size)
       if ok and type(result) == "number" and result >= 0 then
         base = result
       end
@@ -418,11 +422,11 @@ function M.process_jsonl_write(jsonl_path)
   end
 
   --- Pinned session: check for reset commands and process tool results --------
-  local cmd = adapter.find_reset_command(lines)
+  local cmd = adapter().find_reset_command(lines)
   if cmd then
     local old_sid = utils.extract_session_id(M.pinned_jsonl_path)
     utils.log("reset command " .. cmd .. " detected; clearing session state", vim.log.levels.INFO)
-    if adapter.is_same_file_reset(cmd) then
+    if adapter().is_same_file_reset(cmd) then
       -- Same JSONL continues: clear history, keep the pin.
       jsonl_positions[jsonl_path] = { byte_pos = file_size, line_count = 0 }
       utils.reset_dedup()
@@ -643,7 +647,7 @@ end
 ---@return string[] dirs, boolean recursive
 local function resolve_watch(projects_dir)
   local is_macos = vim.uv.os_uname().sysname == "Darwin"
-  local recursive = not is_macos and not adapter.flat_sessions_dir
+  local recursive = not is_macos and not adapter().flat_sessions_dir
   return { projects_dir }, recursive
 end
 
@@ -653,10 +657,10 @@ end
 ---a cheap no-op. Adapters may still override via inotify_events() if their needs diverge.
 local function inotify_event_set()
   local base = "close_write,moved_to"
-  if adapter.flat_sessions_dir then
+  if adapter().flat_sessions_dir then
     base = base .. ",modify"
   end
-  local ev = adapter.inotify_events()
+  local ev = adapter().inotify_events()
   if type(ev) == "string" and #ev > 0 then
     return ev
   end
@@ -717,8 +721,8 @@ function M.start()
   -- Push-based adapters (currently pi) receive structured events from the harness extension and
   -- do not need a filesystem watcher. This is an intentional adapter mode, not a missing sessions
   -- directory, so do not emit the generic "following disabled" warning.
-  if adapter.push_following then
-    utils.log(utils.harness .. " edit following is provided by the harness extension", vim.log.levels.DEBUG)
+  if adapter().push_following then
+    utils.log(active.get() .. " edit following is provided by the harness extension", vim.log.levels.DEBUG)
     return
   end
 
@@ -729,9 +733,9 @@ function M.start()
   end
 
   -- The adapter resolves the sessions dir for its harness.
-  local projects_dir = adapter.projects_dir()
+  local projects_dir = adapter().projects_dir()
   if not projects_dir then
-    utils.log("no " .. utils.harness .. " sessions dir found; live JSONL following disabled", vim.log.levels.WARN)
+    utils.log("no " .. active.get() .. " sessions dir found; live JSONL following disabled", vim.log.levels.WARN)
     return
   end
 
@@ -800,15 +804,20 @@ function M.start()
   utils.log("watcher started on " .. projects_dir, vim.log.levels.DEBUG)
 end
 
----Re-point the watcher at a different harness at runtime: reload the adapter, update
----utils.harness, and wipe all per-session state. The caller runs stop()/start() around it.
+---Reload the active harness's adapter and wipe all per-session state.
+local function repoint()
+  package.loaded["harness-decorators." .. active.get()] = nil
+  adapter()
+  M.reset_all()
+end
+
+---Make `name` the active harness and re-point the watcher at it: reload the adapter and wipe all
+---per-session state. The caller runs stop()/start() around it. switch.activate does not call this;
+---it notifies the subscriber below.
 ---@param name string the new harness name (must match a sibling adapter dir)
 function M.set_harness(name)
-  utils.harness = name
-  package.loaded["harness-decorators." .. name] = nil
-  adapter = require("harness-decorators." .. name)
-
-  M.reset_all()
+  active.set(name)
+  repoint()
 end
 
 ---Stop the watcher process.
@@ -856,5 +865,12 @@ M._parse_watcher_line = parse_watcher_line
 M._parse_fswatch_line = parse_fswatch_line
 M._process_watcher_log = process_watcher_log
 M._reap_dead_watchers = reap_dead_watchers
+
+-- Only the active harness is followed: restart on every switch.
+active.subscribe("watcher", function()
+  M.stop()
+  repoint()
+  M.start()
+end)
 
 return M
