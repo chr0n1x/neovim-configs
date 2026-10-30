@@ -7,8 +7,8 @@ local utils = require("harness-decorators.utils")
 local title = require("harness-decorators.title")
 local park = require("harness-decorators.park")
 local agent_display = require("harness-decorators.agent-display")
+local active = require("harness-decorators.active")
 
-local current_harness = nil
 local zen_was_open = false
 
 -- Status glyphs for picker rows (each followed by a space); same states and groups as agent-display.
@@ -34,22 +34,22 @@ local function status_dot(name, bufs)
   return STATUS_DOTS[r.status] or STATUS_DOTS.unknown
 end
 
----@return string? the currently active harness name
+---@return string the currently active harness name
 function M.current()
-  return current_harness
+  return active.get()
 end
 
 ---Record the startup harness and mark it selected so the first <leader>c has a target.
 ---@param harness string
 function M.init(harness)
-  current_harness = harness
+  active.set(harness)
   park.set_selected(harness)
 end
 
 ---Make new_harness active: selection, keymaps, watcher. Other floats stay open.
 ---@param new_harness string
 function M.switch(new_harness)
-  if new_harness == current_harness then
+  if new_harness == M.current() then
     return
   end
   if not vim.tbl_contains(utils.list_harnesses(), new_harness) then
@@ -91,7 +91,7 @@ end
 ---watcher. Focus and the floats stay where they are, so focusing a float can call this directly.
 ---@param new_harness string
 function M.activate(new_harness)
-  if new_harness == current_harness or not vim.tbl_contains(utils.list_harnesses(), new_harness) then
+  if new_harness == M.current() or not vim.tbl_contains(utils.list_harnesses(), new_harness) then
     return
   end
 
@@ -109,7 +109,7 @@ function M.activate(new_harness)
 
   keymaps.clear()
   keymaps.apply(specs)
-  current_harness = new_harness
+  active.set(new_harness)
 
   M.activate_adapter(new_harness, adapter)
 
@@ -275,7 +275,7 @@ local function make_harness_previewer(bufs, installed_set)
         status = "not installed"
       elseif not has_live then
         status = "uninitialized"
-      elseif name == current_harness then
+      elseif name == M.current() then
         status = "active"
       else
         status = "backgrounded"
@@ -308,7 +308,7 @@ function M.order_harnesses(harnesses)
   local ranks = {}
   for _, h in ipairs(ordered) do
     local rank = 2
-    if h.name == current_harness then
+    if h.name == M.current() then
       rank = 0
     elseif not h.installed then
       rank = 3
@@ -360,7 +360,7 @@ function M.pick()
     if h.installed then
       installed_set[h.name] = true
     end
-    if h.name == current_harness then
+    if h.name == M.current() then
       active_index = index
     end
   end
