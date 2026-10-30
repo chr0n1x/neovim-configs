@@ -67,14 +67,13 @@ local HL_IDLE = "AgentDotIdle" -- green, all idle
 local HL_UNKNOWN = "AgentDotUnknown" -- hollow ring, all unknown
 local HL_BACKGROUND = "AgentDotBackground" -- dim gear marking the slot as background processes
 
----The currently-active harness name, or nil. Resolved lazily from park so the display module does
----not hard-depend on it at load time (avoids a require cycle); overridable via M._set_active for tests.
+---The active harness name (harness-decorators.active); overridable via M._set_active for tests.
 local active_override
 local function active_harness()
   if active_override ~= nil then
     return active_override
   end
-  return require("harness-decorators.park").selected_harness()
+  return require("harness-decorators.active").get()
 end
 
 ---The backgrounded (non-active) live agents, as a list of {name, status}.
@@ -324,7 +323,7 @@ M.HL_IDLE = HL_IDLE
 M.HL_UNKNOWN = HL_UNKNOWN
 M.HL_BACKGROUND = HL_BACKGROUND
 
----Test hook: override which harness is treated as active (nil = resolve from park). Lets specs pin
+---Test hook: override which harness is treated as active (nil = the active module). Lets specs pin
 ---which agents are backgrounded without driving real park selection state.
 ---@param name string?
 function M._set_active(name)

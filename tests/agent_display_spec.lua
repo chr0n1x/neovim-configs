@@ -44,6 +44,26 @@ describe("agent-display: component rendering", function()
     assert.are.equal("", display.component())
   end)
 
+  it(
+    "Given claude active with no park selection, When claude and maki are live, Then only maki is backgrounded",
+    function()
+      local active = require("harness-decorators.active")
+      local state = require("harness-decorators.state")
+      local saved_active, saved_records = active.get(), state.table
+      state._reset()
+      active.set("claude")
+      display._set_active(nil)
+      display._set_agents({
+        claude = { status = "idle", label = "a", pid = 1 },
+        maki = { status = "idle", label = "b", pid = 2 },
+      })
+      local out = display.component()
+      active.set(saved_active)
+      state.table = saved_records
+      assert.is_not_nil(out:find("1 agent in background", 1, true), out)
+    end
+  )
+
   it("renders '<gear> <dot> N agents in background' for backgrounded agents", function()
     display._set_agents({
       claude = { status = "working", label = "auth", pid = 1 },
