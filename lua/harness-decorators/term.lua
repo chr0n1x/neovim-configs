@@ -445,12 +445,15 @@ local function go_back(self)
 end
 
 ---<C-h>: return to the work window, leaving the float visible and collapsed.
--- In shelf mode, move left in tmux only from the focused fullscreen float;
--- otherwise do nothing.
+-- In shelf mode, the focused float slides to the shelf and focus goes back; an unfocused float
+-- stays put.
 ---@param self table the Snacks terminal instance (has :hide(), :show())
 function M.go_back_key(self)
   if self._shelf_mode then
-    shelf_tmux_nav(self, "L")
+    if self.win and vim.api.nvim_win_is_valid(self.win) and vim.api.nvim_get_current_win() == self.win then
+      shelve(self)
+      go_back(self)
+    end
     return
   end
   go_back(self)

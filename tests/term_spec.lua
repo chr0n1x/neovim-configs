@@ -1822,7 +1822,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
   )
 
   it(
-    "Given shelf mode on and the float focused at fullscreen, When <C-h> is pressed, Then focus moves to the tmux pane on the left, shelf mode stays on and the float stays focused at fullscreen",
+    "Given shelf mode on and the float focused at fullscreen, When <C-h> is pressed, Then focus goes back to the last window without a tmux move, shelf mode stays on and the float slides to the shelf",
     function()
       local work_win = vim.api.nvim_get_current_win()
       local inst = term.open("claude")
@@ -1830,6 +1830,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
       assert.is_true(shelve(inst), "precondition: shelved")
       vim.api.nvim_set_current_win(inst.win)
       assert.is_true(at_rect(inst, fullscreen_rect()), "precondition: focused at fullscreen")
+      require("harness-decorators.focus").last_win = work_win
 
       local real_system, real_tmux = vim.fn.system, vim.env.TMUX
       local calls = {}
@@ -1842,11 +1843,15 @@ describe("term: float mouse handling, minimized bars and flash", function()
       vim.fn.system, vim.env.TMUX = real_system, real_tmux
       assert.is_true(ok, tostring(err))
 
-      assert.are.same({ "tmux select-pane -L" }, calls)
+      assert.are.same({}, calls, "<C-h> must not move tmux panes")
       assert.is_true(inst._shelf_mode == true, "shelf mode must stay on")
-      vim.wait(400)
-      assert.are.equal(inst.win, vim.api.nvim_get_current_win(), "the float must keep nvim focus")
-      assert.are.same(fullscreen_rect(), rect_of(inst.win), "the float must stay fullscreen")
+      assert.are.equal(work_win, vim.api.nvim_get_current_win(), "focus should go back")
+      assert.is_true(
+        wait_for(function()
+          return at_rect(inst, shelf_rect())
+        end, 1500),
+        "should slide to the shelf: " .. vim.inspect(rect_of(inst.win))
+      )
     end
   )
 
@@ -1908,7 +1913,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
   end)
 
   it(
-    "Given shelf mode on and the float focused at fullscreen outside tmux, When <C-h> or <C-l> is pressed, Then nothing happens",
+    "Given shelf mode on and the float focused at fullscreen outside tmux, When <C-l> is pressed, Then nothing happens",
     function()
       local work_win = vim.api.nvim_get_current_win()
       local inst = term.open("claude")
@@ -1918,7 +1923,6 @@ describe("term: float mouse handling, minimized bars and flash", function()
       assert.is_true(at_rect(inst, fullscreen_rect()), "precondition: focused at fullscreen")
       local real_tmux = vim.env.TMUX
       vim.env.TMUX = nil
-      term.go_back_key(inst)
       term.shelf_key(inst)
       vim.env.TMUX = real_tmux
       vim.wait(400)
