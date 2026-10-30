@@ -153,4 +153,38 @@ describe("adapter default fields (stub base contract)", function()
       assert.is_nil(a.parse_tool_result("{}", 1))
     end)
   end
+
+  -- Watcher-probed optional fields each adapter defines itself. Every other probed field must be
+  -- absent both raw and through the stub metatable, so a default added to the stub fails here.
+  local probed = {
+    "on_pin",
+    "inotify_events",
+    "push_following",
+    "session_id",
+    "session_id_from_lines",
+    "flat_sessions_dir",
+    "on_activate",
+  }
+  local own = {
+    claude = { session_id_from_lines = true },
+    copilot = { session_id = true, session_id_from_lines = true, flat_sessions_dir = true },
+    maki = { on_pin = true, session_id_from_lines = true, flat_sessions_dir = true },
+    crush = {},
+    pi = { push_following = true, session_id = true, on_activate = true },
+    pig = {},
+  }
+  for name, fields in pairs(own) do
+    it(name .. ": watcher-probed optional fields are its own, none inherited", function()
+      local a = require("harness-decorators." .. name)
+      for _, field in ipairs(probed) do
+        if fields[field] then
+          assert.is_not_nil(rawget(a, field), name .. "." .. field .. " should be defined")
+        else
+          assert.is_nil(rawget(a, field), name .. "." .. field .. " should be absent")
+          assert.is_nil(a[field], name .. "." .. field .. " should not be inherited")
+        end
+        assert.are.equal(rawget(a, field), a[field], name .. "." .. field)
+      end
+    end)
+  end
 end)
