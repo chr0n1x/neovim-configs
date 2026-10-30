@@ -8,13 +8,42 @@ function M.dir()
   return vim.fn.stdpath("cache") .. "/harness"
 end
 
----Create M.dir() (owner-only: sidecars hold code from the sessions) and return it.
+---Create `dir` owner-only (sidecars hold code from the sessions).
+---@param dir string
+---@return boolean ok
+local function make_dir(dir)
+  if vim.fn.isdirectory(dir) == 1 then
+    return true
+  end
+  local ok, err = pcall(vim.fn.mkdir, dir, "p", tonumber("700", 8))
+  if not ok or vim.fn.isdirectory(dir) == 0 then
+    utils.log("cannot create sidecar dir " .. dir .. ": " .. tostring(err), vim.log.levels.WARN)
+    return false
+  end
+  return true
+end
+
+---Remove this nvim's sidecars on VimLeave, which runs after every VimLeavePre handler, so
+---edits delivered while init.lua's shutdown waits for the harnesses and the watcher are removed too.
+local function register_exit_cleanup()
+  local ok, cmds = pcall(vim.api.nvim_get_autocmds, { group = "HarnessSidecarCleanup", event = "VimLeave" })
+  if ok and #cmds > 0 then
+    return
+  end
+  vim.api.nvim_create_autocmd("VimLeave", {
+    group = vim.api.nvim_create_augroup("HarnessSidecarCleanup", { clear = true }),
+    callback = function()
+      M.remove_instance(vim.fn.getpid())
+    end,
+  })
+end
+
+---Create M.dir() and return it.
 ---@return string
 function M.ensure_dir()
   local dir = M.dir()
-  if vim.fn.isdirectory(dir) == 0 then
-    vim.fn.mkdir(dir, "p", tonumber("700", 8))
-  end
+  make_dir(dir)
+  register_exit_cleanup()
   return dir
 end
 
@@ -37,13 +66,6 @@ function M.remove_instance(nvim_pid)
   end
 end
 
-vim.api.nvim_create_autocmd("VimLeavePre", {
-  group = vim.api.nvim_create_augroup("HarnessSidecarCleanup", { clear = true }),
-  callback = function()
-    M.remove_instance(vim.fn.getpid())
-  end,
-})
-
 ---Derive the sidecar file path from a pinned JSONL session path.
 ---@param jsonl_path string|nil
 ---@return string|nil
@@ -58,7 +80,8 @@ function M.path_from_jsonl(jsonl_path)
   return M.path(session_id)
 end
 
----Append a raw JSONL line to the sidecar file.
+---Append a raw JSONL line to the sidecar file. Best effort: a directory or file that cannot be
+---written is logged and the line is dropped.
 ---@param sidecar_path string
 ---@param raw_line string
 function M.append(sidecar_path, raw_line)
@@ -66,11 +89,13 @@ function M.append(sidecar_path, raw_line)
     return
   end
   local dir = sidecar_path:match("(.*)/[^/]+$")
-  if dir and vim.fn.isdirectory(dir) == 0 then
-    vim.fn.mkdir(dir, "p", tonumber("700", 8))
+  if dir and not make_dir(dir) then
+    return
   end
-  local f = io.open(sidecar_path, "a")
+  register_exit_cleanup()
+  local f, err = io.open(sidecar_path, "a")
   if not f then
+    utils.log("cannot write sidecar " .. sidecar_path .. ": " .. tostring(err), vim.log.levels.WARN)
     return
   end
   f:write(raw_line, "\n")

@@ -144,4 +144,124 @@ describe("watcher pinned session", function()
       end
     )
   end)
+
+  describe("sidecar round trip", function()
+    local orig_stdpath, cache
+
+    before_each(function()
+      cache = tmpdir .. "/cache"
+      orig_stdpath = vim.fn.stdpath
+      vim.fn.stdpath = function(what)
+        if what == "cache" then
+          return cache
+        end
+        return orig_stdpath(what)
+      end
+    end)
+
+    after_each(function()
+      vim.fn.stdpath = orig_stdpath
+    end)
+
+    it(
+      "Given the sidecar directory cannot be created, When a valid edit line is processed, Then HarnessEdit still fires",
+      function()
+        local orig_mkdir = vim.fn.mkdir
+        vim.fn.mkdir = function()
+          error("E739: Cannot create directory")
+        end
+        append(path, { edit_line("nodir-1") })
+        local ok, err = pcall(watcher.process_jsonl_write, path)
+        vim.fn.mkdir = orig_mkdir
+        assert.is_true(ok, tostring(err))
+        assert.are.equal(1, #seen)
+        assert.are.equal("nodir-1", seen[1].event_uuid)
+      end
+    )
+
+    it(
+      "Given a watcher edit stored by edit-jump, When its record is previewed, Then the real sidecar lookup renders its diff",
+      function()
+        local jump_group = vim.api.nvim_create_augroup("WatcherPinnedRoundTripSpec", { clear = true })
+        edit_jump.create_jump_autocmds(jump_group)
+        append(path, { edit_line("rt-1") })
+        watcher.process_jsonl_write(path)
+        pcall(vim.api.nvim_del_augroup_by_id, jump_group)
+
+        local records = edit_jump.edit_sources[SID]
+        assert.is_not_nil(records, "edit-jump stored a record for the pinned session")
+        local record = records[#records]
+        assert.are.equal("rt-1", record.event_uuid)
+        assert.are.equal(cache .. "/harness/", record.sidecar_path:sub(1, #cache + #"/harness/"))
+        local sidecar = require("harness-decorators.sidecar")
+        local ev = sidecar.lookup(record.sidecar_path, record.event_uuid, record.event_timestamp, record.event_id)
+        assert.is_not_nil(ev, "the record's sidecar holds the event")
+        assert.is_truthy(sidecar.extract_diff(ev):find("added line", 1, true))
+      end
+    )
+  end)
+
+  describe("HarnessEdit handler errors", function()
+    local orig_log, logs, throw_group
+
+    before_each(function()
+      logs = {}
+      orig_log = utils.log
+      utils.log = function(msg, level)
+        logs[#logs + 1] = { msg = tostring(msg), level = level }
+      end
+      throw_group = vim.api.nvim_create_augroup("WatcherPinnedThrowSpec", { clear = true })
+      vim.api.nvim_create_autocmd("User", {
+        group = throw_group,
+        pattern = "HarnessEdit",
+        callback = function(args)
+          if args.data.event_uuid == "throw-1" then
+            error("handler blew up")
+          end
+        end,
+      })
+    end)
+
+    after_each(function()
+      utils.log = orig_log
+      pcall(vim.api.nvim_del_augroup_by_id, throw_group)
+    end)
+
+    it(
+      "Given a HarnessEdit handler that throws on a valid line, When the chunk is processed, Then nvim reports the error, it is not logged as a skipped JSONL line, and the next line still dispatches",
+      function()
+        append(path, { edit_line("throw-1"), edit_line("after-1") })
+        watcher.process_jsonl_write(path)
+
+        for _, l in ipairs(logs) do
+          assert.is_nil(l.msg:find("skipping JSONL line", 1, true), "a handler error is not a skipped JSONL line")
+        end
+        local uuids = {}
+        for _, d in ipairs(seen) do
+          uuids[#uuids + 1] = d.event_uuid
+        end
+        assert.are.same({ "throw-1", "after-1" }, uuids)
+      end
+    )
+
+    it(
+      "Given dispatching a parsed line throws, When the chunk is processed, Then the error reaches the caller instead of a skipped-line WARN",
+      function()
+        local sidecar = require("harness-decorators.sidecar")
+        local orig_append = sidecar.append
+        sidecar.append = function()
+          error("sidecar write failed")
+        end
+        append(path, { edit_line("side-1") })
+        local ok, err = pcall(watcher.process_jsonl_write, path)
+        sidecar.append = orig_append
+
+        assert.is_false(ok, "the dispatch error must surface")
+        assert.is_truthy(tostring(err):find("sidecar write failed", 1, true))
+        for _, l in ipairs(logs) do
+          assert.is_nil(l.msg:find("skipping JSONL line", 1, true), "a dispatch error is not a skipped JSONL line")
+        end
+      end
+    )
+  end)
 end)

@@ -89,12 +89,89 @@ describe("sidecar", function()
       end)
     end)
 
+    it("Given the directory cannot be created, Then append returns without raising and writes nothing", function()
+      local p = sidecar.path("abc123")
+      local orig_mkdir = vim.fn.mkdir
+      vim.fn.mkdir = function()
+        error("E739: Cannot create directory")
+      end
+      local ok, err = pcall(sidecar.append, p, '{"a":1}')
+      vim.fn.mkdir = orig_mkdir
+      assert.is_true(ok, tostring(err))
+      assert.is_nil(vim.uv.fs_stat(p))
+    end)
+
     it("creates the sidecar directory with mode 0700", function()
       local p = sidecar.path("abc123")
       sidecar.append(p, '{"a":1}')
       local st = assert(vim.uv.fs_stat(tmpdir .. "/cache/harness"))
       assert.are.equal(tonumber("700", 8), bit.band(st.mode, tonumber("777", 8)))
     end)
+  end)
+
+  describe("exit cleanup", function()
+    local orig_mod
+
+    local function cleanup_autocmds()
+      local ok, cmds = pcall(vim.api.nvim_get_autocmds, { group = "HarnessSidecarCleanup", event = "VimLeave" })
+      return ok and cmds or {}
+    end
+
+    before_each(function()
+      orig_mod = package.loaded["harness-decorators.sidecar"]
+      pcall(vim.api.nvim_del_augroup_by_name, "HarnessSidecarCleanup")
+      package.loaded["harness-decorators.sidecar"] = nil
+    end)
+
+    after_each(function()
+      package.loaded["harness-decorators.sidecar"] = orig_mod
+    end)
+
+    it("Given sidecar is only required, Then no exit cleanup autocmd is registered", function()
+      require("harness-decorators.sidecar")
+      assert.are.equal(0, #cleanup_autocmds())
+    end)
+
+    it(
+      "Given this nvim writes a sidecar, Then exactly one exit cleanup autocmd exists and firing it removes only this pid's sidecars",
+      function()
+        local fresh = require("harness-decorators.sidecar")
+        local own = fresh.path("abc123")
+        fresh.append(own, '{"a":1}')
+        fresh.append(own, '{"a":2}')
+        local other = fresh.dir() .. "/" .. (vim.fn.getpid() + 1) .. "-claude-events-session-abc123.jsonl"
+        local f = assert(io.open(other, "w"))
+        f:close()
+
+        assert.are.equal(1, #cleanup_autocmds())
+        vim.api.nvim_exec_autocmds("VimLeave", { group = "HarnessSidecarCleanup" })
+        assert.is_nil(vim.uv.fs_stat(own), "this nvim's sidecar is removed")
+        assert.is_not_nil(vim.uv.fs_stat(other), "another pid's sidecar is kept")
+      end
+    )
+
+    it(
+      "Given a producer appends while the VimLeavePre handlers run, When nvim exits, Then no sidecar with this pid remains",
+      function()
+        local fresh = require("harness-decorators.sidecar")
+        local own = fresh.path("abc123")
+        fresh.append(own, '{"a":1}')
+        local late = vim.api.nvim_create_augroup("SidecarLateProducerSpec", { clear = true })
+        vim.api.nvim_create_autocmd("VimLeavePre", {
+          group = late,
+          callback = function()
+            fresh.append(own, '{"a":2}')
+          end,
+        })
+
+        pcall(vim.api.nvim_exec_autocmds, "VimLeavePre", { group = "HarnessSidecarCleanup" })
+        vim.api.nvim_exec_autocmds("VimLeavePre", { group = late })
+        pcall(vim.api.nvim_exec_autocmds, "VimLeave", { group = "HarnessSidecarCleanup" })
+        vim.api.nvim_del_augroup_by_id(late)
+
+        assert.are.same({}, vim.fn.glob(fresh.dir() .. "/" .. vim.fn.getpid() .. "-*.jsonl", true, true))
+      end
+    )
   end)
 
   describe("lookup", function()

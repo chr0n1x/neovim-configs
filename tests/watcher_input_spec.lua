@@ -110,20 +110,51 @@ describe("watcher input parsing", function()
       assert.are.same({ "/p/h/a.jsonl", "/p/h/b.jsonl" }, got)
     end)
 
-    it("Given the log grew by more than 64KB, Then it skips to the end and logs the skip", function()
+    it("Given processing a logged path throws, Then the error is logged at ERROR", function()
       watcher.watcher_backend = "fswatch"
-      write_file(log, string.rep("/p/h/a.jsonl\n", 6000))
+      watcher.process_jsonl_write = function()
+        error("dispatch blew up")
+      end
+      write_file(log, "/p/h/a.jsonl\n")
       watcher._process_watcher_log()
-      assert.are.same({}, got)
-      assert.are.equal(vim.uv.fs_stat(log).size, watcher.watcher_last_pos)
-      local found
+      local found = false
       for _, l in ipairs(logs) do
-        if tostring(l.msg):find("skipped", 1, true) and l.level == vim.log.levels.WARN then
+        if l.level == vim.log.levels.ERROR and tostring(l.msg):find("dispatch blew up", 1, true) then
           found = true
         end
       end
-      assert.is_true(found, "expected a WARN log mentioning the skip")
+      assert.is_true(found)
     end)
+
+    it(
+      "Given the log grew by more than 64KB twice by different amounts, Then each poll skips to the end with the same WARN text and the byte count at DEBUG",
+      function()
+        watcher.watcher_backend = "fswatch"
+        write_file(log, string.rep("/p/h/a.jsonl\n", 6000))
+        watcher._process_watcher_log()
+        local f = assert(io.open(log, "a"))
+        f:write(string.rep("/p/h/b.jsonl\n", 7000))
+        f:close()
+        watcher._process_watcher_log()
+        assert.are.same({}, got)
+        assert.are.equal(vim.uv.fs_stat(log).size, watcher.watcher_last_pos)
+
+        local warns, debug_text = {}, ""
+        for _, l in ipairs(logs) do
+          local msg = tostring(l.msg)
+          if l.level == vim.log.levels.WARN and msg:find("skipped", 1, true) then
+            warns[#warns + 1] = msg
+          elseif l.level == vim.log.levels.DEBUG then
+            debug_text = debug_text .. msg .. "\n"
+          end
+        end
+        assert.are.equal(2, #warns, "one WARN per skip")
+        assert.are.equal(warns[1], warns[2], "the WARN text is the same for both skips")
+        assert.is_nil(warns[1]:find("78000", 1, true), "the WARN text carries no byte count")
+        assert.is_truthy(debug_text:find("78000", 1, true), "the first skip's byte count is logged at DEBUG")
+        assert.is_truthy(debug_text:find("91000", 1, true), "the second skip's byte count is logged at DEBUG")
+      end
+    )
   end)
 
   describe("reap_dead_watchers", function()
@@ -186,6 +217,13 @@ describe("watcher input parsing", function()
       local owner = dead_pid()
       local orphan = sleeper()
       seed(owner, orphan)
+      local orig_cmd = watcher._process_command
+      watcher._process_command = function(pid)
+        if pid == orphan then
+          return "inotifywait inotifywait -m -r /p"
+        end
+        return orig_cmd(pid)
+      end
 
       watcher._reap_dead_watchers(vim.fn.getpid())
 
@@ -199,6 +237,56 @@ describe("watcher input parsing", function()
       assert.is_false(exists(dir .. "/" .. owner .. ".watcher.log"))
       assert.is_false(exists(dir .. "/" .. owner .. "-claude-events-session-s1.jsonl"))
       assert.is_true(exists(dir), "the directory itself is kept")
+      watcher._process_command = orig_cmd
+    end)
+
+    it(
+      "Given a dead owner whose recorded watcher pid is now an unrelated live process, Then that process survives and the stale files are removed",
+      function()
+        local owner = dead_pid()
+        local unrelated = sleeper()
+        seed(owner, unrelated)
+
+        watcher._reap_dead_watchers(vim.fn.getpid())
+        vim.wait(200)
+
+        assert.is_true(alive(unrelated), "an unrelated process is never signaled")
+        assert.is_false(exists(dir .. "/" .. owner .. ".watcher.pid"))
+        assert.is_false(exists(dir .. "/" .. owner .. ".watcher.log"))
+        assert.is_false(exists(dir .. "/" .. owner .. "-claude-events-session-s1.jsonl"))
+      end
+    )
+
+    it("Given a dead owner's pidfile naming this nvim's pid, Then this nvim is never signaled", function()
+      local owner = dead_pid()
+      local me = vim.fn.getpid()
+      seed(owner, me)
+      local orig_kill, orig_cmd = vim.uv.kill, watcher._process_command
+      local signaled = {}
+      vim.uv.kill = function(pid, sig)
+        if sig ~= 0 then
+          signaled[#signaled + 1] = pid
+          return 0
+        end
+        return orig_kill(pid, sig)
+      end
+      watcher._process_command = function()
+        return "inotifywait inotifywait -m -r /p"
+      end
+      local ok, err = pcall(watcher._reap_dead_watchers, me)
+      vim.uv.kill, watcher._process_command = orig_kill, orig_cmd
+
+      assert.is_true(ok, tostring(err))
+      assert.are.same({}, signaled)
+      assert.is_false(exists(dir .. "/" .. owner .. ".watcher.pid"))
+    end)
+
+    it("recognizes inotifywait and fswatch process lines only", function()
+      assert.is_true(watcher._is_watcher_command("inotifywait inotifywait -m -r /p"))
+      assert.is_true(watcher._is_watcher_command("/opt/homebrew/bin/fswatch /opt/homebrew/bin/fswatch -r /p"))
+      assert.is_false(watcher._is_watcher_command("sleep sleep 60"))
+      assert.is_false(watcher._is_watcher_command(""))
+      assert.is_false(watcher._is_watcher_command(nil))
     end)
 
     it("Given a live owner nvim, Then its watcher and files are left alone", function()
@@ -223,6 +311,30 @@ describe("watcher input parsing", function()
 
       assert.is_true(alive(w))
       assert.is_true(exists(dir .. "/" .. me .. ".watcher.pid"))
+    end)
+
+    it("Given a dead nvim's sidecar with no watcher pidfile, Then the sidecar is removed", function()
+      local owner = dead_pid()
+      local side = dir .. "/" .. owner .. "-pi-events-session-s1.jsonl"
+      write_file(side, "{}\n")
+
+      watcher._reap_dead_watchers(vim.fn.getpid())
+
+      assert.is_false(exists(side))
+    end)
+
+    it("Given a live nvim's or this nvim's sidecar with no watcher pidfile, Then the sidecar is kept", function()
+      local owner = sleeper()
+      local me = vim.fn.getpid()
+      local live_side = dir .. "/" .. owner .. "-pi-events-session-s1.jsonl"
+      local own_side = dir .. "/" .. me .. "-pi-events-session-s1.jsonl"
+      write_file(live_side, "{}\n")
+      write_file(own_side, "{}\n")
+
+      watcher._reap_dead_watchers(me)
+
+      assert.is_true(exists(live_side))
+      assert.is_true(exists(own_side))
     end)
   end)
 end)

@@ -257,15 +257,13 @@ function M.process_recovered_lines(lines, line_offset)
   end
 end
 
----Parse one line of the pinned session and dispatch it. The notification logic (early vs complete
+---Dispatch one parsed line of the pinned session. The notification logic (early vs complete
 ---tool result) runs as a before_fire hook so it fires only when the autocmd fires.
 ---@param line string
 ---@param source_line integer
-local function dispatch_live_line(line, source_line)
-  local change_info = parser.parse_tool_result(line, source_line)
-  if not change_info then
-    return
-  end
+---@param change_info table The parsed line (non-nil).
+---@param line string
+local function dispatch_live_line(change_info, line)
   local dedup_key = change_info.dedup_key
   local fired = dispatch_change(change_info, line, function(ci)
     local fp = ci.file_path
@@ -386,9 +384,9 @@ function M.process_jsonl_write(jsonl_path)
   local this_id = declared_session_id(lines)
 
   if not M.pinned_jsonl_path then
-    -- Pin only on a cwd match that also declares an id; otherwise retry next write.
+    -- Pin on a cwd match, keyed by the declared id or, with none, by the path.
     local ownership = session_ownership(lines, jsonl_path)
-    if ownership == "match" and this_id then
+    if ownership == "match" then
       utils.log("no active pin, pinning " .. filename, vim.log.levels.DEBUG)
       try_pin_session(jsonl_path, this_id)
     elseif ownership == "mismatch" then
@@ -396,7 +394,7 @@ function M.process_jsonl_write(jsonl_path)
       M.ignored_jsonl_paths[jsonl_path] = true
       return
     else
-      -- "unknown", or a cwd match with no declared id yet: keep as candidate, retry next write.
+      -- "unknown": keep as candidate, retry next write.
       return
     end
   elseif this_id and M.pinned_session_id and this_id ~= M.pinned_session_id then
@@ -441,9 +439,12 @@ function M.process_jsonl_write(jsonl_path)
   end
 
   for i, line in ipairs(lines) do
-    local ok, err = pcall(dispatch_live_line, line, chunk_start_line + i - 1)
+    local source_line = chunk_start_line + i - 1
+    local ok, change_info = pcall(parser.parse_tool_result, line, source_line)
     if not ok then
-      utils.log("skipping JSONL line " .. (chunk_start_line + i - 1) .. ": " .. tostring(err), vim.log.levels.WARN)
+      utils.log("skipping JSONL line " .. source_line .. ": " .. tostring(change_info), vim.log.levels.WARN)
+    elseif change_info then
+      dispatch_live_line(change_info, line)
     end
   end
 end
@@ -471,10 +472,8 @@ local function process_watcher_log()
 
   -- File grew. If it grew too much, reset to avoid reading megabytes.
   if stat - M.watcher_last_pos > 65536 then
-    utils.log(
-      string.format("watcher log grew by %d bytes since the last poll; skipped to the end", stat - M.watcher_last_pos),
-      vim.log.levels.WARN
-    )
+    utils.log("watcher log grew past 64KB since the last poll; skipped to the end", vim.log.levels.WARN)
+    utils.log(string.format("watcher log skip: %d bytes", stat - M.watcher_last_pos), vim.log.levels.DEBUG)
     M.watcher_last_pos = stat
     f:close()
     return
@@ -494,7 +493,10 @@ local function process_watcher_log()
   for line in chunk:gmatch("([^\r\n]+)") do
     local ok, jsonl_path = pcall(parse_line, line)
     if ok and jsonl_path then
-      pcall(M.process_jsonl_write, jsonl_path)
+      local ok_write, err = pcall(M.process_jsonl_write, jsonl_path)
+      if not ok_write then
+        utils.log("processing " .. jsonl_path .. " failed: " .. tostring(err), vim.log.levels.ERROR)
+      end
     end
   end
 end
@@ -539,40 +541,79 @@ local function watcher_files(nvim_pid)
   return base .. ".log", base .. ".pid"
 end
 
----Reap watcher processes left behind by dead Neovim instances.
+---The `ps` line for a pid, "<command> <args>", or "" when no such process is visible.
+---@param pid integer
+---@return string
+function M._process_command(pid)
+  local ok, res = pcall(function()
+    return vim.system({ "ps", "-o", "comm=,args=", "-p", tostring(pid) }, { text = true }):wait()
+  end)
+  if not ok or res.code ~= 0 then
+    return ""
+  end
+  return vim.trim(res.stdout or "")
+end
+
+---True when a `ps` line (see M._process_command) is an inotifywait or fswatch process.
+---@param line string?
+---@return boolean
+function M._is_watcher_command(line)
+  local comm = type(line) == "string" and line:match("^(%S+)") or nil
+  local name = comm and comm:match("([^/]+)$")
+  return name == "inotifywait" or name == "fswatch"
+end
+
+---@param pid integer
+---@return boolean
+local function is_alive(pid)
+  -- signal 0 probes liveness without delivering a signal: non-nil => alive.
+  return vim.uv.kill(pid, 0) ~= nil
+end
+
+---Reap watcher processes and sidecars left behind by dead Neovim instances.
 ---
 ---Each nvim writes <sidecar.dir()>/<nvim_pid>.watcher.pid containing its watcher's pid. When an
 ---nvim exits cleanly, VimLeavePre runs stop(), which kills its watcher and removes the pidfile.
 ---But a crash or `kill -9` skips VimLeavePre, so the watcher (fswatch/inotifywait) is reparented
 ---to init/launchd and keeps running forever - an orphan. This walks every pidfile, and for any
 ---whose OWNER nvim is dead, kills the recorded watcher pid and removes that instance's log,
----pidfile and sidecars.
+---pidfile and sidecars. The files outlive a reboot, so the recorded pid is signaled only while
+---`ps` still shows it as an inotifywait or fswatch process, and never when it is this nvim.
+---Sidecars of a dead owner with no pidfile (a push-following harness runs no watcher) are removed
+---as well.
 ---
 ---Safe to run from any live instance: the owner-alive check (signal 0) means we
----never touch a running nvim's watcher, and we always skip our own pidfile.
+---never touch a running nvim's files, and we always skip our own.
 ---Concurrent sweeps from multiple instances race harmlessly (SIGTERM to an
 ---already-dead pid and os.remove of an already-gone file are both no-ops).
 ---@param self_pid number This nvim's pid, never reaped.
 local function reap_dead_watchers(self_pid)
   for _, pidfile in ipairs(vim.fn.glob(sidecar.dir() .. "/*.watcher.pid", true, true)) do
     local owner_pid = tonumber(pidfile:match("/(%d+)%.watcher%.pid$"))
-    if owner_pid and owner_pid ~= self_pid then
-      -- signal 0 probes liveness without delivering a signal: non-nil => alive.
-      local alive = vim.uv.kill(owner_pid, 0) ~= nil
-      if not alive then
-        local pf = io.open(pidfile, "r")
-        if pf then
-          local watcher_pid = pf:read("*a"):match("^%s*(%d+)%s*$")
-          pf:close()
-          if watcher_pid then
-            vim.uv.kill(tonumber(watcher_pid), 15)
-          end
+    if owner_pid and owner_pid ~= self_pid and not is_alive(owner_pid) then
+      local pf = io.open(pidfile, "r")
+      if pf then
+        local watcher_pid = tonumber(pf:read("*a"):match("^%s*(%d+)%s*$"))
+        pf:close()
+        if
+          watcher_pid
+          and watcher_pid ~= self_pid
+          and is_alive(watcher_pid)
+          and M._is_watcher_command(M._process_command(watcher_pid))
+        then
+          vim.uv.kill(watcher_pid, 15)
         end
-        local log = watcher_files(owner_pid)
-        os.remove(log)
-        os.remove(pidfile)
-        sidecar.remove_instance(owner_pid)
       end
+      local log = watcher_files(owner_pid)
+      os.remove(log)
+      os.remove(pidfile)
+      sidecar.remove_instance(owner_pid)
+    end
+  end
+  for _, file in ipairs(vim.fn.glob(sidecar.dir() .. "/*-*.jsonl", true, true)) do
+    local owner_pid = tonumber(file:match("/(%d+)%-[^/]*%.jsonl$"))
+    if owner_pid and owner_pid ~= self_pid and not is_alive(owner_pid) then
+      os.remove(file)
     end
   end
 end

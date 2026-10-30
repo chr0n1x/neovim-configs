@@ -101,6 +101,46 @@ describe("pi follow bridge", function()
       }, get())
     end)
 
+    it(
+      "Given the sidecar directory cannot be created, When a pi edit with a diff arrives, Then ingest does not raise and HarnessEdit still fires",
+      function()
+        local get = capture()
+        local tmp = vim.fn.tempname() .. "-pi-mkdir"
+        local orig_stdpath, orig_mkdir = vim.fn.stdpath, vim.fn.mkdir
+        vim.fn.stdpath = function(what)
+          if what == "cache" then
+            return tmp .. "/cache"
+          end
+          return orig_stdpath(what)
+        end
+        vim.fn.mkdir = function()
+          error("E739: Cannot create directory")
+        end
+        local ok, err = pcall(
+          follow.ingest,
+          b64({
+            kind = "edit",
+            file_path = "/tmp/x.lua",
+            session_id = "sid-m",
+            session_file = "/s/sid-m.jsonl",
+            event_id = "ev-m",
+            diff = " 9   a\n+10   b",
+          })
+        )
+        vim.fn.mkdir = orig_mkdir
+        vim.fn.stdpath = orig_stdpath
+        assert.is_true(ok, tostring(err))
+        vim.wait(500, function()
+          return get() ~= nil
+        end)
+        local data = get()
+        assert.is_not_nil(data, "HarnessEdit must still fire")
+        assert.are.equal("/tmp/x.lua", data.file_path)
+        assert.are.equal(10, data.starting_line)
+        assert.are.equal("sid-m", data.event_uuid)
+      end
+    )
+
     it("fails soft on garbage base64, non-table JSON, unknown kind, or missing file_path", function()
       local get = capture()
       assert.has_no.errors(function()

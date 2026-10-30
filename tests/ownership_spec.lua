@@ -182,15 +182,20 @@ describe("watcher pin with the stub base's optional fields", function()
     vim.fn.delete(dir, "rf")
   end)
 
-  it("Given no own session_id_from_lines, When cwd-matching lines arrive, Then the file never pins", function()
-    adapter.session_id_from_lines = nil
-    local path = dir .. "/stem-1234.jsonl"
-    append(path, { claude_line("declared-id", cwd) })
-    watcher.process_jsonl_write(path)
-    append(path, { claude_line("declared-id", cwd) })
-    watcher.process_jsonl_write(path)
-    assert.is_nil(watcher.pinned_jsonl_path)
-  end)
+  it(
+    "Given no own session_id_from_lines, When cwd-matching lines arrive after an unknown first encounter, Then the file pins keyed by the filename stem",
+    function()
+      adapter.session_id_from_lines = nil
+      local path = dir .. "/stem-1234.jsonl"
+      append(path, { claude_line("declared-id", cwd) })
+      watcher.process_jsonl_write(path)
+      assert.is_nil(watcher.pinned_jsonl_path, "the first encounter is unknown")
+      append(path, { claude_line("declared-id", cwd) })
+      watcher.process_jsonl_write(path)
+      assert.are.equal(path, watcher.pinned_jsonl_path)
+      assert.are.equal("stem-1234", watcher.pinned_session_id)
+    end
+  )
 
   it(
     "Given no own session_id_from_lines, When a file pins on first encounter, Then the key is the filename stem",
@@ -224,4 +229,44 @@ describe("watcher pin with the stub base's optional fields", function()
     assert.are.equal(1, #seen)
     assert.are.equal("new-1", seen[1].event_uuid)
   end)
+end)
+
+-- Copilot declares no session id inside its lines; the id is the parent dir of events.jsonl.
+describe("watcher pin for copilot", function()
+  local dir, cwd
+  local sid = "cccc3333"
+
+  before_each(function()
+    watcher.set_harness("copilot")
+    cwd = vim.uv.cwd()
+    watcher.nvim_cwd = cwd
+    dir = vim.fn.tempname() .. "-copilot-pin"
+    vim.fn.mkdir(dir .. "/" .. sid, "p")
+  end)
+
+  after_each(function()
+    watcher.set_harness("claude")
+    watcher.nvim_cwd = nil
+    vim.fn.delete(dir, "rf")
+  end)
+
+  it(
+    "Given copilot, When events.jsonl is first seen before its ownership can be decided and a later write arrives once it matches, Then the session pins",
+    function()
+      local path = dir .. "/" .. sid .. "/events.jsonl"
+      local f = assert(io.open(path, "w"))
+      f:close()
+      watcher.process_jsonl_write(path)
+      assert.is_nil(watcher.pinned_jsonl_path, "precondition: ownership is unknown on first encounter")
+
+      f = assert(io.open(path, "a"))
+      f:write(vim.json.encode({ type = "session.start", data = { context = { cwd = cwd } } }) .. "\n")
+      f:write('{"type":"user.message"}\n')
+      f:close()
+      watcher.process_jsonl_write(path)
+
+      assert.are.equal(path, watcher.pinned_jsonl_path)
+      assert.are.equal(sid, watcher.pinned_session_id)
+    end
+  )
 end)

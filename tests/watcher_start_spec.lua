@@ -164,7 +164,7 @@ describe("watcher.start", function()
       end
 
       watcher.stop()
-      vim.api.nvim_exec_autocmds("VimLeavePre", { group = "HarnessSidecarCleanup" })
+      vim.api.nvim_exec_autocmds("VimLeave", { group = "HarnessSidecarCleanup" })
 
       assert.is_false(exists(log))
       assert.is_false(exists(pidfile))
@@ -176,5 +176,54 @@ describe("watcher.start", function()
       vim.uv.kill(other, 9)
       other_handle:close()
     end)
+
+    it(
+      "Given claude's watcher is running, When copilot is activated, Then the old watcher stops and the new watcher's log and pidfile are valid at the reused paths",
+      function()
+        installed = { inotifywait = true }
+        local home = tmpdir .. "/home"
+        vim.fn.mkdir(home .. "/.claude/projects", "p")
+        vim.fn.mkdir(home .. "/.copilot/session-state", "p")
+        local orig_home = vim.fn.getenv("HOME")
+        vim.fn.setenv("HOME", home)
+        local switch = require("harness-decorators.switch")
+        switch.init("claude")
+        watcher.set_harness("claude")
+
+        local ok, err = pcall(function()
+          watcher.start()
+          local old_pid = watcher.watcher_pid
+          local log, pidfile = watcher.watcher_log, watcher.watcher_pidfile
+          assert.is_not_nil(old_pid, "precondition: claude's watcher is running")
+
+          switch.activate("copilot")
+          vim.wait(300)
+
+          assert.is_true(
+            vim.wait(2000, function()
+              return vim.uv.kill(old_pid, 0) ~= 0
+            end),
+            "the old watcher must be stopped"
+          )
+          assert.are.equal("copilot", utils.harness)
+          assert.is_not_nil(watcher.watcher_handle, "a new watcher runs")
+          assert.are_not.equal(old_pid, watcher.watcher_pid)
+          assert.are.equal(log, watcher.watcher_log)
+          assert.are.equal(pidfile, watcher.watcher_pidfile)
+          assert.is_true(exists(log), "the new watcher's log exists")
+          local pf = assert(io.open(pidfile, "r"))
+          local recorded = pf:read("*a")
+          pf:close()
+          assert.are.equal(tostring(watcher.watcher_pid), recorded)
+          assert.is_true(has(spawned[#spawned].args, home .. "/.copilot/session-state"))
+        end)
+
+        pcall(switch.activate, "claude")
+        vim.fn.setenv("HOME", orig_home)
+        watcher.set_harness("claude")
+        adapter = require("harness-decorators.claude")
+        assert(ok, err)
+      end
+    )
   end)
 end)
