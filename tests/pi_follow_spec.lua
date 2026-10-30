@@ -76,6 +76,31 @@ describe("pi follow bridge", function()
       assert.are.equal(10, data.starting_line)
     end)
 
+    it("carries the session file, session id, event id and delta in the payload", function()
+      local get = capture()
+      follow.ingest(b64({
+        kind = "edit",
+        file_path = "/tmp/x.lua",
+        session_id = "sid-1",
+        session_file = "/s/sid-1.jsonl",
+        event_id = "ev-1",
+        delta = "1->2 lines",
+        starting_line = 5,
+      }))
+      vim.wait(500, function()
+        return get() ~= nil
+      end)
+      assert.are.same({
+        file_path = "/tmp/x.lua",
+        operation = "Edit",
+        starting_line = 5,
+        delta = "1->2 lines",
+        jsonl_path = "/s/sid-1.jsonl",
+        event_uuid = "sid-1",
+        event_id = "ev-1",
+      }, get())
+    end)
+
     it("fails soft on garbage base64, non-table JSON, unknown kind, or missing file_path", function()
       local get = capture()
       assert.has_no.errors(function()

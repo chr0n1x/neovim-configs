@@ -90,6 +90,24 @@ describe("watcher dispatch: HarnessEdit fires with the parsed fields", function(
     assert.are.equal(2, #seen, "the duplicate dedup_key must not fire twice (only the first)")
   end)
 
+  it("the payload carries all nine HarnessEdit fields", function()
+    watcher.pinned_jsonl_path = "/home/u/.claude/projects/x/deadbeef.jsonl"
+    utils.reset_dedup()
+    seen = {}
+    watcher.process_recovered_lines({ edit_line("uuid-full") }, 10)
+    assert.are.equal(1, #seen)
+    assert.are.same({
+      file_path = vim.uv.cwd() .. "/tests/_watcher_dispatch_target.txt",
+      operation = "Edit",
+      starting_line = 3,
+      delta = "3->4 lines",
+      source_line = 11,
+      jsonl_path = "/home/u/.claude/projects/x/deadbeef.jsonl",
+      event_uuid = "uuid-full",
+      event_timestamp = 1700000000000,
+    }, seen[1])
+  end)
+
   it("does not dispatch a line that parses to no change", function()
     watcher.pinned_jsonl_path = "/home/u/.claude/projects/x/deadbeef.jsonl"
     seen = {}

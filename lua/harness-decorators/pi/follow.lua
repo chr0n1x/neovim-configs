@@ -127,20 +127,15 @@ local function fire_edit(data)
     )
   end
   vim.schedule(function()
-    vim.api.nvim_exec_autocmds("User", {
-      pattern = "HarnessEdit",
-      data = {
-        file_path = file_path,
-        operation = data.operation or "Edit",
-        starting_line = starting_line,
-        delta = data.delta,
-        source_line = nil,
-        jsonl_path = data.session_file,
-        event_uuid = session_id,
-        event_timestamp = nil,
-        event_id = event_id,
-      },
-    })
+    -- Required here: the watcher loads the active adapter, which can be pi itself.
+    require("harness-decorators.watcher").fire_harness_edit({
+      file_path = file_path,
+      operation = data.operation or "Edit",
+      starting_line = starting_line,
+      delta = data.delta,
+      event_uuid = session_id,
+      event_id = event_id,
+    }, data.session_file)
   end)
 end
 

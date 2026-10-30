@@ -2,29 +2,47 @@
 local utils = require("harness-decorators.utils")
 local M = {}
 
----Get the USER env var, warn and return "unknown-user" if not set.
-local function get_user()
-  local user = os.getenv("USER")
-  if not user then
-    utils.log("USER env var not set, using 'unknown-user'", vim.log.levels.WARN)
-    return "unknown-user"
+---Directory holding sidecars and the watcher's log and pidfile, shared by every nvim instance.
+---@return string
+function M.dir()
+  return vim.fn.stdpath("cache") .. "/harness"
+end
+
+---Create M.dir() (owner-only: sidecars hold code from the sessions) and return it.
+---@return string
+function M.ensure_dir()
+  local dir = M.dir()
+  if vim.fn.isdirectory(dir) == 0 then
+    vim.fn.mkdir(dir, "p", tonumber("700", 8))
   end
-  return user
+  return dir
 end
 
 ---Derive the sidecar file path from a session ID.
 ---The filename is harness-specific; each adapter provides `sidecar_name()`.
----Format: /tmp/nvim.${USER}/${pid}-<harness-sidecar-name>.jsonl
+---Format: <M.dir()>/<nvim pid>-<harness-sidecar-name>.jsonl
 ---@param session_id string
 ---@return string
 function M.path(session_id)
-  local user = get_user()
-  local neovim_pid = tostring(vim.uv.os_getppid())
-  local dir = string.format("/tmp/nvim.%s", user)
   local adapter = require("harness-decorators." .. utils.harness)
   local name = adapter.sidecar_name(session_id)
-  return string.format("%s/%s-%s.jsonl", dir, neovim_pid, name)
+  return string.format("%s/%d-%s.jsonl", M.dir(), vim.fn.getpid(), name)
 end
+
+---Remove every sidecar written by the nvim with this pid, by exact file name.
+---@param nvim_pid integer
+function M.remove_instance(nvim_pid)
+  for _, file in ipairs(vim.fn.glob(string.format("%s/%d-*.jsonl", M.dir(), nvim_pid), true, true)) do
+    os.remove(file)
+  end
+end
+
+vim.api.nvim_create_autocmd("VimLeavePre", {
+  group = vim.api.nvim_create_augroup("HarnessSidecarCleanup", { clear = true }),
+  callback = function()
+    M.remove_instance(vim.fn.getpid())
+  end,
+})
 
 ---Derive the sidecar file path from a pinned JSONL session path.
 ---@param jsonl_path string|nil
@@ -47,10 +65,9 @@ function M.append(sidecar_path, raw_line)
   if not sidecar_path then
     return
   end
-  -- Ensure /tmp/nvim.$USER exists.
-  local dir = sidecar_path:match("(.*/)[^/]+$")
-  if dir then
-    vim.uv.fs_mkdir(dir, 493) -- 0755
+  local dir = sidecar_path:match("(.*)/[^/]+$")
+  if dir and vim.fn.isdirectory(dir) == 0 then
+    vim.fn.mkdir(dir, "p", tonumber("700", 8))
   end
   local f = io.open(sidecar_path, "a")
   if not f then

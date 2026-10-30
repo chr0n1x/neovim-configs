@@ -1,7 +1,7 @@
 -- Contract for M.shutdown() (bound to <leader>qq via the HarnessShutdown user command).
 --
 -- The spec drives M.shutdown() with a real terminal job in a state.table entry and a real
--- inotifywait spawned on /tmp (via watcher.start, which needs $USER - set by ci.sh), and
+-- inotifywait spawned via watcher.start, and
 -- asserts that by the time shutdown returns, every side effect is verifiably complete:
 -- the harness process is dead, the inotify log and pidfile are gone from disk, and the
 -- watcher module is left stopped. The actual :qa! is stubbed (via M._quit_cmd) so the
@@ -43,7 +43,6 @@ end
 describe("M.shutdown: <leader>qq cleans up before :qa!", function()
   local quit_called
   local orig_quit_cmd
-  local orig_user
   local harness_buf
   local harness_jid
   local harness_pid
@@ -54,11 +53,6 @@ describe("M.shutdown: <leader>qq cleans up before :qa!", function()
 
   setup(function()
     assert.are.equal("claude", utils.harness, "shutdown spec assumes the claude adapter")
-
-    -- watcher.start() derives its /tmp paths from $USER; the test container does not
-    -- set it, so provide a stable value for the duration of the test.
-    orig_user = vim.fn.getenv("USER")
-    vim.fn.setenv("USER", "nvimtest")
 
     quit_called = false
     orig_quit_cmd = init._quit_cmd
@@ -96,7 +90,7 @@ describe("M.shutdown: <leader>qq cleans up before :qa!", function()
     assert.is_true(vim.bo[harness_buf].channel > 0, "harness buffer must have a channel")
 
     -- A real inotify watcher via the normal start path, so cleanup_files() has real
-    -- /tmp/nvim.$USER.$PID.inotify.{log,pid} paths to remove. The claude adapter
+    -- <stdpath cache>/harness/<pid>.watcher.{log,pid} paths to remove. The claude adapter
     -- points at $HOME/.claude/projects, which the test container does not have -
     -- create it for the duration of the test.
     local ok_adapter, adapter = pcall(require, "harness-decorators." .. utils.harness)
@@ -108,18 +102,10 @@ describe("M.shutdown: <leader>qq cleans up before :qa!", function()
     watcher_was_running = watcher.watcher_handle ~= nil
     log_path = watcher.watcher_log
     pidfile_path = watcher.watcher_pidfile
-    assert.is_true(
-      watcher_was_running,
-      "watcher must have started (inotifywait available, $USER set, projects dir exists)"
-    )
+    assert.is_true(watcher_was_running, "watcher must have started (inotifywait available, projects dir exists)")
   end)
 
   teardown(function()
-    if orig_user ~= nil and orig_user ~= "" then
-      vim.fn.setenv("USER", orig_user)
-    else
-      vim.fn.setenv("USER", "")
-    end
     init._quit_cmd = orig_quit_cmd
     state._reset()
     -- Kill by pid: the jid is already invalid after shutdown's SIGTERM reaped it.

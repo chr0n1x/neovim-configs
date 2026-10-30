@@ -23,6 +23,27 @@ M.ignored_jsonl_paths = {}
 ---CWD of this Neovim instance, set at startup.
 M.nvim_cwd = nil
 
+---Fire the User HarnessEdit autocmd with the 9-field data table consumed by edit-jump.lua and the
+---history picker. The watcher and pi/follow.lua both build the payload here.
+---@param change_info table change_info shape from jsonl-parser.make_change_info
+---@param jsonl_path string|nil the session file the edit came from
+function M.fire_harness_edit(change_info, jsonl_path)
+  vim.api.nvim_exec_autocmds("User", {
+    pattern = "HarnessEdit",
+    data = {
+      file_path = change_info.file_path,
+      operation = change_info.operation,
+      starting_line = change_info.starting_line,
+      delta = change_info.delta,
+      source_line = change_info.source_line,
+      jsonl_path = jsonl_path,
+      event_uuid = change_info.event_uuid,
+      event_timestamp = change_info.event_timestamp,
+      event_id = change_info.event_id,
+    },
+  })
+end
+
 ---Append a raw JSONL line to the sidecar file for the current pinned session.
 local function append_sidecar(raw_line)
   local sp = sidecar.path_from_jsonl(M.pinned_jsonl_path)
@@ -30,9 +51,7 @@ local function append_sidecar(raw_line)
 end
 
 ---Dispatch a single parsed change: append it to the sidecar, gate on the dedup key, and -
----when not already seen - mark it seen and fire the User HarnessEdit autocmd with the
----9-field data table consumed by edit-jump.lua and the history picker. This is the one
----place that builds that data table, so its shape changes in exactly one spot.
+---when not already seen - mark it seen and fire HarnessEdit via M.fire_harness_edit.
 ---@param change_info table The result of parser.parse_tool_result (non-nil).
 ---@param line string The raw JSONL line, appended to the sidecar.
 ---@param before_fire? fun(change_info: table) Optional hook run after the dedup key is
@@ -52,20 +71,7 @@ local function dispatch_change(change_info, line, before_fire)
   if before_fire then
     before_fire(change_info)
   end
-  vim.api.nvim_exec_autocmds("User", {
-    pattern = "HarnessEdit",
-    data = {
-      file_path = change_info.file_path,
-      operation = change_info.operation,
-      starting_line = change_info.starting_line,
-      delta = change_info.delta,
-      source_line = change_info.source_line,
-      jsonl_path = M.pinned_jsonl_path,
-      event_uuid = change_info.event_uuid,
-      event_timestamp = change_info.event_timestamp,
-      event_id = change_info.event_id,
-    },
-  })
+  M.fire_harness_edit(change_info, M.pinned_jsonl_path)
   return true
 end
 
@@ -149,7 +155,7 @@ function M.reset_pin_state()
 end
 
 ---Clear pin + pending notifications on a session switch; keeps byte offsets and earlier sessions' edit history.
-local function reset_session_state(_old_session_id)
+local function reset_session_state()
   reset({ pin = true, pending = true })
 end
 
@@ -173,7 +179,7 @@ local function try_pin_session(jsonl_path, declared_id)
   if old_session_id then
     utils.log("re-pin: moving off session " .. old_session_id:sub(1, 8), vim.log.levels.DEBUG)
   end
-  reset_session_state(old_session_id)
+  reset_session_state()
 
   M.pinned_jsonl_path = jsonl_path
   -- Prefer the declared id; fall back to path inference for dialects without an in-line id.
@@ -250,6 +256,43 @@ function M.process_recovered_lines(lines, line_offset)
     if change_info then
       dispatch_change(change_info, line)
     end
+  end
+end
+
+---Parse one line of the pinned session and dispatch it. The notification logic (early vs complete
+---tool result) runs as a before_fire hook so it fires only when the autocmd fires.
+---@param line string
+---@param source_line integer
+local function dispatch_live_line(line, source_line)
+  local change_info = parser.parse_tool_result(line, source_line)
+  if not change_info then
+    return
+  end
+  local dedup_key = change_info.dedup_key
+  local fired = dispatch_change(change_info, line, function(ci)
+    local fp = ci.file_path
+    local line_str = ci.starting_line and ":" .. ci.starting_line or ""
+
+    if ci.starting_line then
+      -- The complete tool result arrived: replace the early (line-less)
+      -- notification for this file, if any.
+      if pending_notifications[fp] then
+        utils.log(fp .. line_str, vim.log.levels.INFO, { replace = pending_notifications[fp] })
+        pending_notifications[fp] = nil
+      else
+        utils.log(fp .. line_str)
+      end
+      utils.log("firing autocmd HarnessEdit @ " .. fp .. line_str, vim.log.levels.DEBUG)
+    else
+      -- Early event (no line info yet): show a provisional notification
+      -- that the tool result will replace once it lands.
+      local handle = utils.log(fp, vim.log.levels.INFO)
+      pending_notifications[fp] = handle
+      utils.log("early tool_use @ " .. fp, vim.log.levels.DEBUG)
+    end
+  end)
+  if not fired and dedup_key then
+    utils.log("NOT firing autocmd; SEEN " .. dedup_key:sub(1, 8), vim.log.levels.DEBUG)
   end
 end
 
@@ -396,42 +439,15 @@ function M.process_jsonl_write(jsonl_path)
       pending_notifications = {}
     else
       -- Session will switch to a different JSONL.
-      reset_session_state(old_sid)
+      reset_session_state()
     end
     return
   end
 
   for i, line in ipairs(lines) do
-    local change_info = parser.parse_tool_result(line, chunk_start_line + i - 1)
-    if change_info then
-      -- The notification logic (early vs complete tool result) runs as a before_fire hook so it
-      -- fires only when the autocmd fires.
-      local dedup_key = change_info.dedup_key
-      local fired = dispatch_change(change_info, line, function(ci)
-        local fp = ci.file_path
-        local line_str = ci.starting_line and ":" .. ci.starting_line or ""
-
-        if ci.starting_line then
-          -- The complete tool result arrived: replace the early (line-less)
-          -- notification for this file, if any.
-          if pending_notifications[fp] then
-            utils.log(fp .. line_str, vim.log.levels.INFO, { replace = pending_notifications[fp] })
-            pending_notifications[fp] = nil
-          else
-            utils.log(fp .. line_str)
-          end
-          utils.log("firing autocmd HarnessEdit @ " .. fp .. line_str, vim.log.levels.DEBUG)
-        else
-          -- Early event (no line info yet): show a provisional notification
-          -- that the tool result will replace once it lands.
-          local handle = utils.log(fp, vim.log.levels.INFO)
-          pending_notifications[fp] = handle
-          utils.log("early tool_use @ " .. fp, vim.log.levels.DEBUG)
-        end
-      end)
-      if not fired and dedup_key then
-        utils.log("NOT firing autocmd; SEEN " .. dedup_key:sub(1, 8), vim.log.levels.DEBUG)
-      end
+    local ok, err = pcall(dispatch_live_line, line, chunk_start_line + i - 1)
+    if not ok then
+      utils.log("skipping JSONL line " .. (chunk_start_line + i - 1) .. ": " .. tostring(err), vim.log.levels.WARN)
     end
   end
 end
@@ -459,6 +475,10 @@ local function process_watcher_log()
 
   -- File grew. If it grew too much, reset to avoid reading megabytes.
   if stat - M.watcher_last_pos > 65536 then
+    utils.log(
+      string.format("watcher log grew by %d bytes since the last poll; skipped to the end", stat - M.watcher_last_pos),
+      vim.log.levels.WARN
+    )
     M.watcher_last_pos = stat
     f:close()
     return
@@ -515,14 +535,22 @@ local function on_watcher_exit(code)
   cleanup_files()
 end
 
+---Watcher log and pidfile paths for the nvim with this pid.
+---@param nvim_pid integer
+---@return string log, string pidfile
+local function watcher_files(nvim_pid)
+  local base = string.format("%s/%d.watcher", sidecar.dir(), nvim_pid)
+  return base .. ".log", base .. ".pid"
+end
+
 ---Reap watcher processes left behind by dead Neovim instances.
 ---
----Each nvim writes /tmp/nvim.$USER.<nvim_pid>.inotify.pid containing its
----watcher's pid. When an nvim exits cleanly, VimLeavePre runs stop(), which kills its
----watcher and removes the pidfile. But a crash or `kill -9` skips VimLeavePre,
----so the watcher (fswatch/inotifywait) is reparented to init/launchd and keeps
----running forever - an orphan. This walks every pidfile, and for any whose
----OWNER nvim is dead, kills the recorded watcher pid and removes the pidfile.
+---Each nvim writes <sidecar.dir()>/<nvim_pid>.watcher.pid containing its watcher's pid. When an
+---nvim exits cleanly, VimLeavePre runs stop(), which kills its watcher and removes the pidfile.
+---But a crash or `kill -9` skips VimLeavePre, so the watcher (fswatch/inotifywait) is reparented
+---to init/launchd and keeps running forever - an orphan. This walks every pidfile, and for any
+---whose OWNER nvim is dead, kills the recorded watcher pid and removes that instance's log,
+---pidfile and sidecars.
 ---
 ---Safe to run from any live instance: the owner-alive check (signal 0) means we
 ---never touch a running nvim's watcher, and we always skip our own pidfile.
@@ -530,16 +558,11 @@ end
 ---already-dead pid and os.remove of an already-gone file are both no-ops).
 ---@param self_pid number This nvim's pid, never reaped.
 local function reap_dead_watchers(self_pid)
-  local user = os.getenv("USER")
-  if not user then
-    return
-  end
-  local pidfile_pattern = string.format("/tmp/nvim.%s.*.inotify.pid", user)
-  for _, pidfile in ipairs(vim.fn.glob(pidfile_pattern, false, true)) do
-    local owner_pid = pidfile:match("nvim%.[^.]+%.(%d+)%.inotify%.pid$")
-    if owner_pid and owner_pid ~= tostring(self_pid) then
+  for _, pidfile in ipairs(vim.fn.glob(sidecar.dir() .. "/*.watcher.pid", true, true)) do
+    local owner_pid = tonumber(pidfile:match("/(%d+)%.watcher%.pid$"))
+    if owner_pid and owner_pid ~= self_pid then
       -- signal 0 probes liveness without delivering a signal: non-nil => alive.
-      local alive = vim.uv.kill(tonumber(owner_pid), 0) ~= nil
+      local alive = vim.uv.kill(owner_pid, 0) ~= nil
       if not alive then
         local pf = io.open(pidfile, "r")
         if pf then
@@ -549,7 +572,10 @@ local function reap_dead_watchers(self_pid)
             vim.uv.kill(tonumber(watcher_pid), 15)
           end
         end
+        local log = watcher_files(owner_pid)
+        os.remove(log)
         os.remove(pidfile)
+        sidecar.remove_instance(owner_pid)
       end
     end
   end
@@ -623,7 +649,7 @@ end
 ---Spawn fswatch, redirecting its stdout (bare path per line) to `log_path`.
 ---Watches `dirs`; passes -r only when `recursive` is set (see resolve_watch).
 local function spawn_fswatch(dirs, log_path, recursive)
-  local fd = vim.uv.fs_open(log_path, "w", tonumber("644", 8))
+  local fd = vim.uv.fs_open(log_path, "w", tonumber("600", 8))
   if not fd then
     return nil
   end
@@ -682,19 +708,13 @@ function M.start()
   end
   f:close()
 
-  local user = os.getenv("USER")
-  if not user then
-    utils.log("$USER not set; live JSONL following disabled", vim.log.levels.WARN)
-    return
-  end
-
   -- Capture CWD at startup for session identification.
   M.nvim_cwd = vim.fn.getcwd()
 
   -- Per-pid paths avoid collisions when multiple Neovim instances run.
   local nvim_pid = vim.fn.getpid()
-  M.watcher_log = string.format("/tmp/nvim.%s.%d.inotify.log", user, nvim_pid)
-  M.watcher_pidfile = string.format("/tmp/nvim.%s.%d.inotify.pid", user, nvim_pid)
+  sidecar.ensure_dir()
+  M.watcher_log, M.watcher_pidfile = watcher_files(nvim_pid)
   M.watcher_last_pos = 0
 
   -- Kill watchers from dead Neovim instances using pidfiles. Also runs
@@ -796,5 +816,10 @@ function M.stop()
     cleanup_files()
   end
 end
+M._filter_jsonl_path = filter_jsonl_path
+M._parse_watcher_line = parse_watcher_line
+M._parse_fswatch_line = parse_fswatch_line
+M._process_watcher_log = process_watcher_log
+M._reap_dead_watchers = reap_dead_watchers
 
 return M
