@@ -173,10 +173,7 @@ local function jump_to_edit(data, file_path)
         end
       end, 100)
     end
-    local ok_term, term = pcall(require, "harness-decorators.term")
-    if ok_term and type(term.ensure_terminal_mode) == "function" then
-      term.ensure_terminal_mode()
-    end
+    require("harness-decorators.term").ensure_terminal_mode()
   end, 100)
 end
 
@@ -271,11 +268,9 @@ local function schedule_jump(args)
     end
     -- The edit jump lands focus in the terminal; first point the work window at
     -- the last normal-mode buffer so it stays visible underneath.
-    local fok, focus = pcall(require, "harness-decorators.focus")
-    if fok then
-      focus.suppress_next_leave()
-      focus.restore()
-    end
+    local focus = require("harness-decorators.focus")
+    focus.suppress_next_leave()
+    focus.restore()
     jump_to_edit(data.data, data.data.file_path)
   end, 250)
 end

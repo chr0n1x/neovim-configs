@@ -4,8 +4,7 @@ local deps = {
 
 -- Static working glyph shared with the agent overview (harness-decorators.agent-display), used by
 -- the session slot and lsp_status so nothing in the statusline animates.
-local ok_display, display_mod = pcall(require, "harness-decorators.agent-display")
-local spinner = (ok_display and display_mod.spinner) or { "●" }
+local spinner = require("harness-decorators.agent-display").spinner or { "●" }
 
 local spinner_frame = spinner[1]
 
@@ -64,11 +63,7 @@ return {
     -- without a live statusline - see tests/lualine_spec.lua.
     table.insert(opts.sections.lualine_x, {
       function()
-        local ok, decorators = pcall(require, "harness-decorators")
-        if not ok then
-          return ""
-        end
-        return decorators.session_component(spinner_frame)
+        return require("harness-decorators").session_component(spinner_frame)
       end,
       color = { fg = "#c6c8d1", bg = "#2e313f" },
       padding = { left = 1, right = 1 },
@@ -80,11 +75,7 @@ return {
     -- only when an agent's state changes.
     table.insert(opts.sections.lualine_y, 1, {
       function()
-        local ok, display = pcall(require, "harness-decorators.agent-display")
-        if not ok then
-          return ""
-        end
-        return display.component()
+        return require("harness-decorators.agent-display").component()
       end,
       color = { fg = "#c6c8d1", bg = "#0f1117" },
       padding = { left = 1, right = 1 },

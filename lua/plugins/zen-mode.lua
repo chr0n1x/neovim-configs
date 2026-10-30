@@ -37,8 +37,7 @@ return {
       if not is_float(vim.api.nvim_get_current_win()) then
         return
       end
-      local fok, focus = pcall(require, "harness-decorators.focus")
-      local candidates = { view().parent or false, fok and focus.last_win or false }
+      local candidates = { view().parent or false, require("harness-decorators.focus").last_win or false }
       for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
         if vim.bo[vim.api.nvim_win_get_buf(w)].buftype == "" then
           candidates[#candidates + 1] = w

@@ -497,12 +497,9 @@ function M.extract_session_id(jsonl_path)
   if not jsonl_path then
     return nil
   end
-  local ok, adapter = pcall(require, "harness-decorators." .. M.harness)
-  if ok then
-    local id = adapter.session_id(jsonl_path)
-    if id then
-      return id
-    end
+  local id = require("harness-decorators." .. M.harness).session_id(jsonl_path)
+  if id then
+    return id
   end
   return jsonl_path:match("([^/]+)%.jsonl$")
 end
