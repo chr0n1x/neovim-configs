@@ -528,27 +528,67 @@ describe("utils.session_ownership (shared adapter body)", function()
   end)
 end)
 
-describe("utils.read_tail_lines base offset", function()
-  local path = vim.fn.tempname() .. "-tail"
+describe("utils.read_tail_lines return shape", function()
+  local path = vim.fn.tempname() .. "-tail-shape"
   after_each(function()
     vim.fn.delete(path)
   end)
 
-  it("returns 0 for a file smaller than the cap and the offset after the skipped partial line otherwise", function()
+  it("returns exactly one value, so `return utils.read_tail_lines(...)` callers return one", function()
+    vim.fn.writefile({ "aaaa", "bbbb" }, path)
+    assert.are.equal(
+      1,
+      select(
+        "#",
+        utils.read_tail_lines(path, 100, function(l)
+          return l
+        end)
+      )
+    )
+    assert.are.equal(1, select("#", utils.read_tail_lines(path, 100, function() end)))
+  end)
+end)
+
+describe("utils.tail_complete_lines", function()
+  local path = vim.fn.tempname() .. "-tail-complete"
+  local function write(content)
     local f = assert(io.open(path, "wb"))
-    f:write("aaaa\nbbbb\ncccc\n")
+    f:write(content)
     f:close()
-    local seen = {}
-    local _, base = utils.read_tail_lines(path, 100, function(l)
-      seen[#seen + 1] = l
-    end)
+  end
+  after_each(function()
+    vim.fn.delete(path)
+  end)
+
+  it("returns every line and offset 0 for a file smaller than the cap", function()
+    write("aaaa\nbbbb\ncccc\n")
+    local lines, base = utils.tail_complete_lines(path, 100)
+    assert.are.same({ "aaaa", "bbbb", "cccc" }, lines)
     assert.are.equal(0, base)
-    assert.are.same({ "aaaa", "bbbb", "cccc" }, seen)
-    seen = {}
-    _, base = utils.read_tail_lines(path, 8, function(l)
-      seen[#seen + 1] = l
-    end)
-    assert.are.same({ "cccc" }, seen)
+  end)
+
+  it("skips the partial first line of a mid-line start and returns the offset after it", function()
+    write("aaaa\nbbbb\ncccc\n")
+    local lines, base = utils.tail_complete_lines(path, 8)
+    assert.are.same({ "cccc" }, lines)
     assert.are.equal(10, base)
+  end)
+
+  it("reads the tail ending at the given size, ignoring bytes after it", function()
+    write("aaaa\nbbbb\ncccc\ndddd\n")
+    local lines, base = utils.tail_complete_lines(path, 8, 15)
+    assert.are.same({ "cccc" }, lines)
+    assert.are.equal(10, base)
+  end)
+
+  it("returns no lines and the end offset when a truncated tail holds no newline", function()
+    write(string.rep("z", 20))
+    local lines, base = utils.tail_complete_lines(path, 8)
+    assert.are.same({}, lines)
+    assert.are.equal(20, base)
+  end)
+
+  it("returns nil for a missing file", function()
+    assert.is_nil(utils.tail_complete_lines(path .. "-missing", 100))
   end)
 end)

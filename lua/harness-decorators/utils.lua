@@ -270,14 +270,11 @@ function M.read_json_file(path)
   return nil
 end
 
----Call fn on each complete line in the last max_bytes; returns the last non-nil result and the
----absolute byte offset where the first handled line starts. When the tail starts mid-line and
----holds no newline, nothing is skipped and that offset is the tail start.
+---Call fn on each complete line in the last max_bytes; returns the last non-nil result.
 ---@param path string
 ---@param max_bytes number cap on bytes read from the end
 ---@param fn fun(line: string): any? per-line handler; nil means "no change to the running result"
----@return any? result
----@return integer? base_offset nil when the file is missing or empty
+---@return any?
 function M.read_tail_lines(path, max_bytes, fn)
   local f = io.open(path, "r")
   if not f then
@@ -294,11 +291,9 @@ function M.read_tail_lines(path, max_bytes, fn)
   end
   -- Skip a possible partial first line. Only when we truncated (size > chunk_size): a file smaller
   -- than the cap starts on a real line boundary and must not drop its first line.
-  local base = size - chunk_size
   local nl = chunk:find("\n")
   if nl and size > chunk_size then
     chunk = chunk:sub(nl + 1)
-    base = base + nl
   end
   local result
   for line in chunk:gmatch("[^\n]+") do
@@ -307,7 +302,41 @@ function M.read_tail_lines(path, max_bytes, fn)
       result = v
     end
   end
-  return result, base
+  return result
+end
+
+---The complete lines in the max_bytes ending at byte `size`, and the absolute byte offset where
+---the first of them starts. A tail that starts mid-line skips that partial line; a truncated tail
+---with no newline has no complete line and returns {} with offset `size`.
+---@param path string
+---@param max_bytes number cap on bytes read
+---@param size? integer end of the range read (default: the current file size)
+---@return string[]? lines nil when the file cannot be opened
+---@return integer? base_offset
+function M.tail_complete_lines(path, max_bytes, size)
+  local f = io.open(path, "r")
+  if not f then
+    return nil
+  end
+  size = size or f:seek("end")
+  local start = math.max(0, size - max_bytes)
+  f:seek("set", start)
+  local chunk = f:read(size - start) or ""
+  f:close()
+  local base = start
+  if start > 0 then
+    local nl = chunk:find("\n", 1, true)
+    if not nl then
+      return {}, size
+    end
+    base = start + nl
+    chunk = chunk:sub(nl + 1)
+  end
+  local lines = {}
+  for line in chunk:gmatch("[^\r\n]+") do
+    lines[#lines + 1] = line
+  end
+  return lines, base
 end
 
 -- ==========================================================================

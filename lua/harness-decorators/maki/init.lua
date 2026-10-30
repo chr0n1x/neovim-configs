@@ -90,19 +90,8 @@ end
 ---@param file_size number
 ---@return number base_byte_offset
 function M.on_pin(jsonl_path, file_size)
-  local lines = {}
-  local _, base = utils.read_tail_lines(jsonl_path, PIN_TAIL_BYTES, function(line)
-    lines[#lines + 1] = line
-  end)
-  if not base then
-    return file_size
-  end
-  -- A tail that started mid-line and holds no newline has no complete line to recover.
-  local start = math.max(0, file_size - PIN_TAIL_BYTES)
-  if start > 0 and base == start then
-    return file_size
-  end
-  if #lines == 0 then
+  local lines, base = utils.tail_complete_lines(jsonl_path, PIN_TAIL_BYTES, file_size)
+  if not lines or #lines == 0 then
     return file_size
   end
 

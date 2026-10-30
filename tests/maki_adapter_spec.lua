@@ -67,6 +67,13 @@ describe("maki.on_pin", function()
     assert.is_nil(recovered)
   end)
 
+  it("decides from the watcher's file_size when the file grew after it was measured", function()
+    local content = string.rep("z", TAIL * 2)
+    local path = write_raw("grown.jsonl", content)
+    assert.are.equal(#content - 100, maki.on_pin(path, #content - 100))
+    assert.is_nil(recovered)
+  end)
+
   it("returns file_size for an unreadable path", function()
     assert.are.equal(42, maki.on_pin(tmpdir .. "/missing.jsonl", 42))
     assert.is_nil(recovered)
