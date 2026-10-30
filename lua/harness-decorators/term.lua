@@ -149,6 +149,13 @@ local function is_live(inst)
   return ok and valid == true
 end
 
+---True if the instance is minimized to a bar whose window is still valid.
+---@param inst table?
+---@return boolean
+local function has_bar(inst)
+  return inst ~= nil and inst._pill_win ~= nil and vim.api.nvim_win_is_valid(inst._pill_win)
+end
+
 ---Resolve the command a harness's terminal should run, reading its env module at call time so a
 ---later re-point (or an env override like CLAUDE_COMMAND) is always honored.
 ---@param harness string
@@ -473,10 +480,9 @@ function M.close_key(self)
     go_back(self)
     return
   end
-  for harness, e in pairs(state.table) do
-    if e.inst == self and M.minimize(harness) then
-      return
-    end
+  local harness = state.harness_of(self)
+  if harness and M.minimize(harness) then
+    return
   end
   pcall(function()
     self:hide()
@@ -762,7 +768,7 @@ local function dock_col(width)
     local right = span.col + span.width + 2
     for _, e in pairs(state.table) do
       local i = e.inst
-      local bar = i and i._pill_win and vim.api.nvim_win_is_valid(i._pill_win)
+      local bar = has_bar(i)
       if i and not bar and not i._shelf_mode and i.win and vim.api.nvim_win_is_valid(i.win) then
         local o = i.opts or {}
         local col, w = o.col, o.width
@@ -784,7 +790,7 @@ local function free_slot()
   local used = {}
   for _, e in pairs(state.table) do
     local i = e.inst
-    if i and i._bar_slot and i._pill_win and vim.api.nvim_win_is_valid(i._pill_win) then
+    if i and i._bar_slot and has_bar(i) then
       used[i._bar_slot] = true
     end
   end
@@ -800,7 +806,7 @@ local function repack_dock()
   local docked = {}
   for _, e in pairs(state.table) do
     local i = e.inst
-    if i and i._bar_slot and i._pill_win and vim.api.nvim_win_is_valid(i._pill_win) then
+    if i and i._bar_slot and has_bar(i) then
       table.insert(docked, i)
     end
   end
@@ -838,7 +844,7 @@ local function close_pill(inst)
     inst._bar_anim:finish()
     inst._bar_anim = nil
   end
-  if inst._pill_win and vim.api.nvim_win_is_valid(inst._pill_win) then
+  if has_bar(inst) then
     pcall(vim.api.nvim_win_close, inst._pill_win, true)
   end
   inst._pill_win = nil
@@ -856,7 +862,7 @@ local flash_ns = vim.api.nvim_create_namespace("harness_flash")
 -- window is put back as it was after the last blink.
 ---@param inst table the Snacks terminal instance
 local function flash(inst)
-  local pill = inst._pill_win and vim.api.nvim_win_is_valid(inst._pill_win) and inst._pill_win
+  local pill = has_bar(inst) and inst._pill_win
   local win = pill or (inst.win and vim.api.nvim_win_is_valid(inst.win) and inst.win)
   if not win or inst._flashing then
     return
@@ -926,7 +932,7 @@ end
 -- float or a minimized bar) flashes.
 ---@param inst table the Snacks terminal instance
 local function notify_output(inst)
-  local bar = inst._pill_win and vim.api.nvim_win_is_valid(inst._pill_win)
+  local bar = has_bar(inst)
   if inst._shelved and not bar and inst.win and vim.api.nvim_win_is_valid(inst.win) then
     bounce(inst)
   else
@@ -982,11 +988,9 @@ end
 ---@param inst table the Snacks terminal instance (has .win, :focus(), :show())
 local function show_instance(inst)
   close_pill(inst)
-  for harness, e in pairs(state.table) do
-    if e.inst == inst then
-      mark_harness_buffer(harness, inst)
-      break
-    end
+  local harness = state.harness_of(inst)
+  if harness then
+    mark_harness_buffer(harness, inst)
   end
   local win = inst.win
   if win and vim.api.nvim_win_is_valid(win) then
@@ -1105,7 +1109,9 @@ function M.open(harness, opts)
       buffer = inst.buf,
       once = true,
       callback = function()
-        vim.schedule(M.prune)
+        if state.table[harness] and state.table[harness].inst == inst then
+          state.table[harness] = nil
+        end
       end,
     })
   end
@@ -1323,7 +1329,7 @@ follow_focus = function(inst)
     return
   end
   local function shown()
-    local bar = inst._pill_win and vim.api.nvim_win_is_valid(inst._pill_win)
+    local bar = has_bar(inst)
     return inst._shelf_mode and not bar and inst.win and vim.api.nvim_win_is_valid(inst.win)
   end
   vim.api.nvim_create_autocmd("WinEnter", {
@@ -1382,7 +1388,7 @@ follow_focus = function(inst)
           retile()
           return
         end
-        local bar = inst._pill_win and vim.api.nvim_win_is_valid(inst._pill_win)
+        local bar = has_bar(inst)
         if bar or inst._shelf_mode or not zen_active() or not (inst.win and vim.api.nvim_win_is_valid(inst.win)) then
           return
         end
@@ -1400,12 +1406,7 @@ end
 -- <leader>c or a re-pick.
 ---@param inst table the Snacks terminal instance
 minimize_float = function(inst)
-  local harness
-  for h, e in pairs(state.table) do
-    if e.inst == inst then
-      harness = h
-    end
-  end
+  local harness = state.harness_of(inst)
   if not (harness and inst.win and vim.api.nvim_win_is_valid(inst.win)) then
     return
   end
@@ -1500,12 +1501,7 @@ end
 -- keymaps/watcher to this harness and shows it. Other open floats stay open.
 ---@param inst table the Snacks terminal instance
 local function restore_from_bar(inst)
-  local harness
-  for h, e in pairs(state.table) do
-    if e.inst == inst then
-      harness = h
-    end
-  end
+  local harness = state.harness_of(inst)
   if not harness then
     focus_instance(inst)
     return
@@ -1546,7 +1542,7 @@ function M.reset_layout(harness)
     if inst and (not harness or h == harness) then
       inst.opts = inst.opts or {}
       inst.opts.row, inst.opts.col, inst.opts.width, inst.opts.height = rect.row, rect.col, rect.width, rect.height
-      if inst._pill_win and vim.api.nvim_win_is_valid(inst._pill_win) then
+      if has_bar(inst) then
         inst._restore_rect = vim.deepcopy(rect)
       elseif inst.win and vim.api.nvim_win_is_valid(inst.win) and not M._tiled then
         resize_to(inst, rect)
@@ -1603,7 +1599,7 @@ local function tile_members()
   local list = {}
   for h, e in pairs(state.table) do
     local i = e.inst
-    local bar = i and i._pill_win and vim.api.nvim_win_is_valid(i._pill_win)
+    local bar = has_bar(i)
     if i and not bar and not i._shelf_mode and i.win and vim.api.nvim_win_is_valid(i.win) then
       table.insert(list, { harness = h, inst = i })
     end
@@ -1726,10 +1722,9 @@ retile = function(cycle)
       if i == current then
         -- The cycled-to float becomes the active harness, the same as picking it in <C-q>.
         local nxt = members[k % #members + 1]
-        for h, e in pairs(state.table) do
-          if e.inst == nxt then
-            pcall(require("harness-decorators.switch").switch, h)
-          end
+        local h = state.harness_of(nxt)
+        if h then
+          pcall(require("harness-decorators.switch").switch, h)
         end
         focus_instance(nxt)
         return

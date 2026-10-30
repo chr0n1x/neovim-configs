@@ -29,6 +29,21 @@ function M.select(harness)
   M.entry(harness).selected = true
 end
 
+---The harness whose record holds `inst`, or nil.
+---@param inst table?
+---@return string?
+function M.harness_of(inst)
+  if inst == nil then
+    return nil
+  end
+  for harness, e in pairs(M.table) do
+    if e.inst == inst then
+      return harness
+    end
+  end
+  return nil
+end
+
 ---Test-only: clear the whole table without touching any buffer (buffers are managed by Snacks).
 function M._reset()
   M.table = {}

@@ -54,9 +54,7 @@ describe("term.list and its callers", function()
     local term = require("harness-decorators.term")
     local dead = term.open("maki")
     vim.api.nvim_buf_delete(dead.buf, { force = true })
-    assert.is_true(vim.wait(500, function()
-      return state.table["maki"] == nil
-    end))
+    assert.is_nil(state.table["maki"])
   end)
 
   it("Given a record whose instance is dead, When list(), Then the table is left untouched", function()

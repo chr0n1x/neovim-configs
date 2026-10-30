@@ -363,12 +363,7 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     pcall(vim.api.nvim_buf_delete, inst.buf, { force = true })
     local entries = term.list()
     assert.are.equal(0, #entries, "an exited harness must not be listed")
-    assert.is_true(
-      vim.wait(500, function()
-        return require("harness-decorators.state").table["claude"] == nil
-      end),
-      "an entry whose instance exited must be pruned"
-    )
+    assert.is_nil(require("harness-decorators.state").table["claude"], "an entry whose instance exited must be pruned")
     term._reset()
   end)
 
