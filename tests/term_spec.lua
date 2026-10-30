@@ -1542,6 +1542,46 @@ describe("term: float mouse handling, minimized bars and flash", function()
   end)
 
   it(
+    "Given claude opens and is minimized, Then the float title is the capped grip + colored name tab and the bar starts with the grip + colored name",
+    function()
+      local win_opts
+      snacks.open = function(_, opts)
+        win_opts = opts.win
+        local inst = make_float_fake(vim.api.nvim_create_buf(false, true))
+        inst:show()
+        return inst
+      end
+      term.open("claude")
+      snacks.open = function()
+        local inst = make_float_fake(vim.api.nvim_create_buf(false, true))
+        inst:show()
+        return inst
+      end
+      assert.are.same({
+        { "┤", "FloatBorder" },
+        { " ✥", "Special" },
+        { " Claude ", "HarnessTitleClaude" },
+        { "├", "FloatBorder" },
+      }, win_opts.title)
+
+      assert.is_true(term.minimize("claude"))
+      local bar_buf = vim.api.nvim_win_get_buf(bar_of("claude"))
+      local text = vim.api.nvim_buf_get_lines(bar_buf, 0, 1, false)[1]
+      assert.are.equal(" ✥ Claude ", text:sub(1, #" ✥ Claude "))
+      local ns = vim.api.nvim_create_namespace("harness_minimized")
+      local marks = vim.api.nvim_buf_get_extmarks(bar_buf, ns, 0, -1, { details = true })
+      table.sort(marks, function(a, b)
+        return a[3] < b[3]
+      end)
+      assert.are.same({ 0, #" ✥", "Special" }, { marks[1][3], marks[1][4].end_col, marks[1][4].hl_group })
+      assert.are.same(
+        { #" ✥", #" ✥ Claude ", "HarnessTitleClaude" },
+        { marks[2][3], marks[2][4].end_col, marks[2][4].hl_group }
+      )
+    end
+  )
+
+  it(
     "Given an open harness float, When its shelf corner is double-clicked, Then it goes fullscreen, then shrinks to a shelf_rows-tall shelf at the bottom of the editor, scrolled to the end",
     function()
       local inst = term.open("claude")
