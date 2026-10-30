@@ -180,6 +180,9 @@ describe("adapter default fields (stub base contract)", function()
       for _, field in ipairs(probed) do
         if fields[field] then
           assert.is_not_nil(rawget(a, field), name .. "." .. field .. " should be overridden")
+          if stub[field] ~= nil then
+            assert.are.equal(type(stub[field]), type(rawget(a, field)), name .. "." .. field .. " has the stub's type")
+          end
         else
           assert.is_nil(rawget(a, field), name .. "." .. field .. " should not be overridden")
           assert.are.equal(stub[field], a[field], name .. "." .. field .. " should be the stub's")

@@ -66,16 +66,29 @@ end)
 
 describe("command selection: <HARNESS>_COMMAND is a full override", function()
   for _, harness in ipairs(utils.list_harnesses()) do
-    it(("%s honors %s_COMMAND over its model flags"):format(harness, harness:upper()), function()
-      local var = harness:upper() .. "_COMMAND"
-      local saved = vim.fn.getenv(var)
-      vim.fn.setenv(var, harness .. " --wrapped")
-      local ok, cmd = pcall(helper.env_command, harness)
-      if saved == "" then
-        vim.cmd("unlet! $" .. var)
-      else
-        vim.fn.setenv(var, saved)
+    it(("%s honors %s_COMMAND over competing model and provider vars"):format(harness, harness:upper()), function()
+      local h = harness:upper()
+      local env_mod = "harness-decorators." .. harness .. ".env"
+      local vars = {
+        [h .. "_COMMAND"] = harness .. " --wrapped",
+        [h .. "_MODEL"] = "competing/model",
+        ["NVIM_LLM_HARNESS_" .. h .. "_PROVIDER_NAME"] = "competing-provider",
+        LLAMA_DEFAULT_MODEL = "competing/llama",
+      }
+      local saved_env, saved_mod = {}, package.loaded[env_mod]
+      for k, v in pairs(vars) do
+        saved_env[k] = vim.fn.getenv(k)
+        vim.fn.setenv(k, v)
       end
+      local ok, cmd = pcall(helper.env_command, harness)
+      for k, orig in pairs(saved_env) do
+        if orig == vim.NIL or orig == "" then
+          vim.cmd("unlet! $" .. k)
+        else
+          vim.fn.setenv(k, orig)
+        end
+      end
+      package.loaded[env_mod] = saved_mod
       assert.is_true(ok, tostring(cmd))
       assert.are.equal(harness .. " --wrapped", cmd)
     end)
