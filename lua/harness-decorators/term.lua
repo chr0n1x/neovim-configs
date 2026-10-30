@@ -804,9 +804,10 @@ function M.shelf_button(inst)
   end
 end
 
----Drive shelf mode from focus: entering the float unshelves it, leaving it shelves it again. Both
--- run on the next tick so the window switch has settled (WinLeave fires while the float is still
--- current, and minimize hides the window after turning shelf mode off).
+---Follow focus into and out of the float with one WinEnter and one WinLeave handler, each running,
+-- in order: shelf mode (entering unshelves, leaving shelves), the key legend, then tiling or the zen
+-- step-aside. They run on the next tick so the window switch has settled (WinLeave fires while the
+-- float is still current, and minimize hides the window after turning shelf mode off).
 ---@param inst table the Snacks terminal instance
 follow_focus = function(inst)
   if not (inst and inst.buf and vim.api.nvim_buf_is_valid(inst.buf)) then
@@ -816,74 +817,66 @@ follow_focus = function(inst)
     local bar = has_bar(inst)
     return inst._shelf_mode and not bar and inst.win and vim.api.nvim_win_is_valid(inst.win)
   end
-  vim.api.nvim_create_autocmd("WinEnter", {
-    buffer = inst.buf,
-    callback = function()
-      vim.schedule(function()
-        if
-          shown()
-          and vim.api.nvim_get_current_win() == inst.win
-          and (layout.get(inst) == "shelved" or not at_rect(inst.win, fullscreen_rect()))
-        then
-          unshelve(inst)
-        end
-      end)
-    end,
-  })
-  vim.api.nvim_create_autocmd("WinLeave", {
-    buffer = inst.buf,
-    callback = function()
-      vim.schedule(function()
-        if shown() and layout.get(inst) ~= "shelved" and vim.api.nvim_get_current_win() ~= inst.win then
-          shelve(inst)
-        end
-      end)
-    end,
-  })
+  -- Shelf mode: entering unshelves the float, leaving shelves it.
+  local function follow_shelf(entering)
+    if not shown() then
+      return
+    end
+    local focused = vim.api.nvim_get_current_win() == inst.win
+    if entering then
+      if focused and (layout.get(inst) == "shelved" or not at_rect(inst.win, fullscreen_rect())) then
+        unshelve(inst)
+      end
+    elseif layout.get(inst) ~= "shelved" and not focused then
+      shelve(inst)
+    end
+  end
   -- The key legend (Snacks' footer) shows only while the float has focus.
-  vim.api.nvim_create_autocmd({ "WinEnter", "WinLeave" }, {
-    buffer = inst.buf,
-    callback = function()
-      vim.schedule(function()
-        local win = inst.win
-        if not (win and vim.api.nvim_win_is_valid(win)) then
-          return
-        end
-        local footer = vim.api.nvim_win_get_config(win).footer
-        local has = type(footer) == "table" and #footer > 0 or (type(footer) == "string" and footer ~= "")
-        if vim.api.nvim_get_current_win() == win then
-          if not has and inst._footer then
-            pcall(vim.api.nvim_win_set_config, win, { footer = inst._footer, footer_pos = "center" })
-          end
-        elseif has then
-          inst._footer = footer
-          pcall(vim.api.nvim_win_set_config, win, { footer = "" })
-        end
-      end)
-    end,
-  })
-  -- Zen mode with shelf mode off: the float steps aside into the gap right of zen while another
-  -- window has focus and grows back to the zen spot when it gets focus.
-  vim.api.nvim_create_autocmd({ "WinEnter", "WinLeave" }, {
-    buffer = inst.buf,
-    callback = function()
-      vim.schedule(function()
-        if M._tiled then
-          retile()
-          return
-        end
-        local bar = has_bar(inst)
-        if bar or inst._shelf_mode or not zen_active() or not (inst.win and vim.api.nvim_win_is_valid(inst.win)) then
-          return
-        end
-        local rect = auto_float_rect(inst.win)
-        if not at_rect(inst.win, rect) then
-          resize_to(inst, rect)
-          repack_dock()
-        end
-      end)
-    end,
-  })
+  local function follow_footer()
+    local win = inst.win
+    if not (win and vim.api.nvim_win_is_valid(win)) then
+      return
+    end
+    local footer = vim.api.nvim_win_get_config(win).footer
+    local has = type(footer) == "table" and #footer > 0 or (type(footer) == "string" and footer ~= "")
+    if vim.api.nvim_get_current_win() == win then
+      if not has and inst._footer then
+        pcall(vim.api.nvim_win_set_config, win, { footer = inst._footer, footer_pos = "center" })
+      end
+    elseif has then
+      inst._footer = footer
+      pcall(vim.api.nvim_win_set_config, win, { footer = "" })
+    end
+  end
+  -- Tiled: re-tile. Zen mode with shelf mode off: the float steps aside into the gap right of zen
+  -- while another window has focus and grows back to the zen spot when it gets focus.
+  local function follow_zen()
+    if M._tiled then
+      retile()
+      return
+    end
+    local bar = has_bar(inst)
+    if bar or inst._shelf_mode or not zen_active() or not (inst.win and vim.api.nvim_win_is_valid(inst.win)) then
+      return
+    end
+    local rect = auto_float_rect(inst.win)
+    if not at_rect(inst.win, rect) then
+      resize_to(inst, rect)
+      repack_dock()
+    end
+  end
+  for event, entering in pairs({ WinEnter = true, WinLeave = false }) do
+    vim.api.nvim_create_autocmd(event, {
+      buffer = inst.buf,
+      callback = function()
+        vim.schedule(function()
+          follow_shelf(entering)
+          follow_footer()
+          follow_zen()
+        end)
+      end,
+    })
+  end
 end
 
 ---Restore a minimized harness the same way picking it in <C-q> would: the switch rebinds

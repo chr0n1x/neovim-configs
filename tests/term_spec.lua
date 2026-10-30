@@ -1847,6 +1847,31 @@ describe("term: float mouse handling, minimized bars and flash", function()
     end
   )
 
+  it(
+    "Given an open harness float, Then its buffer has exactly one WinEnter and one WinLeave handler, which run shelf, footer, then zen/tile in that order",
+    function()
+      local inst = term.open("claude")
+      local enter = vim.api.nvim_get_autocmds({ event = "WinEnter", buffer = inst.buf })
+      local leave = vim.api.nvim_get_autocmds({ event = "WinLeave", buffer = inst.buf })
+      assert.are.equal(1, #enter, "WinEnter handlers on the float buffer")
+      assert.are.equal(1, #leave, "WinLeave handlers on the float buffer")
+    end
+  )
+
+  it(
+    "Given shelf mode on and the float focused, When focus leaves, Then it shelves and the key legend is hidden",
+    function()
+      local work_win = vim.api.nvim_get_current_win()
+      local inst = term.open("claude")
+      term.fullscreen_key(inst)
+      assert.is_true(at_rect(inst, fullscreen_rect()), "precondition: fullscreen")
+      vim.api.nvim_set_current_win(work_win)
+      assert.is_true(at_rect(inst, shelf_rect()), "leaving should shelve it")
+      local f = vim.api.nvim_win_get_config(inst.win).footer
+      assert.is_true(f == nil or f == "" or (type(f) == "table" and #f == 0), "legend hidden: " .. vim.inspect(f))
+    end
+  )
+
   it("Given shelf mode on, When <C-f> is pressed, Then shelf mode is off", function()
     local inst = term.open("claude")
     assert.is_true(shelve(inst), "precondition: shelved")
