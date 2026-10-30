@@ -2,12 +2,10 @@
 --
 -- park is now backed by term.lua (one Snacks float per harness, no claudecode handle). The table maps
 -- harness -> { inst = snacks.terminal|nil, selected = boolean }. This spec drives the observable
--- routing: set_selected marks exactly one, park backgrounds only a live harness (via term.hide), and
--- show_selected opens the SELECTED harness's own float (never another's) - the guarantee that fixes
--- "maki shows claude". Snacks.terminal.open is stubbed to return fake instances backed by windowless
--- buffers, so no real PTY or window is created in headless. The re-show-vs-fresh-spawn seam (does a
--- parked float resume vs spawn) is not observable headless and is left as a manual check - see the
--- PRD.
+-- routing: set_selected marks exactly one, and show_selected opens the SELECTED harness's own float
+-- (never another's) - the guarantee that fixes "maki shows claude". Snacks.terminal.open is stubbed
+-- to return fake instances backed by windowless buffers, so no real PTY or window is created in
+-- headless.
 local helper = require("tests.helper")
 local state = require("harness-decorators.state")
 local keymaps = require("harness-decorators.keymaps")
@@ -77,25 +75,6 @@ describe("park: unified harness terminal table (Task 6/7)", function()
     end
     assert.is_true(entries["maki"], "maki should be selected")
     assert.is_falsy(entries[original_harness], original_harness .. " should be unselected after maki is chosen")
-  end)
-
-  it("park backgrounds a live harness (hides its float) without deleting the buffer", function()
-    local park = require("harness-decorators.park")
-    -- Give the harness a live instance so park has something to background.
-    require("harness-decorators.state")._reset()
-    local inst = term_mod.open(original_harness)
-    assert.is_not_nil(inst.buf, "open must create an instance with a buffer")
-
-    local parked = park.park(original_harness)
-    assert.is_true(parked, "park should report it backgrounded a live terminal")
-    assert.is_true(vim.api.nvim_buf_is_valid(inst.buf), "the buffer must survive parking (resume depends on it)")
-  end)
-
-  it("park is a no-op when the harness has no live terminal", function()
-    local park = require("harness-decorators.park")
-    require("harness-decorators.state")._reset()
-    local parked = park.park(original_harness)
-    assert.is_false(parked, "parking a never-opened harness should be a no-op")
   end)
 
   it("list drops entries whose buffer has died", function()

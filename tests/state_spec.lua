@@ -108,21 +108,6 @@ describe("state: single per-harness record (Task 8)", function()
     assert.are.equal(a, state.table[original_harness].inst, "selecting another harness must not drop the open instance")
   end)
 
-  it("park.park keeps the instance on the record and only clears selection (resume depends on it)", function()
-    -- Backgrounding hides the float but must NOT delete the instance from the shared record - that is
-    -- what makes re-select resume the SAME live process. The buffer must survive too.
-    local inst = term_mod.open(original_harness)
-    park.set_selected(original_harness)
-
-    local parked = park.park(original_harness)
-    assert.is_true(parked, "park should report it backgrounded a live terminal")
-
-    local entry = state.table[original_harness]
-    assert.are.equal(inst, entry.inst, "parking must keep the instance on the record (resume)")
-    assert.is_false(entry.selected, "parking must clear the selection bit")
-    assert.is_true(vim.api.nvim_buf_is_valid(inst.buf), "the buffer must survive parking")
-  end)
-
   it("state._reset clears every record", function()
     term_mod.open(original_harness)
     park.set_selected(original_harness)

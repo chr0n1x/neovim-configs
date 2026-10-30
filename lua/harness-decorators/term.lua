@@ -191,10 +191,6 @@ local function find_base_window()
   end
 end
 
-local function set_prev_win()
-  find_base_window()
-end
-
 -- Rows a minimized bar takes on screen: its one line of text plus the top and bottom border.
 local BAR_HEIGHT = 3
 -- Minimum width of a minimized bar's text, so bars for short harness names match the longer ones.
@@ -445,7 +441,7 @@ local function go_back(self)
       focus.jump_to_saved()
     end
   elseif not focus.jump_to_saved() then
-    set_prev_win()
+    find_base_window()
   end
   vim.cmd.redraw()
   vim.cmd("noh")

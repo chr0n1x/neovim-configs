@@ -25,24 +25,6 @@ function M.selected_harness()
   return nil
 end
 
----Background the current harness's terminal: minimize ITS OWN float into a one-line bar if it is
----open, otherwise hide it (term.hide closes only the window), keeping the buffer/PTY alive so it
----keeps executing, and mark it unselected in the table. Never deletes the buffer - that is what makes
----resume work. A no-op if the harness has no live terminal.
----Returns true if a live terminal was actually backgrounded (so callers can report it), false otherwise.
----@param harness string
----@return boolean parked
-function M.park(harness)
-  if not term.is_open(harness) then
-    return false
-  end
-  if not term.minimize(harness) then
-    term.hide(harness)
-  end
-  entry(harness).selected = false
-  return true
-end
-
 ---The <leader>c entry point: show the selected harness's terminal. Finds the selected entry, ensures
 ---all others are unselected, then shows that harness's own float - re-showing the SAME live process if
 ---one exists, or spawning fresh with its command if not (term.open handles both). Returns the harness
@@ -72,7 +54,7 @@ function M.show_selected()
 end
 
 ---Live harnesses for the picker (see term.list).
----@return { harness: string, buff_nr: number, selected: boolean, cmd: string? }[]
+---@return { harness: string, buff_nr: number, selected: boolean }[]
 function M.list()
   local out = {}
   for _, e in ipairs(term.list()) do
@@ -81,12 +63,8 @@ function M.list()
       harness = e.harness,
       buff_nr = e.bufnr,
       selected = rec.selected == true,
-      cmd = nil, -- command is resolved from env at open time; not stored per-entry
     })
   end
-  table.sort(out, function(a, b)
-    return a.harness < b.harness
-  end)
   return out
 end
 
