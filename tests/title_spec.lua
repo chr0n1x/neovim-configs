@@ -72,3 +72,60 @@ describe("title color lookup fails fast for real harnesses", function()
     assert.is_nil(title.define("nosuch"))
   end)
 end)
+
+describe("define_all with one broken adapter", function()
+  local MOD = "harness-decorators.claude"
+  local groups = {
+    copilot = { "HarnessTitleCopilot", 0xaa78ff },
+    crush = { "HarnessTitleCrush", 0xff60ff },
+    maki = { "HarnessTitleMaki", 0x6eb9f0 },
+    pi = { "HarnessTitlePi", 0xffffff },
+    pig = { "HarnessTitlePig", 0x3ddc6e },
+  }
+
+  it(
+    "Given claude's adapter raises on load, When define_all runs, Then it raises and still defines every other group",
+    function()
+      for _, g in pairs(groups) do
+        vim.api.nvim_set_hl(0, g[1], {})
+      end
+      vim.api.nvim_set_hl(0, title.picker_not_installed_group, {})
+      vim.api.nvim_set_hl(0, "TelescopeSelection", {})
+
+      local saved = package.loaded[MOD]
+      package.loaded[MOD] = nil
+      package.preload[MOD] = function()
+        error("boom: adapter failed to load")
+      end
+      local ok, err = pcall(title.define_all)
+      package.preload[MOD] = nil
+      package.loaded[MOD] = saved
+
+      assert.is_false(ok, "define_all must re-raise the adapter's load error")
+      assert.truthy(tostring(err):find("boom", 1, true), tostring(err))
+      for name, g in pairs(groups) do
+        assert.are.equal(g[2], vim.api.nvim_get_hl(0, { name = g[1] }).fg, name .. " group must still be defined")
+      end
+      assert.are.equal(0x5b6270, vim.api.nvim_get_hl(0, { name = title.picker_not_installed_group }).fg)
+      assert.are.equal("Visual", vim.api.nvim_get_hl(0, { name = "TelescopeSelection" }).link)
+    end
+  )
+end)
+
+describe("a harness adapter without title_color", function()
+  local MOD = "harness-decorators.pig"
+
+  it("Given pig's adapter has no title_color, When titled, Then define is nil and title is the padded text", function()
+    local saved = package.loaded[MOD]
+    package.loaded[MOD] = setmetatable({}, { __index = require("harness-decorators.stub-adapter") })
+    local ok, group, text = pcall(function()
+      return title.define("pig"), title.title("pig")
+    end)
+    local all_ok, all_err = pcall(title.define_all)
+    package.loaded[MOD] = saved
+    assert.is_true(ok, tostring(group))
+    assert.is_nil(group)
+    assert.are.equal(" Pig ", text)
+    assert.is_true(all_ok, tostring(all_err))
+  end)
+end)

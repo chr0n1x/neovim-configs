@@ -1,7 +1,7 @@
 -- Inert adapter defaults for harnesses with no edit following (projects_dir() nil).
 
 ---The interface every harness adapter (`harness-decorators.<harness>`) exposes. Adapters inherit
----from the stub below, which gives every field except title_color and the sidecar trio an inert
+---from the stub below, which gives every field except the optional ones marked `?` an inert
 ---default meaning "this harness does not do that".
 ---@class HarnessAdapter
 ---Directory to watch for session JSONLs; nil turns the watcher off.
@@ -14,8 +14,9 @@
 ---@field is_same_file_reset fun(cmd: string): boolean
 ---Normalized change_info for a JSONL line that records a file edit, or nil.
 ---@field parse_tool_result fun(line: string, line_number: integer?): table?
----Title fg color for the float title and picker row; matches tmux/scripts/tmux-agent-pick.sh (agent_color).
----@field title_color string
+---Title fg color for the float title and picker row; matches tmux/scripts/tmux-agent-pick.sh
+---(agent_color). Without it, title.title returns the plain padded name and the float uses FloatTitle.
+---@field title_color? string
 ---Sidecar filename (without .jsonl) for a session; needed when projects_dir() returns a dir.
 ---@field sidecar_name? fun(session_id: string): string
 ---How much diff data a sidecar event holds (higher is richer); needed with sidecar_name.

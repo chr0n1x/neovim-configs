@@ -40,10 +40,16 @@ end
 ---The picker's "(not installed)" suffix group: dim so uninstalled harnesses recede visually.
 M.picker_not_installed_group = "HarnessPickerNotInstalled"
 
----Define groups for all known harnesses (used at LazyDone and on ColorScheme).
+---Define groups for all known harnesses (used at LazyDone and on ColorScheme). A harness whose
+---adapter fails to load does not stop the others or the picker groups; the first such error is
+---raised once everything else is defined.
 function M.define_all()
+  local first_err
   for _, name in ipairs(utils.list_harnesses()) do
-    M.define(name)
+    local ok, err = pcall(M.define, name)
+    if not ok and not first_err then
+      first_err = err
+    end
   end
   vim.api.nvim_set_hl(0, M.picker_not_installed_group, { default = true, fg = "#5b6270" })
   -- Dim the telescope selected-row highlight: nord's TelescopeSelection has a
@@ -53,6 +59,9 @@ function M.define_all()
   -- shows through. A plain nvim_set_hl here would be ignored because the group
   -- already has a non-default definition from the colorscheme; a link replaces it.
   vim.cmd("highlight! link TelescopeSelection Visual")
+  if first_err then
+    error(first_err, 0)
+  end
 end
 
 return M
