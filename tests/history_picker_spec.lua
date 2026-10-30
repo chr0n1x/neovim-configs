@@ -81,3 +81,45 @@ describe("history picker: records survive the session lookup", function()
     assert.are.equal(0, #records, "a pin that drifted off the recording session shows no diffs")
   end)
 end)
+
+describe("history picker: no-pin fallback in M.pick", function()
+  local pickers, orig_new, orig_pin, orig_sources, captured
+
+  before_each(function()
+    pickers = require("telescope.pickers")
+    orig_new = pickers.new
+    orig_pin = watcher.pinned_jsonl_path
+    orig_sources = edit_jump.edit_sources
+    captured = nil
+    pickers.new = function(opts)
+      captured = opts
+      return { find = function() end }
+    end
+    watcher.pinned_jsonl_path = nil
+  end)
+
+  after_each(function()
+    pickers.new = orig_new
+    watcher.pinned_jsonl_path = orig_pin
+    edit_jump.edit_sources = orig_sources
+  end)
+
+  it("picks the session holding the newest record when several sessions are non-empty", function()
+    edit_jump.edit_sources = {
+      ["aaaaaaaa-old"] = { { file_path = "/a/old.lua", timestamp = 1000, time_str = "t" } },
+      ["bbbbbbbb-mid"] = { { file_path = "/a/mid.lua", timestamp = 2000, time_str = "t" } },
+      ["cccccccc-new"] = {
+        { file_path = "/a/new1.lua", timestamp = 1500, time_str = "t" },
+        { file_path = "/a/new2.lua", timestamp = 9000, time_str = "t" },
+      },
+      ["dddddddd-older"] = { { file_path = "/a/older.lua", timestamp = 500, time_str = "t" } },
+    }
+    require("harness-decorators.telescope-history-picker").pick()
+    assert.is_not_nil(captured, "pick must open a picker")
+    local paths = vim.tbl_map(function(e)
+      return e.value.file_path
+    end, captured.finder.results)
+    table.sort(paths)
+    assert.are.same({ "/a/new1.lua", "/a/new2.lua" }, paths)
+  end)
+end)

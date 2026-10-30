@@ -127,10 +127,13 @@ function M.pick()
   -- If we can't determine the current session, fall back to the most recent
   -- session that has records.
   if not current_session then
+    local newest = -math.huge
     for sid, records in pairs(edit_jump.edit_sources) do
-      if #records > 0 then
-        current_session = sid
-        break
+      for _, r in ipairs(records) do
+        if (r.timestamp or 0) > newest then
+          newest = r.timestamp or 0
+          current_session = sid
+        end
       end
     end
   end
