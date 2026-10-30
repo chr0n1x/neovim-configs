@@ -170,3 +170,67 @@ describe("edit-jump with zen mode open", function()
     end
   )
 end)
+
+-- Pins the dedup rules for edit records of the same file inside the 5s window.
+describe("edit-jump: edit record dedup within 5s", function()
+  local utils = require("harness-decorators.utils")
+  local orig_extract
+  local sid = "dedup-session"
+  local path
+
+  before_each(function()
+    orig_extract = utils.extract_session_id
+    utils.extract_session_id = function()
+      return sid
+    end
+    edit_jump.edit_sources[sid] = nil
+    path = vim.fn.tempname() .. "-dedup.txt"
+    vim.fn.writefile({ "a", "b", "c" }, path)
+  end)
+
+  after_each(function()
+    vim.wait(400)
+    utils.extract_session_id = orig_extract
+    edit_jump.edit_sources[sid] = nil
+    vim.fn.delete(path)
+  end)
+
+  local function edit(fields)
+    local data = { file_path = path, jsonl_path = "/x.jsonl" }
+    for k, v in pairs(fields) do
+      data[k] = v
+    end
+    edit_jump.on_edit({ data = data })
+  end
+
+  it("keeps the record that has a line when the new one has none", function()
+    edit({ starting_line = 2, event_id = "first" })
+    edit({ event_id = "second" })
+    local list = edit_jump.edit_sources[sid]
+    assert.are.equal(1, #list)
+    assert.are.equal("first", list[1].event_id)
+  end)
+
+  it("upgrades in place when the new record has a line", function()
+    edit({ source_line = 7, event_id = "first" })
+    edit({ starting_line = 3, event_id = "second" })
+    local list = edit_jump.edit_sources[sid]
+    assert.are.equal(1, #list)
+    assert.are.equal("second", list[1].event_id)
+    assert.are.equal(3, list[1].starting_line)
+  end)
+
+  it("replaces in place when neither record has a line", function()
+    edit({ event_id = "first" })
+    edit({ event_id = "second" })
+    local list = edit_jump.edit_sources[sid]
+    assert.are.equal(1, #list)
+    assert.are.equal("second", list[1].event_id)
+  end)
+
+  it("appends when the last has a source_line and the new one has no line", function()
+    edit({ source_line = 7, event_id = "first" })
+    edit({ event_id = "second" })
+    assert.are.equal(2, #edit_jump.edit_sources[sid])
+  end)
+end)
