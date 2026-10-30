@@ -149,8 +149,7 @@ local settled = false
 ---container lazy.nvim reports missing plugins through nvim-notify; the notification opens a
 ---markdown float on the first event-loop turn, render-markdown then raises (no markdown parser), and
 ---that error stops whatever vim.wait is running at the time. The float also stays open for seconds,
----which upsets specs that count or focus floats. A spec that is first to turn the event loop calls
----this before its first wait.
+---which upsets specs that count or focus floats. tests/runner.lua calls this before loading specs.
 function M.settle_startup()
   if settled then
     return

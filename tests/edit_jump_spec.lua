@@ -6,10 +6,6 @@
 
 local edit_jump = require("harness-decorators.edit-jump")
 
-setup(function()
-  require("tests.helper").settle_startup()
-end)
-
 describe("edit-jump.create_jump_autocmds wiring", function()
   it("registers a HarnessEdit autocmd and no ClaudeCodeDiffClosed one", function()
     local group = vim.api.nvim_create_augroup("TestJumpGroup", { clear = true })

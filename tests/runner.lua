@@ -36,6 +36,7 @@ if not wait_until_ready() then
   io.stderr:write("harness modules did not load; not running specs\n")
   vim.cmd("cquit! 1")
 end
+require("tests.helper").settle_startup()
 
 -- busted is installed via luarocks at /usr/local/share/lua/5.1; nvim's LuaJIT shares that
 -- path. Prepend it defensively in case the container's LUA_PATH isn't inherited by nvim.
