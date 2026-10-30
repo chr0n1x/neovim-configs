@@ -143,4 +143,29 @@ function M.lua_errors()
   return msgs:match("Lua:%s*([^\n]+)") or ""
 end
 
+local settled = false
+
+---Run what startup left queued and close its notification windows, once per session. In the test
+---container lazy.nvim reports missing plugins through nvim-notify; the notification opens a
+---markdown float on the first event-loop turn, render-markdown then raises (no markdown parser), and
+---that error stops whatever vim.wait is running at the time. The float also stays open for seconds,
+---which upsets specs that count or focus floats. A spec that is first to turn the event loop calls
+---this before its first wait.
+function M.settle_startup()
+  if settled then
+    return
+  end
+  settled = true
+  vim.wait(500, function()
+    return false
+  end, 10)
+  local ok, notify = pcall(require, "notify")
+  if ok then
+    notify.dismiss({ pending = true, silent = true })
+  end
+  vim.wait(300, function()
+    return false
+  end, 10)
+end
+
 return M
