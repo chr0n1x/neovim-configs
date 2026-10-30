@@ -1,19 +1,15 @@
 -- Shared helpers for typing path references into a harness terminal.
+local windows = require("harness-decorators.windows")
 local M = {}
 
 ---Return the first visible terminal window in the current tab. Several harness floats can be
 ---open, so this may not be the caller's harness.
 ---@return number? Window ID or nil if not running
 function M.find_terminal_win()
-  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-    local ok, cfg = pcall(vim.api.nvim_win_get_config, win)
-    if not (ok and cfg and cfg.hide) then
-      local buf = vim.api.nvim_win_get_buf(win)
-      if vim.bo[buf].buftype == "terminal" then
-        return win
-      end
-    end
-  end
+  return windows.find(function(win)
+    local buf = vim.api.nvim_win_get_buf(win)
+    return vim.bo[buf].buftype == "terminal"
+  end, { visible = true })
 end
 
 ---Shorten a path for display in the harness terminal. Delegates to the shared definition in
@@ -70,12 +66,9 @@ function M.type_into_terminal(text, opts, harness)
     if not buf then
       return M.find_terminal_win()
     end
-    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-      local ok, cfg = pcall(vim.api.nvim_win_get_config, w)
-      if vim.api.nvim_win_get_buf(w) == buf and not (ok and cfg.hide) then
-        return w
-      end
-    end
+    return windows.find(function(win)
+      return vim.api.nvim_win_get_buf(win) == buf
+    end, { visible = true })
   end
 
   local win = target_win()

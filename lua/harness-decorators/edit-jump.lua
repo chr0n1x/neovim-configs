@@ -1,5 +1,6 @@
 local sidecar = require("harness-decorators.sidecar")
 local utils = require("harness-decorators.utils")
+local windows = require("harness-decorators.windows")
 
 -- Handles the HarnessEdit autocmd: opens the edited buffer in an
 -- adjacent window and jumps to the exact edit line. Harness-agnostic: it only
@@ -12,28 +13,20 @@ M.jump_win = nil
 ---Edit sources keyed by session ID. Each value is a list of records.
 M.edit_sources = {}
 
----Find a non-float window with a real file buffer.
+---Find a non-float window with a named normal buffer.
 local function find_adjacent_window()
-  local wins = vim.api.nvim_tabpage_list_wins(0)
-  for ix = #wins, 1, -1 do
-    local win_id = wins[ix]
-    local cfg = vim.api.nvim_win_get_config(win_id)
-    -- config.relative is "" for normal windows, non-empty for floats.
+  return windows.find(function(win)
+    local cfg = vim.api.nvim_win_get_config(win)
     if cfg.relative ~= "" then
-      goto continue
+      return false
     end
-    local buf = vim.api.nvim_win_get_buf(win_id)
+    local buf = vim.api.nvim_win_get_buf(win)
     local ok, bt = pcall(vim.api.nvim_get_option_value, "buftype", { buf = buf })
-    -- Skip terminal, nofile, help, etc. - only normal file buffers.
     if ok and bt ~= "" then
-      goto continue
+      return false
     end
-    if vim.api.nvim_buf_get_name(buf) ~= "" then
-      return win_id
-    end
-    ::continue::
-  end
-  return nil
+    return vim.api.nvim_buf_get_name(buf) ~= ""
+  end, { reverse = true })
 end
 
 ---Find an existing normal window displaying file_path.
@@ -41,18 +34,16 @@ end
 ---@return integer?
 local function find_file_window(file_path)
   local target = vim.uv.fs_realpath(file_path) or file_path
-  for _, win_id in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-    local cfg = vim.api.nvim_win_get_config(win_id)
-    if cfg.relative == "" then
-      local buf = vim.api.nvim_win_get_buf(win_id)
-      local name = vim.api.nvim_buf_get_name(buf)
-      local actual = name ~= "" and (vim.uv.fs_realpath(name) or name) or nil
-      if actual == target then
-        return win_id
-      end
+  return windows.find(function(win)
+    local cfg = vim.api.nvim_win_get_config(win)
+    if cfg.relative ~= "" then
+      return false
     end
-  end
-  return nil
+    local buf = vim.api.nvim_win_get_buf(win)
+    local name = vim.api.nvim_buf_get_name(buf)
+    local actual = name ~= "" and (vim.uv.fs_realpath(name) or name) or nil
+    return actual == target
+  end)
 end
 
 ---Get or validate the jump window. Reuses the existing non-float window
