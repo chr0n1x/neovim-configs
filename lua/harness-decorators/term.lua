@@ -191,136 +191,37 @@ local function find_base_window()
   end
 end
 
--- Rows a minimized bar takes on screen: its one line of text plus the top and bottom border.
-local BAR_HEIGHT = 3
--- Minimum width of a minimized bar's text, so bars for short harness names match the longer ones.
-local BAR_MIN_TEXT = 18
+local layout = require("harness-decorators.layout")
+local BAR_HEIGHT, BAR_MIN_TEXT = layout.BAR_HEIGHT, layout.BAR_MIN_TEXT
+local FLOAT_ROW, FLOAT_WIDTH, FLOAT_HEIGHT = layout.FLOAT_ROW, layout.FLOAT_WIDTH, layout.FLOAT_HEIGHT
+local ZEN_MIN_WIDTH, ZEN_HEIGHT = layout.ZEN_MIN_WIDTH, layout.ZEN_HEIGHT
+local zen_active, zen_float_span, zen_side_span = layout.zen_active, layout.zen_float_span, layout.zen_side_span
+local default_float_col, default_float_rect = layout.default_float_col, layout.default_float_rect
+local fullscreen_rect, shelf_rect, auto_float_rect = layout.fullscreen_rect, layout.shelf_rect, layout.auto_float_rect
+local retract_rect, at_rect, dock_row = layout.retract_rect, layout.at_rect, layout.dock_row
+local stack_rects, drawn_pos = layout.stack_rects, layout.drawn_pos
 
--- Default float size and spot, as fractions of the editor.
-local FLOAT_ROW, FLOAT_WIDTH, FLOAT_HEIGHT = 0, 0.30, 0.90
-local ZEN_MIN_WIDTH, ZEN_HEIGHT = 0.20, 0.70
+-- term.shelf_rows and term._zen_active_override are spec knobs kept on M; they live in layout.
+local layout_knobs = { shelf_rows = "shelf_rows", _zen_active_override = "zen_active_override" }
+setmetatable(M, {
+  __index = function(_, k)
+    local name = layout_knobs[k]
+    if name then
+      return layout[name]
+    end
+  end,
+  __newindex = function(t, k, v)
+    local name = layout_knobs[k]
+    if name then
+      layout[name] = v
+    else
+      rawset(t, k, v)
+    end
+  end,
+})
 
----The default float column: 2 cols left of the right edge, shifted further left when that would
--- put the float under the minimized-bar dock (top-right).
----@return integer col
-local function default_float_col()
-  local cols = vim.o.columns
-  local w = math.floor(cols * FLOAT_WIDTH)
-  local col = cols - w - 2
-  local dock_left = cols - (BAR_MIN_TEXT + 2)
-  col = math.min(col, dock_left - 1 - w)
-  return math.max(0, col)
-end
-
----The harness float's columns while zen mode is open: starting a quarter of the way into the zen
--- window and 90% of the zen-mode gap (the space from the zen window's right edge to the dock's
--- left edge), shifted left when needed so the minimized-bar dock fits on its right; on an editor
--- too small for both it overlaps the dock. With no zen window to measure, ZEN_MIN_WIDTH of the
--- editor ending where the dock begins.
----@return { col: integer, width: integer } width excludes the border
-local function zen_float_span()
-  local cols = vim.o.columns
-  local dock_room = BAR_MIN_TEXT + 2
-  local outer = math.floor(cols * ZEN_MIN_WIDTH)
-  local left = cols - dock_room - outer
-  local zwin = require("util.zen").win()
-  if zwin then
-    local zcfg = vim.api.nvim_win_get_config(zwin)
-    local zright = math.floor(zcfg.col) + zcfg.width
-    local gap = math.max(0, cols - dock_room - zright) -- the zen-mode gap
-    outer = math.max(3, math.ceil(gap * 0.9)) -- 90% of the gap, at least 3 cols
-    left = math.floor(zcfg.col) + math.floor(zcfg.width / 4)
-  end
-  left = math.max(0, math.min(left, cols - dock_room - outer))
-  return { col = left, width = outer - 2 }
-end
-
----The unfocused harness float's columns while zen mode is open: 55% of the zen-mode gap (the space
--- from the zen window's right edge to the dock's left edge), starting one column right of the zen
--- window.
----@return { col: integer, width: integer } width excludes the border
-local function zen_side_span()
-  local span = zen_float_span()
-  local left = span.col
-  local zwin = require("util.zen").win()
-  if zwin then
-    local zcfg = vim.api.nvim_win_get_config(zwin)
-    local zborder = zcfg.border ~= nil and zcfg.border ~= "none" and not vim.tbl_isempty(zcfg.border)
-    local zright = math.floor(zcfg.col) + zcfg.width + (zborder and 2 or 0) -- first column right of zen
-    local dock_room = BAR_MIN_TEXT + 2
-    local zinner_right = zright - (zborder and 2 or 0) -- zen right edge excluding border
-    local gap = math.max(0, vim.o.columns - dock_room - zinner_right) -- zen right edge to dock left edge
-    local outer = math.max(3, math.floor(gap * 0.55)) -- 55% of the gap
-    left = zright + 1 -- start just right of the zen window
-    return { col = left, width = outer - 2 }
-  end
-  return { col = left, width = span.width }
-end
-
----The default right-side float's rect, resolved the way Snacks resolves win_opts: a fractional size
--- includes the border, a fractional row strictly between 0 and 1 is counted below the top border,
--- and any other row is used as-is.
----@return { row: integer, col: integer, width: integer, height: integer }
-local function default_float_rect()
-  local lines, cols = vim.o.lines, vim.o.columns
-  local row = (FLOAT_ROW > 0 and FLOAT_ROW < 1) and math.floor(lines * FLOAT_ROW) + 1 or FLOAT_ROW
-  return {
-    row = row,
-    col = default_float_col(),
-    width = math.floor(cols * FLOAT_WIDTH) - 2,
-    height = math.floor(lines * FLOAT_HEIGHT) - 2,
-  }
-end
-
--- <C-f> fullscreen padding, as fractions of the editor.
-local FULL_ROW_PAD, FULL_COL_PAD = 0.05, 0.1
-
-local zen_active -- forward declaration; defined below
 local retile -- forward declaration; defined below
 local scroll_to_bottom -- forward declaration; defined below
-
----The <C-f> fullscreen rect for the current editor size. While zen is open it keeps the zen float's
--- width, centered.
----@return { row: integer, col: integer, width: integer, height: integer }
-local function fullscreen_rect()
-  local lines, cols = vim.o.lines, vim.o.columns
-  local rect = {
-    row = math.floor(FULL_ROW_PAD * lines),
-    col = math.floor(FULL_COL_PAD * cols),
-    width = math.floor((1 - 2 * FULL_COL_PAD) * cols),
-    height = math.floor((1 - 2 * FULL_ROW_PAD) * lines),
-  }
-  if zen_active() then
-    rect.width = zen_float_span().width
-    rect.col = math.floor((cols - rect.width - 2) / 2)
-  end
-  return rect
-end
-
--- Text rows a shelved float keeps (see shelve). On M so specs can read it.
-M.shelf_rows = 10
-
----The shelf: M.shelf_rows rows at the bottom of the fullscreen rect, the normal float's width (the
--- zen float's while zen is open), centered.
----@return { row: integer, col: integer, width: integer, height: integer }
-local function shelf_rect()
-  local full = fullscreen_rect()
-  local cols = vim.o.columns
-  local rows = math.min(M.shelf_rows, full.height)
-  local width = zen_active() and zen_float_span().width or math.floor(cols * FLOAT_WIDTH) - 2
-  return { row = full.row + full.height - rows, col = math.floor((cols - width - 2) / 2), width = width, height = rows }
-end
-
----True when the window is an editor float sitting exactly on `rect`.
----@return boolean
-local function at_rect(win, rect)
-  local cfg = vim.api.nvim_win_get_config(win)
-  return cfg.relative == "editor"
-    and math.floor(cfg.row) == rect.row
-    and math.floor(cfg.col) == rect.col
-    and cfg.width == rect.width
-    and cfg.height == rect.height
-end
 
 ---Animate the float to `rect` and keep that geometry in inst.opts, so Snacks reopens it there after
 -- hide/show. _resized_at is stamped at both ends so the terminal's reflow for the new size is not
@@ -343,21 +244,6 @@ local function resize_to(inst, rect, on_done)
   end)
 end
 
----Where an unmoved float sits: while zen is open, the zen spot when `win` is focused or not given
--- and the gap right of zen when another window has focus; else the default right-side spot.
----@param win? integer the float's window
----@return { row: integer, col: integer, width: integer, height: integer }
-local function auto_float_rect(win)
-  local rect = default_float_rect()
-  if zen_active() then
-    local aside = win ~= nil and vim.api.nvim_get_current_win() ~= win
-    local span = aside and zen_side_span() or zen_float_span()
-    rect.col, rect.width = span.col, span.width
-    rect.height = math.floor(vim.o.lines * ZEN_HEIGHT) - 2
-  end
-  return rect
-end
-
 ---Save the float's current geometry as the <C-f> retract target, unless one is saved already (so
 -- repeated toggles don't drift it). Stored as RATIOS of the editor size, so an editor resize before
 -- the retract is absorbed: retract_rect re-derives absolute coords against the size at that point.
@@ -374,24 +260,6 @@ local function save_baseline(self)
     col_ratio = (cfg.col or 0) / cols,
     width_ratio = (cfg.width or cols) / cols,
     height_ratio = (cfg.height or lines) / lines,
-  }
-end
-
----Where a fullscreen float retracts to: the unmoved spot for the current layout (zen-aware) when the
--- float sat there before going fullscreen or nothing was saved, else the saved geometry.
----@param self table the Snacks terminal instance
----@return { row: integer, col: integer, width: integer, height: integer }
-local function retract_rect(self)
-  local sc = self._saved_config
-  if not sc or sc.auto then
-    return auto_float_rect(self.win)
-  end
-  local lines, cols = vim.o.lines, vim.o.columns
-  return {
-    row = math.floor((sc.row_ratio or 0) * lines),
-    col = math.floor((sc.col_ratio or 0) * cols),
-    width = math.floor((sc.width_ratio or 1) * cols),
-    height = math.floor((sc.height_ratio or 1) * lines),
   }
 end
 
@@ -684,26 +552,6 @@ end
 ---@param on_done? fun()
 local function animate_win(inst, win, to, on_done)
   require("harness-decorators.terminal-animations").animate_win(inst, "_bar_anim", win, to, nil, on_done)
-end
-
----True when zen mode is currently open. M._zen_active_override lets specs force the value.
-zen_active = function()
-  if M._zen_active_override ~= nil then
-    return M._zen_active_override
-  end
-  local ok, zen = pcall(require, "zen-mode.view")
-  return ok and zen.is_open and zen.is_open() and true or false
-end
-
----Minimized bars dock in the top-right corner of the editor and stack downward: slot 1 sits at the
--- top (below the tabline when one is shown), slot 2 below it, and so on. A bar the user drags away
--- leaves the dock (its _bar_slot is cleared).
----@param slot integer
----@return integer row
-local function dock_row(slot)
-  local stal = vim.o.showtabline
-  local top = (stal == 2 or (stal == 1 and #vim.api.nvim_list_tabpages() > 1)) and 1 or 0
-  return top + BAR_HEIGHT * (slot - 1)
 end
 
 ---The column a docked bar whose text is `width` columns wide starts at, so its right border sits on
@@ -1087,16 +935,6 @@ end
 -- not a border drag is passed through unchanged. Requires 'mouse' to include n/t (see <leader>M).
 local drag = nil
 local MIN_WIDTH, MIN_HEIGHT = 20, 5
-
----The 0-based screen row/col of a float's outer top-left corner (border included) as drawn.
--- Neovim shifts a float that would not fit back onto the screen, so after an editor resize or a
--- restore near the edge the drawn spot can differ from the row/col in its config.
----@return integer row
----@return integer col
-local function drawn_pos(win)
-  local pos = vim.api.nvim_win_get_position(win)
-  return pos[1], pos[2]
-end
 
 ---The live harness instance whose border contains the given 1-based screen pos, and which edges
 -- of it were grabbed.
@@ -1562,36 +1400,6 @@ local function tile_members()
   return vim.tbl_map(function(m)
     return m.inst
   end, list)
-end
-
----`n` rects in a grid `outer_width` wide (border included) starting at `col`, filled row by row,
--- over the default float height: one per row up to 3, then 2 per row, then 3, so there are at most 3
--- rows. Rows and columns split the space evenly; the last row/column takes the remainder. Cells
--- that have a neighbour to their right or below give up one column or row as a gap.
----@return { row: integer, col: integer, width: integer, height: integer }[]
-local function stack_rects(n, col, outer_width)
-  local total = math.floor(vim.o.lines * FLOAT_HEIGHT)
-  local per_row = math.max(1, math.ceil(n / 3))
-  local nrows = math.ceil(n / per_row)
-  local rects = {}
-  for k = 0, n - 1 do
-    local r, c = math.floor(k / per_row), k % per_row
-    local h = math.floor(total / nrows)
-    local w = math.floor(outer_width / per_row)
-    local row, x = r * h, col + c * w
-    if r == nrows - 1 then
-      h = total - row
-    else
-      h = h - 1
-    end
-    if c == per_row - 1 then
-      w = outer_width - c * w
-    else
-      w = w - 1
-    end
-    table.insert(rects, { row = row, col = x, width = math.max(1, w - 2), height = math.max(1, h - 2) })
-  end
-  return rects
 end
 
 ---Lay the open harness floats out in the grid. The focused float (else the one focused last, if
