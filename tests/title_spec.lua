@@ -51,3 +51,24 @@ describe("harness title groups (pinned colors)", function()
     assert.are.equal(0x5b6270, vim.api.nvim_get_hl(0, { name = title.picker_not_installed_group }).fg)
   end)
 end)
+
+describe("title color lookup fails fast for real harnesses", function()
+  local MOD = "harness-decorators.claude"
+
+  it("Given claude's adapter raises on load, When its title is defined, Then the error propagates", function()
+    local saved = package.loaded[MOD]
+    package.loaded[MOD] = nil
+    package.preload[MOD] = function()
+      error("boom: adapter failed to load")
+    end
+    local ok, err = pcall(title.define, "claude")
+    package.preload[MOD] = nil
+    package.loaded[MOD] = saved
+    assert.is_false(ok, "define must not swallow a real harness's load error")
+    assert.truthy(tostring(err):find("boom", 1, true), tostring(err))
+  end)
+
+  it("Given an unknown harness, When defined, Then it is nil without raising", function()
+    assert.is_nil(title.define("nosuch"))
+  end)
+end)

@@ -3,15 +3,15 @@ local utils = require("harness-decorators.utils")
 
 local M = {}
 
----A harness's title color from its adapter's title_color, or nil for an unknown harness.
+---A harness's title color from its adapter's title_color, or nil for a name that is not a
+---harness. A real harness's adapter is required unguarded, so its load error surfaces.
 ---@param name string
 ---@return string?
 local function color_for(name)
-  local ok, adapter = pcall(require, "harness-decorators." .. name)
-  if ok and type(adapter) == "table" and type(adapter.title_color) == "string" then
-    return adapter.title_color
+  if not vim.tbl_contains(utils.list_harnesses(), name) then
+    return nil
   end
-  return nil
+  return require("harness-decorators." .. name).title_color
 end
 
 ---Define the HarnessTitle<Name> hl group for a harness. Uses `default` so a
