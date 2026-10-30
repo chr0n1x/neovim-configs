@@ -125,3 +125,103 @@ describe("watcher session pin (Option B: pin by declared session id)", function(
     assert.are.equal(file_a, watcher.pinned_jsonl_path, "same id from another path must not move the pin")
   end)
 end)
+
+-- What the watcher does for an adapter that leaves the optional pin hooks to the stub base:
+-- claude with its own session_id_from_lines removed, and claude as-is (it has no on_pin).
+describe("watcher pin with the stub base's optional fields", function()
+  local adapter, cwd, dir, group, seen
+  local orig = {}
+
+  local function append(path, lines)
+    local f = assert(io.open(path, "a"))
+    for _, line in ipairs(lines) do
+      f:write(line .. "\n")
+    end
+    f:close()
+  end
+
+  local function edit_line(uuid)
+    local fp = vim.uv.cwd() .. "/tests/_watcher_dispatch_target.txt"
+    return string.format(
+      '{"type":"user","uuid":%q,"timestamp":1700000000000,"toolUseResult":{"filePath":%q,"structuredPatch":[{"oldStart":1,"oldLines":3,"newStart":1,"newLines":4,"lines":[" a"," b","+ added line"," c"]}]}}',
+      uuid,
+      fp
+    )
+  end
+
+  before_each(function()
+    assert.are.equal("claude", utils.harness, "ownership spec assumes the claude adapter")
+    watcher.set_harness("claude")
+    adapter = require("harness-decorators.claude")
+    orig.session_id_from_lines = rawget(adapter, "session_id_from_lines")
+    orig.session_ownership = rawget(adapter, "session_ownership")
+    watcher.reset_all()
+    utils.reset_dedup()
+    cwd = vim.uv.cwd()
+    watcher.nvim_cwd = cwd
+    dir = vim.fn.tempname() .. "-stub-fields"
+    vim.fn.mkdir(dir, "p")
+    seen = {}
+    group = vim.api.nvim_create_augroup("OwnershipStubFieldsSpec", { clear = true })
+    vim.api.nvim_create_autocmd("User", {
+      group = group,
+      pattern = "HarnessEdit",
+      callback = function(args)
+        table.insert(seen, args.data)
+      end,
+    })
+  end)
+
+  after_each(function()
+    adapter.session_id_from_lines = orig.session_id_from_lines
+    adapter.session_ownership = orig.session_ownership
+    pcall(vim.api.nvim_del_augroup_by_id, group)
+    watcher.reset_all()
+    watcher.nvim_cwd = nil
+    utils.reset_dedup()
+    vim.fn.delete(dir, "rf")
+  end)
+
+  it("Given no own session_id_from_lines, When cwd-matching lines arrive, Then the file never pins", function()
+    adapter.session_id_from_lines = nil
+    local path = dir .. "/stem-1234.jsonl"
+    append(path, { claude_line("declared-id", cwd) })
+    watcher.process_jsonl_write(path)
+    append(path, { claude_line("declared-id", cwd) })
+    watcher.process_jsonl_write(path)
+    assert.is_nil(watcher.pinned_jsonl_path)
+  end)
+
+  it(
+    "Given no own session_id_from_lines, When a file pins on first encounter, Then the key is the filename stem",
+    function()
+      adapter.session_id_from_lines = nil
+      adapter.session_ownership = function()
+        return "match"
+      end
+      local path = dir .. "/stem-1234.jsonl"
+      append(path, { claude_line("declared-id", cwd) })
+      watcher.process_jsonl_write(path)
+      append(path, { claude_line("declared-id", cwd) })
+      watcher.process_jsonl_write(path)
+      assert.are.equal(path, watcher.pinned_jsonl_path)
+      assert.are.equal("stem-1234", watcher.pinned_session_id)
+    end
+  )
+
+  it("Given no own on_pin, When a file pins on first encounter, Then existing lines are not replayed", function()
+    assert.is_nil(rawget(adapter, "on_pin"))
+    adapter.session_ownership = function()
+      return "match"
+    end
+    local path = dir .. "/first-pin.jsonl"
+    append(path, { edit_line("old-1"), edit_line("old-2") })
+    watcher.process_jsonl_write(path)
+    assert.are.equal(path, watcher.pinned_jsonl_path, "first encounter pins on a match")
+    assert.are.equal(0, #seen, "lines written before the pin are not dispatched")
+    append(path, { edit_line("new-1") })
+    watcher.process_jsonl_write(path)
+    assert.are.equal(1, #seen)
+    assert.are.equal("new-1", seen[1].event_uuid)
+  end)
+end)
