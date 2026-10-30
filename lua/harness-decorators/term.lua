@@ -1060,6 +1060,7 @@ function M.open(harness, opts)
       buffer = inst.buf,
       once = true,
       callback = function()
+        close_pill(inst)
         if state.table[harness] and state.table[harness].inst == inst then
           state.table[harness] = nil
         end
