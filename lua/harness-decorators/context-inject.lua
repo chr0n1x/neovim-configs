@@ -231,4 +231,54 @@ function M.send_visual_selection(type_into_terminal, build_context_text)
   end
 end
 
+---Register a harness's Add/TreeAdd commands and return its per-key entries for
+---harness-decorators/keymaps.lua. Each <harness>/keymaps.lua is one call to this.
+---@param opts table
+---  harness string: the harness name, e.g. "claude". Command names are derived from it ("ClaudeAdd").
+---  format fun(file_path: string, start_line?: integer, end_line?: integer): string: how this
+---    harness writes a path reference.
+---  separate_space? boolean: send the trailing space as its own PTY write (see type_into_terminal).
+---  add? boolean: declare <Harness>Add, <leader>ca in normal mode and the visual-mode <leader>ca.
+---  visual_desc? string: description of the visual-mode key (default "Send selection to <Harness>").
+---  history? boolean: declare <leader>cu.
+---  resume? boolean: declare <leader>cr (opens the float with --resume).
+---@return table[] keymap specs
+function M.harness_keymaps(opts)
+  local harness = opts.harness
+  local keymaps = require("harness-decorators.keymaps")
+  local name = require("harness-decorators.utils").capitalize(harness)
+
+  local function send(text)
+    return M.type_into_terminal(text, opts.separate_space and { separate_space = true } or nil, harness)
+  end
+
+  M.make_tree_add_command(name .. "TreeAdd", harness, send, opts.format)
+
+  local specs = { keymaps.continue_spec(harness) }
+  if opts.resume then
+    table.insert(specs, {
+      "<leader>cr",
+      function()
+        require("harness-decorators.term").open(harness, { args = "--resume" })
+      end,
+      desc = "Resume " .. name,
+    })
+  end
+  if opts.history then
+    table.insert(specs, keymaps.history_spec(harness))
+  end
+  if opts.add then
+    M.make_add_command(name .. "Add", harness, send, opts.format)
+    table.insert(specs, { "<leader>ca", "<cmd>" .. name .. "Add %<cr>", desc = "Add current buffer" })
+    table.insert(specs, {
+      "<leader>ca",
+      M.send_visual_selection(send, opts.format),
+      mode = "v",
+      desc = opts.visual_desc or ("Send selection to " .. name),
+    })
+  end
+  table.insert(specs, keymaps.tree_add_spec(harness, name .. "TreeAdd"))
+  return specs
+end
+
 return M

@@ -197,3 +197,207 @@ describe("harness keymap contract (all harnesses)", function()
     end)
   end
 end)
+
+-- Per-harness keys and context formats. Every harness is built from one factory, so this pins
+-- what each one declares and what each types into its terminal.
+describe("harness keymaps: declared keys and context formats", function()
+  local ci = require("harness-decorators.context-inject")
+
+  -- The keys each harness declares beyond the shared <leader>c / <leader>cl / <C-q> / <leader>co.
+  -- "mode" is "n" unless listed; desc is the which-key text.
+  local EXPECTED_KEYS = {
+    claude = {
+      ["<leader>cc"] = { desc = "Continue Claude" },
+      ["<leader>cu"] = { desc = "View changes made by claude" },
+      ["<leader>ca"] = { desc = "Add current buffer" },
+      ["<leader>ca/v"] = { desc = "Send to Claude" },
+      ["<C-t>"] = { desc = "Add file to Claude" },
+    },
+    copilot = {
+      ["<leader>cc"] = { desc = "Continue Copilot" },
+      ["<leader>cu"] = { desc = "View changes made by copilot" },
+      ["<leader>ca"] = { desc = "Add current buffer" },
+      ["<leader>ca/v"] = { desc = "Send selection to Copilot" },
+      ["<C-t>"] = { desc = "Add file to Copilot" },
+    },
+    crush = {
+      ["<leader>cc"] = { desc = "Continue Crush" },
+      ["<C-t>"] = { desc = "Add file to Crush" },
+    },
+    maki = {
+      ["<leader>cc"] = { desc = "Continue Maki" },
+      ["<leader>cu"] = { desc = "View changes made by maki" },
+      ["<leader>ca"] = { desc = "Add current buffer" },
+      ["<leader>ca/v"] = { desc = "Send selection to Maki" },
+      ["<C-t>"] = { desc = "Add file to Maki" },
+    },
+    pi = {
+      ["<leader>cc"] = { desc = "Continue Pi" },
+      ["<leader>cr"] = { desc = "Resume Pi" },
+      ["<leader>cu"] = { desc = "View changes made by pi" },
+      ["<leader>ca"] = { desc = "Add current buffer" },
+      ["<leader>ca/v"] = { desc = "Send selection to Pi" },
+      ["<C-t>"] = { desc = "Add file to Pi" },
+    },
+    pig = {
+      ["<leader>cc"] = { desc = "Continue Pig" },
+      ["<leader>cr"] = { desc = "Resume Pig" },
+      ["<leader>ca"] = { desc = "Add current buffer" },
+      ["<leader>ca/v"] = { desc = "Send selection to Pig" },
+      ["<C-t>"] = { desc = "Add file to Pig" },
+    },
+  }
+
+  local SHARED = { ["<leader>c"] = true, ["<leader>cl"] = true, ["<C-q>"] = true, ["<leader>co"] = true }
+
+  ---How each harness formats a path: prefix, whether a directory gets a trailing slash, and
+  ---whether the trailing space goes in its own write.
+  local FORMATS = {
+    claude = { prefix = "@", dir_slash = true },
+    copilot = { prefix = " @", dir_slash = false, separate_space = true },
+    crush = { prefix = "@", dir_slash = true },
+    maki = { prefix = "", dir_slash = false },
+    pi = { prefix = "@", dir_slash = true },
+    pig = { prefix = "@", dir_slash = true },
+  }
+
+  local sent, orig_type, orig_tree
+
+  local function expected_text(harness, path, range)
+    local fmt = FORMATS[harness]
+    local short = utils.shorten_path(path)
+    if fmt.dir_slash and vim.fn.isdirectory(path) == 1 and not short:match("/$") then
+      short = short .. "/"
+    end
+    return fmt.prefix .. short .. (range or "")
+  end
+
+  before_each(function()
+    sent = {}
+    orig_type = ci.type_into_terminal
+    orig_tree = utils.get_tree_selection
+    ci.type_into_terminal = function(text, opts, harness)
+      table.insert(sent, { text = text, opts = opts, harness = harness })
+      return 1
+    end
+  end)
+
+  after_each(function()
+    ci.type_into_terminal = orig_type
+    utils.get_tree_selection = orig_tree
+  end)
+
+  it("every harness in the roster has a keys table and a format", function()
+    local function sorted_keys(t)
+      local k = vim.tbl_keys(t)
+      table.sort(k)
+      return k
+    end
+    assert.are.same(sorted_keys(EXPECTED_KEYS), utils.list_harnesses())
+    assert.are.same(sorted_keys(FORMATS), utils.list_harnesses())
+  end)
+
+  for _, harness in ipairs(utils.list_harnesses()) do
+    describe(("harness: %s"):format(harness), function()
+      local Cmd = utils.capitalize(harness)
+      local file, dir
+
+      before_each(function()
+        file = vim.fn.tempname()
+        vim.fn.writefile({ "x" }, file)
+        dir = vim.fn.tempname()
+        vim.fn.mkdir(dir)
+      end)
+
+      after_each(function()
+        vim.fn.delete(file)
+        vim.fn.delete(dir, "d")
+      end)
+
+      it("declares exactly its own keys, modes and descriptions", function()
+        local got = {}
+        for _, spec in ipairs(keymaps.build(harness)) do
+          if not SHARED[spec[1]] then
+            local mode = spec.mode
+            local key = spec[1] .. ((mode == "v" or (type(mode) == "table" and mode[1] == "v")) and "/v" or "")
+            assert.is_nil(got[key], ("%s: %s declared twice"):format(harness, key))
+            got[key] = { desc = spec.desc }
+          end
+        end
+        assert.are.same(EXPECTED_KEYS[harness], got)
+      end)
+
+      it("<C-t> tree-add types each selected path, newline-separated, in the harness format", function()
+        keymaps.build(harness)
+        utils.get_tree_selection = function()
+          return { file, dir }
+        end
+        vim.cmd(Cmd .. "TreeAdd")
+        local texts = vim.tbl_map(function(s)
+          return s.text
+        end, sent)
+        assert.are.same({ expected_text(harness, file), "\n", expected_text(harness, dir) }, texts)
+        for _, s in ipairs(sent) do
+          assert.are.equal(harness, s.harness)
+        end
+      end)
+
+      if EXPECTED_KEYS[harness]["<leader>ca"] then
+        it("Add types the path with its #L range in the harness format", function()
+          keymaps.build(harness)
+          vim.cmd(("%sAdd %s 3 5"):format(Cmd, vim.fn.fnameescape(file)))
+          vim.cmd(("%sAdd %s 4 4"):format(Cmd, vim.fn.fnameescape(file)))
+          vim.cmd(("%sAdd %s"):format(Cmd, vim.fn.fnameescape(file)))
+          local texts = vim.tbl_map(function(s)
+            return s.text
+          end, sent)
+          assert.are.same({
+            expected_text(harness, file, "#L3-5"),
+            expected_text(harness, file, "#L4"),
+            expected_text(harness, file),
+          }, texts)
+          assert.are.equal(harness, sent[1].harness)
+          assert.are.equal(FORMATS[harness].separate_space or false, (sent[1].opts or {}).separate_space or false)
+        end)
+
+        it("the visual-mode key sends the buffer path in the harness format when not in visual mode", function()
+          local specs = keymaps.build(harness)
+          local cb
+          for _, spec in ipairs(specs) do
+            if spec[1] == "<leader>ca" and spec.mode == "v" then
+              cb = spec[2]
+            end
+          end
+          assert.is_function(cb)
+          vim.cmd("edit " .. vim.fn.fnameescape(file))
+          cb()
+          assert.are.equal(1, #sent)
+          assert.are.equal(expected_text(harness, vim.fn.expand("%:p")), sent[1].text)
+        end)
+      else
+        it("declares no Add command", function()
+          keymaps.build(harness)
+          assert.are.equal(0, vim.fn.exists(":" .. Cmd .. "Add"))
+        end)
+      end
+
+      if EXPECTED_KEYS[harness]["<leader>cr"] then
+        it("<leader>cr opens the float with --resume", function()
+          local term = require("harness-decorators.term")
+          local orig_open = term.open
+          local got
+          term.open = function(h, opts)
+            got = { h, opts }
+          end
+          for _, spec in ipairs(keymaps.build(harness)) do
+            if spec[1] == "<leader>cr" then
+              spec[2]()
+            end
+          end
+          term.open = orig_open
+          assert.are.same({ harness, { args = "--resume" } }, got)
+        end)
+      end
+    end)
+  end
+end)
