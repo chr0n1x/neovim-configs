@@ -1,8 +1,9 @@
 local utils = require("harness-decorators.utils")
 local parser = require("harness-decorators.jsonl-parser")
 local diff = require("harness-decorators.diff")
+local stub = require("harness-decorators.stub-adapter")
 
-local M = {}
+local M = setmetatable({}, { __index = stub })
 
 -- ==========================================================================
 -- PATHS
@@ -24,9 +25,8 @@ end
 
 ---Copilot's session id comes from the path, not line content, so return nil and let the
 ---watcher fall back to M.session_id(jsonl_path).
----@param _lines string[]
 ---@return string?
-function M.session_id_from_lines(_lines)
+function M.session_id_from_lines()
   return nil
 end
 
@@ -55,27 +55,11 @@ function M.extract_cwd(lines)
 end
 
 function M.session_ownership(nvim_cwd, lines, jsonl_path)
-  if not nvim_cwd then
-    return "unknown"
-  end
-  local cwd = M.extract_cwd(lines) or read_session_start_cwd(jsonl_path)
-  return utils.ownership_from_cwd(nvim_cwd, cwd)
-end
-
-function M.is_same_file_reset(_cmd)
-  return false
+  return utils.session_ownership(nvim_cwd, lines, jsonl_path, M.extract_cwd, read_session_start_cwd)
 end
 
 function M.sidecar_name(session_id)
   return "copilot-events-session-" .. session_id
-end
-
--- ==========================================================================
--- JSONL DIALECT
--- ==========================================================================
-
-function M.find_reset_command(_lines)
-  return nil
 end
 
 -- ==========================================================================
@@ -97,7 +81,7 @@ end
 
 function M.extract_diff(ev)
   if not ev then
-    return "(no diff data available)"
+    return stub.NO_DIFF
   end
   local d = ev.data
   if d and d.arguments and d.arguments.old_str and d.arguments.new_str then
@@ -106,7 +90,7 @@ function M.extract_diff(ev)
   if d and d.arguments and d.arguments.new_str then
     return d.arguments.new_str
   end
-  return "(event matched but contains no diff data)"
+  return stub.NO_EVENT_DIFF
 end
 
 -- ==========================================================================

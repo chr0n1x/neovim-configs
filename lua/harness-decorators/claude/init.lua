@@ -3,7 +3,9 @@
 local utils = require("harness-decorators.utils")
 local parser = require("harness-decorators.jsonl-parser")
 
-local M = {}
+local stub = require("harness-decorators.stub-adapter")
+
+local M = setmetatable({}, { __index = stub })
 
 -- ==========================================================================
 -- PATHS
@@ -29,10 +31,7 @@ end
 ---@param lines string[] JSONL lines to inspect
 ---@return "match"|"mismatch"|"unknown"
 function M.session_ownership(nvim_cwd, lines)
-  if not nvim_cwd then
-    return "unknown"
-  end
-  return utils.ownership_from_cwd(nvim_cwd, M.extract_cwd(lines))
+  return utils.session_ownership(nvim_cwd, lines, nil, M.extract_cwd)
 end
 
 ---True when a reset command keeps the SAME jsonl file (only history is wiped).
@@ -86,7 +85,7 @@ end
 ---@return string
 function M.extract_diff(ev)
   if not ev then
-    return "(no diff data available)"
+    return stub.NO_DIFF
   end
 
   local tur = ev.toolUseResult
@@ -145,7 +144,7 @@ function M.extract_diff(ev)
     end
   end
 
-  return "(event matched but contains no diff data)"
+  return stub.NO_EVENT_DIFF
 end
 
 -- ==========================================================================
@@ -235,15 +234,7 @@ local function parse_tool_use_result(entry, line_number)
     return
   end
 
-  -- Determine operation from tur.type or payload shape.
-  local operation = "Edit" -- default
-  if tur.type == "create" then
-    operation = "Create"
-  elseif tur.oldString and tur.newString then
-    operation = "Edit"
-  elseif tur.structuredPatch then
-    operation = "Edit"
-  end
+  local operation = tur.type == "create" and "Create" or "Edit"
 
   -- Compute the line of the first changed line from structuredPatch. The hunk
   -- header's newStart points at the first CONTEXT line (~3 lines above the

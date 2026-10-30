@@ -4,6 +4,17 @@ local M = {}
 ---Which LLM harness this Neovim session uses. Used for the notify prefix.
 M.harness = os.getenv("NVIM_LLM_HARNESS") or "claude"
 
+---The full-override command from <PREFIX>_COMMAND, or nil when unset or empty.
+---@param prefix string upper-case harness name, e.g. "CLAUDE"
+---@return string?
+local function command_override(prefix)
+  local cmd_env = os.getenv(prefix .. "_COMMAND") or ""
+  if cmd_env ~= "" then
+    return cmd_env
+  end
+  return nil
+end
+
 ---Build a harness terminal command from its env overrides. Every per-harness env.lua shares this
 ---shape: honor <HARNESS>_COMMAND as a full override (wrapper script, extra flags), else append an
 ---optional model flag when <HARNESS>_MODEL is set, else run the bare CLI. Harnesses with no model
@@ -15,9 +26,9 @@ M.harness = os.getenv("NVIM_LLM_HARNESS") or "claude"
 ---@return string command
 function M.command_for(harness, cli, model_flag)
   local h = harness:upper()
-  local cmd_env = os.getenv(h .. "_COMMAND") or ""
-  if cmd_env ~= "" then
-    return cmd_env
+  local override = command_override(h)
+  if override then
+    return override
   end
   local model = os.getenv(h .. "_MODEL") or ""
   if model_flag and model ~= "" then
@@ -51,9 +62,9 @@ end
 ---@return string command
 function M.provider_command(cli)
   local c = cli:upper()
-  local cmd_env = os.getenv(c .. "_COMMAND") or ""
-  if cmd_env ~= "" then
-    return cmd_env
+  local override = command_override(c)
+  if override then
+    return override
   end
   local cmd = cli
   local provider = os.getenv("NVIM_LLM_HARNESS_" .. c .. "_PROVIDER_NAME") or ""
@@ -259,11 +270,14 @@ function M.read_json_file(path)
   return nil
 end
 
----Call fn on each complete line in the last max_bytes; returns the last non-nil result.
+---Call fn on each complete line in the last max_bytes; returns the last non-nil result and the
+---absolute byte offset where the first handled line starts. When the tail starts mid-line and
+---holds no newline, nothing is skipped and that offset is the tail start.
 ---@param path string
 ---@param max_bytes number cap on bytes read from the end
 ---@param fn fun(line: string): any? per-line handler; nil means "no change to the running result"
----@return any?
+---@return any? result
+---@return integer? base_offset nil when the file is missing or empty
 function M.read_tail_lines(path, max_bytes, fn)
   local f = io.open(path, "r")
   if not f then
@@ -280,9 +294,11 @@ function M.read_tail_lines(path, max_bytes, fn)
   end
   -- Skip a possible partial first line. Only when we truncated (size > chunk_size): a file smaller
   -- than the cap starts on a real line boundary and must not drop its first line.
+  local base = size - chunk_size
   local nl = chunk:find("\n")
   if nl and size > chunk_size then
     chunk = chunk:sub(nl + 1)
+    base = base + nl
   end
   local result
   for line in chunk:gmatch("[^\n]+") do
@@ -291,7 +307,7 @@ function M.read_tail_lines(path, max_bytes, fn)
       result = v
     end
   end
-  return result
+  return result, base
 end
 
 -- ==========================================================================
@@ -304,7 +320,7 @@ M.log_seen = {}
 ---Shorten a file path by replacing the home directory with "~".
 ---@param fp string
 ---@return string
-local function shorten_path(fp)
+local function collapse_home(fp)
   local home = os.getenv("HOME")
   if home then
     local home_prefix = home .. "/"
@@ -359,7 +375,7 @@ function M.log(msg, level, notify_opts)
     return
   end
   M.log_seen[key] = now
-  local display_msg = shorten_path(msg)
+  local display_msg = collapse_home(msg)
   local prefix = "[" .. M.harness .. ".nvim auto-follow] "
   local handle = vim.notify(prefix .. display_msg, level or vim.log.levels.INFO, notify_opts)
   return handle
@@ -483,6 +499,26 @@ function M.ownership_from_cwd(nvim_cwd, cwd)
     return "match"
   end
   return "unknown"
+end
+
+---Shared body of every adapter's session_ownership: unknown without an nvim cwd, else the cwd
+---found in `lines` (falling back to read_first_cwd(jsonl_path), when given) judged by
+---ownership_from_cwd.
+---@param nvim_cwd string? CWD of this Neovim instance (nil = unknown)
+---@param lines string[] JSONL lines to inspect
+---@param jsonl_path string? Full path of the session JSONL
+---@param extract_cwd fun(lines: string[]): string?
+---@param read_first_cwd? fun(jsonl_path: string?): string? fallback reading the cwd from the file's first line
+---@return "match"|"mismatch"|"unknown"
+function M.session_ownership(nvim_cwd, lines, jsonl_path, extract_cwd, read_first_cwd)
+  if not nvim_cwd then
+    return "unknown"
+  end
+  local cwd = extract_cwd(lines)
+  if not cwd and read_first_cwd then
+    cwd = read_first_cwd(jsonl_path)
+  end
+  return M.ownership_from_cwd(nvim_cwd, cwd)
 end
 
 return M

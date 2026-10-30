@@ -63,3 +63,21 @@ describe("command selection: every harness runs its own CLI", function()
     end)
   end
 end)
+
+describe("command selection: <HARNESS>_COMMAND is a full override", function()
+  for _, harness in ipairs(utils.list_harnesses()) do
+    it(("%s honors %s_COMMAND over its model flags"):format(harness, harness:upper()), function()
+      local var = harness:upper() .. "_COMMAND"
+      local saved = vim.fn.getenv(var)
+      vim.fn.setenv(var, harness .. " --wrapped")
+      local ok, cmd = pcall(helper.env_command, harness)
+      if saved == "" then
+        vim.cmd("unlet! $" .. var)
+      else
+        vim.fn.setenv(var, saved)
+      end
+      assert.is_true(ok, tostring(cmd))
+      assert.are.equal(harness .. " --wrapped", cmd)
+    end)
+  end
+end)

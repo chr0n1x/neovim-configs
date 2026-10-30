@@ -1,6 +1,12 @@
 -- Inert adapter defaults for harnesses with no edit following (projects_dir() nil).
 local M = {}
 
+---Placeholder extract_diff text when there is no event to render.
+M.NO_DIFF = "(no diff data available)"
+
+---Placeholder extract_diff text when an event matched but carries no diff payload.
+M.NO_EVENT_DIFF = "(event matched but contains no diff data)"
+
 ---@return string?
 function M.projects_dir()
   return nil

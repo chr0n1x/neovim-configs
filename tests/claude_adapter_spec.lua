@@ -43,6 +43,20 @@ describe("claude.parse_tool_result", function()
     assert.is_nil(ci.starting_line)
   end)
 
+  it("labels an oldString/newString result and a type=update result as Edit", function()
+    local fp = vim.uv.cwd() .. "/tests/_claude_edit_target.txt"
+    local line = string.format(
+      '{"type":"user","uuid":"u4","timestamp":1700000000000,"toolUseResult":{"filePath":%q,"oldString":"a","newString":"b"}}',
+      fp
+    )
+    assert.are.equal("Edit", claude.parse_tool_result(line, 1).operation)
+    local upd = string.format(
+      '{"type":"user","uuid":"u5","timestamp":1700000000000,"toolUseResult":{"filePath":%q,"type":"update"}}',
+      fp
+    )
+    assert.are.equal("Edit", claude.parse_tool_result(upd, 1).operation)
+  end)
+
   it("returns nil for a non-tool line", function()
     assert.is_nil(claude.parse_tool_result('{"type":"assistant","message":{"role":"assistant"}}', 1))
   end)
@@ -94,4 +108,49 @@ describe("claude.extract_diff (picker preview contract)", function()
     -- An event with no toolUseResult reaches the generic "matched but empty" placeholder.
     assert.are.equal("(event matched but contains no diff data)", claude.extract_diff({}))
   end)
+end)
+
+describe("adapter default fields (stub base contract)", function()
+  local NO_DIFF = "(no diff data available)"
+  local NO_EVENT_DIFF = "(event matched but contains no diff data)"
+
+  it("claude: own reset/ownership, stub-shaped defaults elsewhere", function()
+    local a = require("harness-decorators.claude")
+    assert.is_true(a.is_same_file_reset("/clear"))
+    assert.is_false(a.is_same_file_reset("/new"))
+    assert.are.equal("unknown", a.session_ownership(nil, {}))
+    assert.are.equal(NO_DIFF, a.extract_diff(nil))
+    assert.are.equal(NO_EVENT_DIFF, a.extract_diff({}))
+    assert.is_nil(a.find_reset_command({}))
+  end)
+
+  it("copilot: no reset handling, no same-file reset", function()
+    local a = require("harness-decorators.copilot")
+    assert.is_nil(a.find_reset_command({ '{"type":"user","message":{"content":"/clear"}}' }))
+    assert.is_false(a.is_same_file_reset("/clear"))
+    assert.is_false(a.is_same_file_reset("/compact"))
+    assert.are.equal(NO_DIFF, a.extract_diff(nil))
+    assert.are.equal(NO_EVENT_DIFF, a.extract_diff({}))
+  end)
+
+  it("maki: /compact is the only same-file reset; reset scan and tool parse are inert", function()
+    local a = require("harness-decorators.maki")
+    assert.is_true(a.is_same_file_reset("/compact"))
+    assert.is_false(a.is_same_file_reset("/clear"))
+    assert.is_nil(a.find_reset_command({ '{"t":"user","text":"/new"}' }))
+    assert.is_nil(a.parse_tool_result('{"toolUseResult":{}}', 1))
+    assert.are.equal(NO_DIFF, a.extract_diff(nil))
+    assert.are.equal(NO_EVENT_DIFF, a.extract_diff({}))
+  end)
+
+  for _, name in ipairs({ "crush", "pig", "pi" }) do
+    it(name .. ": inert stub defaults", function()
+      local a = require("harness-decorators." .. name)
+      assert.is_nil(a.projects_dir())
+      assert.are.equal("unknown", a.session_ownership("/a", { '{"cwd":"/a"}' }, "/x"))
+      assert.is_nil(a.find_reset_command({ "/clear" }))
+      assert.is_false(a.is_same_file_reset("/clear"))
+      assert.is_nil(a.parse_tool_result("{}", 1))
+    end)
+  end
 end)

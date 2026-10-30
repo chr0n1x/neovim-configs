@@ -3,8 +3,9 @@
 -- on ToolDone, so parse_tool_result returns nil.
 local utils = require("harness-decorators.utils")
 local diff = require("harness-decorators.diff")
+local stub = require("harness-decorators.stub-adapter")
 
-local M = {}
+local M = setmetatable({}, { __index = stub })
 
 -- ==========================================================================
 -- PATHS
@@ -66,7 +67,7 @@ end
 ---@return string
 function M.extract_diff(ev)
   if not ev then
-    return "(no diff data available)"
+    return stub.NO_DIFF
   end
 
   -- Maki Diff records: full-file before/after in d.Diff.
@@ -75,7 +76,7 @@ function M.extract_diff(ev)
     return diff.format_full(maki_diff.before, maki_diff.after)
   end
 
-  return "(event matched but contains no diff data)"
+  return stub.NO_EVENT_DIFF
 end
 
 ---Called by the watcher when it first pins this session. Reads the last PIN_TAIL_BYTES and
@@ -86,33 +87,17 @@ end
 ---@param file_size number
 ---@return number base_byte_offset
 function M.on_pin(jsonl_path, file_size)
-  local start = math.max(0, file_size - PIN_TAIL_BYTES)
-  local f = io.open(jsonl_path, "r")
-  if not f then
-    return file_size
-  end
-  f:seek("set", start)
-  local chunk = f:read(file_size - start)
-  f:close()
-  if not chunk or #chunk == 0 then
-    return file_size
-  end
-
-  -- Byte offset (absolute) of the first complete line in the tail. If we started
-  -- mid-line, skip to just after the next newline.
-  local base = start
-  if start > 0 then
-    local nl = chunk:find("\n", 1, true)
-    if not nl then
-      return file_size -- no complete line in the tail; nothing to recover
-    end
-    base = start + nl -- byte just after that newline = start of first full line
-    chunk = chunk:sub(nl + 1)
-  end
-
   local lines = {}
-  for line in chunk:gmatch("([^\r\n]+)") do
+  local _, base = utils.read_tail_lines(jsonl_path, PIN_TAIL_BYTES, function(line)
     lines[#lines + 1] = line
+  end)
+  if not base then
+    return file_size
+  end
+  -- A tail that started mid-line and holds no newline has no complete line to recover.
+  local start = math.max(0, file_size - PIN_TAIL_BYTES)
+  if start > 0 and base == start then
+    return file_size
   end
   if #lines == 0 then
     return file_size
@@ -176,11 +161,7 @@ end
 ---@param jsonl_path string? Full path of the session JSONL
 ---@return "match"|"mismatch"|"unknown"
 function M.session_ownership(nvim_cwd, lines, jsonl_path)
-  if not nvim_cwd then
-    return "unknown"
-  end
-  local cwd = M.extract_cwd(lines) or M.read_header_cwd(jsonl_path)
-  return utils.ownership_from_cwd(nvim_cwd, cwd)
+  return utils.session_ownership(nvim_cwd, lines, jsonl_path, M.extract_cwd, M.read_header_cwd)
 end
 
 ---True when a reset command keeps the SAME jsonl file (only history is wiped).
@@ -190,30 +171,6 @@ end
 ---@return boolean
 function M.is_same_file_reset(cmd)
   return cmd == "/compact"
-end
-
--- ==========================================================================
--- RESET DETECTION (STUB)
--- ==========================================================================
-
----Scan maki JSONL lines for a session-resetting user command. Returns the
----command text ("/new" or "/compact") or nil.
----TODO(maki): implement - detect /new and /compact typed messages so session
----state can be cleared on reset. Not needed for basic pinning.
----@param lines string[]
----@return string?
-function M.find_reset_command(_lines)
-  return nil
-end
-
--- ==========================================================================
--- TOOL RESULT PARSING
--- ==========================================================================
-
----@param line string The JSONL line text
----@param line_number? integer The 1-based line number in the JSONL file
-function M.parse_tool_result(_line, _line_number)
-  return nil
 end
 
 return M

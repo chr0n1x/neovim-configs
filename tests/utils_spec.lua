@@ -503,3 +503,52 @@ describe("utils.newest_by_mtime", function()
     assert.are.equal(dir .. "/a", got)
   end)
 end)
+
+describe("utils.session_ownership (shared adapter body)", function()
+  local function extract(lines)
+    return lines[1]
+  end
+
+  it("is unknown without an nvim cwd, without calling the extractors", function()
+    local called = false
+    local function boom()
+      called = true
+    end
+    assert.are.equal("unknown", utils.session_ownership(nil, {}, nil, boom, boom))
+    assert.is_false(called)
+  end)
+
+  it("uses the cwd from the lines, then the first-line reader, then unknown", function()
+    local function reader()
+      return "/b"
+    end
+    assert.are.equal("match", utils.session_ownership("/a", { "/a" }, "p", extract, reader))
+    assert.are.equal("mismatch", utils.session_ownership("/a", {}, "p", extract, reader))
+    assert.are.equal("unknown", utils.session_ownership("/a", {}, "p", extract))
+  end)
+end)
+
+describe("utils.read_tail_lines base offset", function()
+  local path = vim.fn.tempname() .. "-tail"
+  after_each(function()
+    vim.fn.delete(path)
+  end)
+
+  it("returns 0 for a file smaller than the cap and the offset after the skipped partial line otherwise", function()
+    local f = assert(io.open(path, "wb"))
+    f:write("aaaa\nbbbb\ncccc\n")
+    f:close()
+    local seen = {}
+    local _, base = utils.read_tail_lines(path, 100, function(l)
+      seen[#seen + 1] = l
+    end)
+    assert.are.equal(0, base)
+    assert.are.same({ "aaaa", "bbbb", "cccc" }, seen)
+    seen = {}
+    _, base = utils.read_tail_lines(path, 8, function(l)
+      seen[#seen + 1] = l
+    end)
+    assert.are.same({ "cccc" }, seen)
+    assert.are.equal(10, base)
+  end)
+end)
