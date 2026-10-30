@@ -30,7 +30,12 @@ local function wait_until_ready(timeout_ms)
   return false
 end
 
-wait_until_ready()
+-- Without the harness layer the specs cannot exercise anything, and the summary would still read
+-- "0 failures, 0 errors", so a load failure fails the run.
+if not wait_until_ready() then
+  io.stderr:write("harness modules did not load; not running specs\n")
+  vim.cmd("cquit! 1")
+end
 
 -- busted is installed via luarocks at /usr/local/share/lua/5.1; nvim's LuaJIT shares that
 -- path. Prepend it defensively in case the container's LUA_PATH isn't inherited by nvim.
@@ -62,7 +67,9 @@ local function fullname(element)
   end
   return table.concat(names, " > ")
 end
+local started = 0
 busted.subscribe({ "test", "start" }, function(element)
+  started = started + 1
   io.write("  * " .. fullname(element) .. " " .. (element.name or "") .. "\n")
 end)
 local failures, errors = 0, 0
@@ -104,5 +111,10 @@ end
 busted.publish({ "exit" })
 
 local total = failures + errors
-io.write(string.format("\n==> busted: %d failures, %d errors\n", failures, errors))
+io.write(string.format("\n==> busted: tests run: %d\n", started))
+io.write(string.format("==> busted: %d failures, %d errors\n", failures, errors))
+if started == 0 then
+  io.stderr:write("no specs ran\n")
+  vim.cmd("cquit! 1")
+end
 vim.cmd("cquit! " .. (total > 0 and 1 or 0))
