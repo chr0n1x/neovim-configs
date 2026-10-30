@@ -1,8 +1,15 @@
 -- Per-harness terminal state shared by term.lua and park.lua.
 --
---   table[harness] = { inst = snacks.terminal|nil, selected = boolean }
+--   table[harness] = {
+--     inst = snacks.terminal|nil, -- the float; nil until first opened
+--     selected = boolean,         -- at most one entry is selected
+--     cwd = string|nil,           -- the directory the harness was started in
+--     opened_at = number|nil,     -- os.time() when the harness was started
+--   }
 --
--- At most one entry is selected; inst is nil until first opened. term owns .inst, park owns .selected.
+-- term owns .inst, .cwd and .opened_at; park owns .selected. Where the float is (its layout:
+-- normal, fullscreen, shelved or minimized) lives on the instance, read with layout.get(entry.inst)
+-- and changed only through layout.set.
 local M = {}
 
 ---Per-harness records keyed by harness name.
