@@ -193,12 +193,12 @@ local function save_baseline(self)
   }
 end
 
----Collapse a <C-f>-widened float (_wide) back to its saved geometry, animated.
+---Collapse a fullscreen float back to its saved geometry, animated.
 local function animate_collapse(self)
-  if not (self._wide and self._saved_config) then
+  if not (layout.get(self) == "fullscreen" and self._saved_config) then
     return
   end
-  self._wide = false
+  layout.set(self, "normal")
   resize_to(self, retract_rect(self))
 end
 
@@ -307,24 +307,20 @@ end
 ---The <C-f> key handler: toggle shelf mode. Turning it on animates the float out to fullscreen
 -- (5% vertical / 10% horizontal padding); from then on it is fullscreen while focused and on the shelf
 -- otherwise (follow_focus). Turning it off retracts the float to retract_rect. Exposed on M so tests
--- can drive it headless with a fake instance; _wide mirrors "fullscreen" for animate_collapse.
----@param self table the Snacks terminal instance (has .win, ._wide, ._saved_config)
+-- can drive it headless with a fake instance.
+---@param self table the Snacks terminal instance (has .win, ._saved_config)
 function M.fullscreen_key(self)
   local win = self.win
   if not win or not vim.api.nvim_win_is_valid(win) then
     return
   end
   if self._shelf_mode then
-    self._shelf_mode = false
-    self._shelved = false
-    self._wide = false
+    layout.set(self, "normal", { shelf_mode = false })
     resize_to(self, retract_rect(self))
     return
   end
   save_baseline(self)
-  self._shelf_mode = true
-  self._shelved = false
-  self._wide = true
+  layout.set(self, "fullscreen", { shelf_mode = true })
   resize_to(self, fullscreen_rect())
 end
 
@@ -544,7 +540,7 @@ end
 ---@param inst table the Snacks terminal instance
 local function notify_output(inst)
   local bar = has_bar(inst)
-  if inst._shelved and not bar and inst.win and vim.api.nvim_win_is_valid(inst.win) then
+  if layout.get(inst) == "shelved" and not bar and inst.win and vim.api.nvim_win_is_valid(inst.win) then
     bounce(inst)
   else
     flash(inst)
@@ -756,10 +752,9 @@ shelve = function(inst)
     return
   end
   save_baseline(inst)
-  inst._shelved = true
-  inst._wide = false
+  layout.set(inst, "shelved")
   local function slide_up()
-    if inst._shelved then
+    if layout.get(inst) == "shelved" then
       resize_to(inst, shelf_rect(), function()
         scroll_to_bottom(inst)
       end)
@@ -774,12 +769,12 @@ end
 
 ---Unshelve the float: animate it back to fullscreen, the same state as a <C-f> fullscreen.
 ---@param inst table the Snacks terminal instance
-local function unshelve(inst)
+---@param shelf_mode? boolean set shelf mode to this as well
+local function unshelve(inst, shelf_mode)
   if not (inst.win and vim.api.nvim_win_is_valid(inst.win)) then
     return
   end
-  inst._shelved = false
-  inst._wide = true
+  layout.set(inst, "fullscreen", { shelf_mode = shelf_mode })
   resize_to(inst, fullscreen_rect())
 end
 
@@ -800,11 +795,9 @@ end
 ---@param inst table the Snacks terminal instance
 function M.shelf_button(inst)
   if inst._shelf_mode then
-    inst._shelf_mode = false
-    unshelve(inst)
+    unshelve(inst, false)
     return
   end
-  inst._shelf_mode = true
   shelve(inst)
   if inst.win and vim.api.nvim_get_current_win() == inst.win then
     go_back(inst)
@@ -830,7 +823,7 @@ follow_focus = function(inst)
         if
           shown()
           and vim.api.nvim_get_current_win() == inst.win
-          and (inst._shelved or not at_rect(inst.win, fullscreen_rect()))
+          and (layout.get(inst) == "shelved" or not at_rect(inst.win, fullscreen_rect()))
         then
           unshelve(inst)
         end
@@ -841,7 +834,7 @@ follow_focus = function(inst)
     buffer = inst.buf,
     callback = function()
       vim.schedule(function()
-        if shown() and not inst._shelved and vim.api.nvim_get_current_win() ~= inst.win then
+        if shown() and layout.get(inst) ~= "shelved" and vim.api.nvim_get_current_win() ~= inst.win then
           shelve(inst)
         end
       end)
@@ -933,7 +926,8 @@ function M.reset_layout(harness)
   for h, e in pairs(state.table) do
     local inst = e.inst
     if inst then
-      inst._shelf_mode, inst._shelved, inst._wide, inst._saved_config = false, false, false, nil
+      local minimized = layout.get(inst) == "minimized"
+      layout.set(inst, minimized and "minimized" or "normal", { shelf_mode = false, forget_baseline = true })
     end
     if inst and (not harness or h == harness) then
       inst.opts = inst.opts or {}
@@ -962,8 +956,7 @@ function M.set_zen_width(narrow)
     if inst and inst.win and vim.api.nvim_win_is_valid(inst.win) and inst._shelf_mode then
       local focused = vim.api.nvim_get_current_win() == inst.win
       local rect = focused and fullscreen_rect() or shelf_rect()
-      inst._shelved = not focused
-      inst._wide = focused
+      layout.set(inst, focused and "fullscreen" or "shelved")
       resize_to(inst, rect, function()
         if not focused then
           scroll_to_bottom(inst)

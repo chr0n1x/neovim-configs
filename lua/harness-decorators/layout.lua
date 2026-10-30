@@ -253,6 +253,49 @@ function M.stack_rects(n, col, outer_width, screen)
   return rects
 end
 
+---Where a harness float is, as one value on its Snacks instance (inst._layout):
+--   "normal"     its own spot (default, zen, tiled, or wherever the user dragged it)
+--   "fullscreen" the <C-f> fullscreen rect
+--   "shelved"    the shelf at the bottom of the fullscreen rect
+--   "minimized"  hidden, with a bar in the dock
+-- Shelf mode (inst._shelf_mode) is separate: a policy that makes focus drive the float between
+-- fullscreen and the shelf. It can be on in "normal" (the float was dragged off fullscreen, and
+-- focus takes it back) and off in "fullscreen" (the shelf button turned it off).
+---@alias harness.Layout "normal"|"fullscreen"|"shelved"|"minimized"
+
+---The instance's layout; "normal" when none was set.
+---@param inst table the Snacks terminal instance
+---@return harness.Layout
+function M.get(inst)
+  return inst._layout or "normal"
+end
+
+---The one place a float's layout changes. It keeps the related fields consistent:
+--   * "shelved" turns shelf mode on; "minimized" turns it off and drops the <C-f> baseline.
+--   * opts.shelf_mode sets shelf mode explicitly; opts.forget_baseline drops the baseline.
+--   * _shelved and _wide mirror the layout for readers outside these modules; nothing here reads them.
+-- Otherwise the baseline (_saved_config) is kept, so toggling <C-f> does not drift the float.
+---@param inst table the Snacks terminal instance
+---@param to harness.Layout
+---@param opts? { shelf_mode?: boolean, forget_baseline?: boolean }
+function M.set(inst, to, opts)
+  opts = opts or {}
+  inst._layout = to
+  if opts.shelf_mode ~= nil then
+    inst._shelf_mode = opts.shelf_mode
+  end
+  if to == "shelved" then
+    inst._shelf_mode = true
+  elseif to == "minimized" then
+    inst._shelf_mode = false
+  end
+  if to == "minimized" or opts.forget_baseline then
+    inst._saved_config = nil
+  end
+  inst._shelved = to == "shelved"
+  inst._wide = to == "fullscreen"
+end
+
 ---The 0-based screen row/col of a float's outer top-left corner (border included) as drawn.
 -- Neovim shifts a float that would not fit back onto the screen, so after an editor resize or a
 -- restore near the edge the drawn spot can differ from the row/col in its config.

@@ -109,10 +109,7 @@ local function drag_to(mouse)
     height = height,
   })
   inst.opts.row, inst.opts.col, inst.opts.width, inst.opts.height = row, col, width, height
-  if not drag.wide then
-    inst._saved_config = nil
-  end
-  inst._wide = false
+  layout.set(inst, "normal", { forget_baseline = not drag.wide })
 end
 
 ---Mouse handlers for the harness floats and their minimized bars. Each takes a getmousepos()-shaped
@@ -170,7 +167,7 @@ function M.press(mouse)
   drag = {
     inst = inst,
     edges = edges,
-    wide = inst._wide,
+    wide = layout.get(inst) == "fullscreen",
     screenrow = mouse.screenrow,
     screencol = mouse.screencol,
     row = row,

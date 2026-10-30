@@ -133,3 +133,63 @@ describe("layout rects", function()
     end)
   end)
 end)
+
+describe("layout.set, the float's one layout value", function()
+  local layout = require("harness-decorators.layout")
+
+  it("Given a fresh instance, Then its layout is normal with shelf mode off", function()
+    local inst = {}
+    assert.are.equal("normal", layout.get(inst))
+    assert.is_falsy(inst._shelf_mode)
+  end)
+
+  it("Given a normal float, When shelved, Then shelf mode turns on and the baseline is kept", function()
+    local inst = { _saved_config = { auto = true } }
+    layout.set(inst, "shelved")
+    assert.are.same({ "shelved", true, true, false }, { layout.get(inst), inst._shelf_mode, inst._shelved, inst._wide })
+    assert.is_not_nil(inst._saved_config)
+  end)
+
+  it(
+    "Given shelf mode on at fullscreen, When set back to normal, Then the baseline is kept for the next <C-f>",
+    function()
+      local inst = { _saved_config = { auto = true } }
+      layout.set(inst, "fullscreen", { shelf_mode = true })
+      layout.set(inst, "normal", { shelf_mode = false })
+      assert.are.same(
+        { "normal", false, false, false },
+        { layout.get(inst), inst._shelf_mode, inst._shelved, inst._wide }
+      )
+      assert.is_not_nil(inst._saved_config)
+    end
+  )
+
+  it("Given shelf mode on, When minimized, Then shelf mode is off and the baseline is dropped", function()
+    local inst = { _saved_config = { auto = true } }
+    layout.set(inst, "shelved")
+    layout.set(inst, "minimized")
+    assert.are.same(
+      { "minimized", false, false, false },
+      { layout.get(inst), inst._shelf_mode, inst._shelved, inst._wide }
+    )
+    assert.is_nil(inst._saved_config)
+  end)
+
+  it(
+    "Given the shelf button turned shelf mode off at fullscreen, Then the float is fullscreen with shelf mode off",
+    function()
+      local inst = {}
+      layout.set(inst, "shelved")
+      layout.set(inst, "fullscreen", { shelf_mode = false })
+      assert.are.same({ "fullscreen", false, true }, { layout.get(inst), inst._shelf_mode, inst._wide })
+    end
+  )
+
+  it("Given shelf mode on at fullscreen, When dragged, Then it is normal with shelf mode still on", function()
+    local inst = { _saved_config = { auto = true } }
+    layout.set(inst, "fullscreen", { shelf_mode = true })
+    layout.set(inst, "normal", { forget_baseline = false })
+    assert.are.same({ "normal", true, false }, { layout.get(inst), inst._shelf_mode, inst._wide })
+    assert.is_not_nil(inst._saved_config)
+  end)
+end)

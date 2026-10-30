@@ -1638,6 +1638,53 @@ describe("term: float mouse handling, minimized bars and flash", function()
   )
 
   it(
+    "Given shelf mode turned off by the shelf button (fullscreen, shelf mode off), When focus leaves and returns, Then it stays fullscreen, and <C-h> retracts it to its pre-shelf spot",
+    function()
+      local work_win = vim.api.nvim_get_current_win()
+      local inst = term.open("claude")
+      vim.api.nvim_set_current_win(work_win)
+      local before = rect_of(inst.win)
+      assert.is_true(shelve(inst), "precondition: shelved")
+      assert.are.equal("", term.mouse.double(shelf_corner(inst.win)))
+      term.mouse.release()
+      assert.is_true(at_rect(inst, fullscreen_rect()), "precondition: back at fullscreen")
+      vim.api.nvim_set_current_win(inst.win)
+      vim.wait(200)
+      vim.api.nvim_set_current_win(work_win)
+      vim.wait(400)
+      assert.are.same(fullscreen_rect(), rect_of(inst.win), "with shelf mode off, leaving must not shelve it")
+      vim.api.nvim_set_current_win(inst.win)
+      term.go_back_key(inst)
+      assert.is_true(at_rect(inst, before), "<C-h> should retract it: " .. vim.inspect(rect_of(inst.win)))
+    end
+  )
+
+  it(
+    "Given shelf mode on and the focused float dragged off fullscreen, When focus leaves and returns, Then it shelves and then grows back to fullscreen",
+    function()
+      local work_win = vim.api.nvim_get_current_win()
+      local inst = term.open("claude")
+      term.fullscreen_key(inst)
+      assert.is_true(at_rect(inst, fullscreen_rect()), "precondition: fullscreen")
+      local full = fullscreen_rect()
+      local grip = shelf_corner(inst.win)
+      grip.screencol = grip.screencol + 10
+      local moved = { screenrow = grip.screenrow, screencol = grip.screencol - 2 }
+      assert.are.equal("", drag_mouse(grip, moved))
+      assert.is_true(
+        wait_for(function()
+          return not vim.deep_equal(rect_of(inst.win), full)
+        end),
+        "the drag should move the float off fullscreen: " .. vim.inspect(rect_of(inst.win))
+      )
+      vim.api.nvim_set_current_win(work_win)
+      assert.is_true(at_rect(inst, shelf_rect()), "leaving should shelve it: " .. vim.inspect(rect_of(inst.win)))
+      vim.api.nvim_set_current_win(inst.win)
+      assert.is_true(at_rect(inst, fullscreen_rect()), "focus should grow it back: " .. vim.inspect(rect_of(inst.win)))
+    end
+  )
+
+  it(
     "Given a shelved unfocused float, When its terminal gets new text and then goes quiet, Then the shelf bounces instead of flashing",
     function()
       local work_win = vim.api.nvim_get_current_win()
@@ -1764,7 +1811,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
       vim.api.nvim_set_current_win(work_win)
       assert.is_true(shelve(inst), "precondition: shelved")
       vim.api.nvim_win_set_config(inst.win, { relative = "editor", row = 2, col = 10, width = 40, height = 10 })
-      inst._shelved = false
+      require("harness-decorators.layout").set(inst, "normal")
       vim.api.nvim_set_current_win(inst.win)
       assert.is_true(at_rect(inst, fullscreen_rect()), "focus must always unshelve: " .. vim.inspect(rect_of(inst.win)))
     end
@@ -1980,7 +2027,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
         end),
         "pressing the shelf corner still starts a move"
       )
-      assert.is_nil(inst._shelved)
+      assert.is_false(inst._shelved == true)
     end
   )
 
@@ -2324,7 +2371,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
         local inst = term.open("claude")
         assert.is_true(shelve(inst), "precondition: shelved")
         place(inst, fullscreen_rect())
-        inst._shelved = false
+        require("harness-decorators.layout").set(inst, "fullscreen")
         term.set_zen_width(true)
         assert.is_true(at_rect(inst, shelf_rect()), "should land on the shelf: " .. vim.inspect(rect_of(inst.win)))
         assert.is_true(inst._shelved == true)

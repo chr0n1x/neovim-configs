@@ -107,6 +107,9 @@ function M.close_pill(inst)
     pcall(vim.api.nvim_win_close, inst._pill_win, true)
   end
   inst._pill_win = nil
+  if layout.get(inst) == "minimized" then
+    layout.set(inst, "normal")
+  end
   if inst._bar_slot then
     inst._bar_slot = nil
     M.repack_dock()
@@ -151,12 +154,12 @@ function M.minimize_float(inst)
   -- Where the float was, so restoring can grow the bar back to it. A float in shelf mode (fullscreen
   -- or shelved) leaves shelf mode and restores to its normal spot, the same as a <C-q> switch.
   inst._restore_rect = { row = row, col = col, width = cfg.width, height = cfg.height }
-  if inst._shelf_mode or inst._shelved or inst._wide then
+  if inst._shelf_mode or layout.get(inst) ~= "normal" then
     local r = auto_float_rect()
     inst._restore_rect = vim.deepcopy(r)
     inst.opts.row, inst.opts.col, inst.opts.width, inst.opts.height = r.row, r.col, r.width, r.height
   end
-  inst._shelf_mode, inst._shelved, inst._wide, inst._saved_config = false, false, false, nil
+  layout.set(inst, "minimized")
   inst._bar_slot = M.free_slot()
   -- Hiding the focused float lets Neovim focus any window, including another harness float, which
   -- would then take the focused spot. Move focus off the harness floats first.
