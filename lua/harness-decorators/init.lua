@@ -173,15 +173,16 @@ end
 function M.session_component(frame)
   local path = M.get_pinned_path()
   local display = require("harness-decorators.agent-display")
+  local harness = require("harness-decorators.active").get()
   if not path then
     if display.count() == 0 then
       return "0 agents"
     end
-    local adapter = require("harness-decorators." .. utils.harness)
+    local adapter = require("harness-decorators." .. harness)
     if not adapter.projects_dir() then
-      local state = display.status(utils.harness)
+      local state = display.status(harness)
       local status = state and display.dot_for(state.status) or nil
-      local identity = (state and state.session_id) or utils.harness
+      local identity = (state and state.session_id) or harness
       local prefix = "%#lualine_x_normal#🤖%*"
       return prefix .. (status and " " .. status or "") .. " " .. identity
     end
@@ -197,7 +198,7 @@ function M.session_component(frame)
   end
   -- Show working/idle status or the stale-idle ring; omit unknown status.
   local dot = ""
-  local state = display.status(utils.harness)
+  local state = display.status(harness)
   if state and type(display.dot_for) == "function" then
     dot = display.dot_for(state.status) or ""
   end

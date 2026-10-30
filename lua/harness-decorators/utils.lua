@@ -1,8 +1,12 @@
 -- Shared helpers for harness-decorators: logging, dedup, path and session utils.
 local M = {}
 
----Which LLM harness this Neovim session uses. Used for the notify prefix.
-M.harness = os.getenv("NVIM_LLM_HARNESS") or "claude"
+---The active harness name, owned by harness-decorators.active (required lazily: active requires
+---utils while it loads).
+---@return string
+local function active_harness()
+  return require("harness-decorators.active").get()
+end
 
 ---The full-override command from <PREFIX>_COMMAND, or nil when unset or empty.
 ---@param prefix string upper-case harness name, e.g. "CLAUDE"
@@ -405,7 +409,7 @@ function M.log(msg, level, notify_opts)
   end
   M.log_seen[key] = now
   local display_msg = collapse_home(msg)
-  local prefix = "[" .. M.harness .. ".nvim auto-follow] "
+  local prefix = "[" .. active_harness() .. ".nvim auto-follow] "
   local handle = vim.notify(prefix .. display_msg, level or vim.log.levels.INFO, notify_opts)
   return handle
 end
@@ -497,7 +501,7 @@ function M.extract_session_id(jsonl_path)
   if not jsonl_path then
     return nil
   end
-  local id = require("harness-decorators." .. M.harness).session_id(jsonl_path)
+  local id = require("harness-decorators." .. active_harness()).session_id(jsonl_path)
   if id then
     return id
   end
@@ -546,5 +550,21 @@ function M.session_ownership(nvim_cwd, lines, jsonl_path, extract_cwd, read_firs
   end
   return M.ownership_from_cwd(nvim_cwd, cwd)
 end
+
+-- utils.harness reads and writes the value owned by harness-decorators.active.
+setmetatable(M, {
+  __index = function(_, k)
+    if k == "harness" then
+      return active_harness()
+    end
+  end,
+  __newindex = function(t, k, v)
+    if k == "harness" then
+      require("harness-decorators.active").set(v)
+    else
+      rawset(t, k, v)
+    end
+  end,
+})
 
 return M

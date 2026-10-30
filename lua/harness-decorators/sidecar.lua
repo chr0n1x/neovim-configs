@@ -1,5 +1,6 @@
 -- Sidecar event log: mirrors pinned session JSONL lines to a per-nvim file.
 local utils = require("harness-decorators.utils")
+local active = require("harness-decorators.active")
 local M = {}
 
 ---Directory holding sidecars and the watcher's log and pidfile, shared by every nvim instance.
@@ -53,7 +54,7 @@ end
 ---@param session_id string
 ---@return string
 function M.path(session_id)
-  local adapter = require("harness-decorators." .. utils.harness)
+  local adapter = require("harness-decorators." .. active.get())
   local name = adapter.sidecar_name(session_id)
   return string.format("%s/%d-%s.jsonl", M.dir(), vim.fn.getpid(), name)
 end
@@ -123,7 +124,7 @@ function M.lookup(sidecar_path, uuid, timestamp, id)
     return nil
   end
 
-  local adapter = require("harness-decorators." .. utils.harness)
+  local adapter = require("harness-decorators." .. active.get())
   local best = nil
   local best_score = -1
   local ts_str = tostring(timestamp)
@@ -159,7 +160,7 @@ end
 ---@param ev table|nil
 ---@return string
 function M.extract_diff(ev)
-  local adapter = require("harness-decorators." .. utils.harness)
+  local adapter = require("harness-decorators." .. active.get())
   return adapter.extract_diff(ev)
 end
 

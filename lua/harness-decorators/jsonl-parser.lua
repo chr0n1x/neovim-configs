@@ -1,18 +1,18 @@
 -- Parses session JSONL files into normalized change events. Each dialect lives in
 -- its harness adapter (harness-decorators.<name>); this module only dispatches on
--- the active harness (utils.harness).
-local utils = require("harness-decorators.utils")
+-- the active harness (harness-decorators.active).
+local active = require("harness-decorators.active")
 
 local M = {}
 
 ---Parse a JSONL line for file changes. Dispatches to the active harness adapter.
----Reads utils.harness live (not cached at load time) so a runtime harness switch
+---Reads the active harness live (not cached at load time) so a runtime harness switch
 ---(switch.lua) repoints parsing without requiring the module to be reloaded.
 ---@param line string The JSONL line text
 ---@param line_number? integer The 1-based line number in the JSONL file
 ---Returns change_info table or nil.
 function M.parse_tool_result(line, line_number)
-  return require("harness-decorators." .. utils.harness).parse_tool_result(line, line_number)
+  return require("harness-decorators." .. active.get()).parse_tool_result(line, line_number)
 end
 
 ---One-line preview of text for a change delta: newlines shown as a literal backslash-n, cut to 60 chars.
