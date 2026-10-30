@@ -154,8 +154,7 @@ describe("adapter default fields (stub base contract)", function()
     end)
   end
 
-  -- Watcher-probed optional fields each adapter defines itself. Every other probed field must be
-  -- absent both raw and through the stub metatable, so a default added to the stub fails here.
+  -- Watcher-read fields each adapter overrides. Every other one comes from the stub base.
   local probed = {
     "on_pin",
     "inotify_events",
@@ -174,17 +173,29 @@ describe("adapter default fields (stub base contract)", function()
     pig = {},
   }
   for name, fields in pairs(own) do
-    it(name .. ": watcher-probed optional fields are its own, none inherited", function()
+    it(name .. ": overrides exactly its own watcher-read fields and inherits the rest from the stub", function()
+      local stub = require("harness-decorators.stub-adapter")
       local a = require("harness-decorators." .. name)
+      assert.are.equal(stub, getmetatable(a).__index, name .. " must inherit from the stub base")
       for _, field in ipairs(probed) do
         if fields[field] then
-          assert.is_not_nil(rawget(a, field), name .. "." .. field .. " should be defined")
+          assert.is_not_nil(rawget(a, field), name .. "." .. field .. " should be overridden")
         else
-          assert.is_nil(rawget(a, field), name .. "." .. field .. " should be absent")
-          assert.is_nil(a[field], name .. "." .. field .. " should not be inherited")
+          assert.is_nil(rawget(a, field), name .. "." .. field .. " should not be overridden")
+          assert.are.equal(stub[field], a[field], name .. "." .. field .. " should be the stub's")
         end
-        assert.are.equal(rawget(a, field), a[field], name .. "." .. field)
       end
     end)
   end
+
+  it("stub: watcher-read defaults behave as an adapter without the hook", function()
+    local stub = require("harness-decorators.stub-adapter")
+    assert.are.equal(42, stub.on_pin("/x.jsonl", 42))
+    assert.is_nil(stub.session_id("/x/abc.jsonl"))
+    assert.is_nil(stub.session_id_from_lines({ '{"sessionId":"s"}' }))
+    assert.is_nil(stub.inotify_events())
+    assert.is_false(stub.push_following)
+    assert.is_false(stub.flat_sessions_dir)
+    assert.is_nil(stub.on_activate)
+  end)
 end)

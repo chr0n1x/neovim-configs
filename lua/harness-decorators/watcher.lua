@@ -110,11 +110,9 @@ end
 ---@param lines string[]
 ---@return string?
 local function declared_session_id(lines)
-  if adapter.session_id_from_lines then
-    local ok, id = pcall(adapter.session_id_from_lines, lines)
-    if ok and type(id) == "string" and #id > 0 then
-      return id
-    end
+  local ok, id = pcall(adapter.session_id_from_lines, lines)
+  if ok and type(id) == "string" and #id > 0 then
+    return id
   end
   return nil
 end
@@ -337,11 +335,9 @@ function M.process_jsonl_write(jsonl_path)
       try_pin_session(jsonl_path, declared_session_id({}))
 
       local base = file_size
-      if adapter.on_pin then
-        local ok, result = pcall(adapter.on_pin, jsonl_path, file_size)
-        if ok and type(result) == "number" and result >= 0 then
-          base = result
-        end
+      local ok, result = pcall(adapter.on_pin, jsonl_path, file_size)
+      if ok and type(result) == "number" and result >= 0 then
+        base = result
       end
 
       jsonl_positions[jsonl_path] = { byte_pos = base, line_count = 0 }
@@ -619,11 +615,9 @@ local function inotify_event_set()
   if adapter.flat_sessions_dir then
     base = base .. ",modify"
   end
-  if type(adapter.inotify_events) == "function" then
-    local ev = adapter.inotify_events()
-    if type(ev) == "string" and #ev > 0 then
-      return ev
-    end
+  local ev = adapter.inotify_events()
+  if type(ev) == "string" and #ev > 0 then
+    return ev
   end
   return base
 end

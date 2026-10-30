@@ -1,8 +1,8 @@
 -- Inert adapter defaults for harnesses with no edit following (projects_dir() nil).
 
----The interface every harness adapter (`harness-decorators.<harness>`) exposes. The stub below
----gives the required fields inert defaults; the optional fields have none, because the watcher
----and switch treat a missing field as "this harness does not do that".
+---The interface every harness adapter (`harness-decorators.<harness>`) exposes. Adapters inherit
+---from the stub below, which gives every field except title_color and the sidecar trio an inert
+---default meaning "this harness does not do that".
 ---@class HarnessAdapter
 ---Directory to watch for session JSONLs; nil turns the watcher off.
 ---@field projects_dir fun(): string?
@@ -22,20 +22,22 @@
 ---@field score_event? fun(ev: table): integer
 ---History-preview diff text for a sidecar event; needed with sidecar_name.
 ---@field extract_diff? fun(ev: table?): string
----Session id derived from the JSONL path, the fallback when the lines declare none.
----@field session_id? fun(jsonl_path: string?): string?
----Session id declared inside the JSONL lines, or nil.
----@field session_id_from_lines? fun(lines: string[]): string?
----Hook run when the watcher first pins a session; returns the byte offset to read from.
----@field on_pin? fun(jsonl_path: string, file_size: number): number
----inotifywait event list overriding the watcher's default set.
----@field inotify_events? fun(): string
+---Session id derived from the JSONL path, or nil for the filename stem (default: nil).
+---@field session_id fun(jsonl_path: string?): string?
+---Session id declared inside the JSONL lines, or nil (default: nil, so only a first-encounter
+---ownership match pins, keyed by the path).
+---@field session_id_from_lines fun(lines: string[]): string?
+---Hook run when the watcher first pins a session; returns the byte offset to read from
+---(default: file_size, so content written before the pin is not replayed).
+---@field on_pin fun(jsonl_path: string, file_size: number): number
+---inotifywait event list, or nil for the watcher's default set (default: nil).
+---@field inotify_events fun(): string?
 ---Hook run when the harness becomes active (startup or switch).
 ---@field on_activate? fun()
----True when the harness pushes edits itself, so the filesystem watcher stays off.
----@field push_following? boolean
----True when session JSONLs sit directly in projects_dir() (watched non-recursively).
----@field flat_sessions_dir? boolean
+---True when the harness pushes edits itself, so the filesystem watcher stays off (default: false).
+---@field push_following boolean
+---True when session JSONLs sit directly in projects_dir() (watched non-recursively; default: false).
+---@field flat_sessions_dir boolean
 
 local M = {}
 
@@ -44,6 +46,30 @@ M.NO_DIFF = "(no diff data available)"
 
 ---Placeholder extract_diff text when an event matched but carries no diff payload.
 M.NO_EVENT_DIFF = "(event matched but contains no diff data)"
+
+M.push_following = false
+
+M.flat_sessions_dir = false
+
+---@return string?
+function M.session_id(_jsonl_path)
+  return nil
+end
+
+---@return string?
+function M.session_id_from_lines(_lines)
+  return nil
+end
+
+---@return number
+function M.on_pin(_jsonl_path, file_size)
+  return file_size
+end
+
+---@return string?
+function M.inotify_events()
+  return nil
+end
 
 ---@return string?
 function M.projects_dir()

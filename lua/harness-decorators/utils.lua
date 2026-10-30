@@ -498,7 +498,7 @@ function M.extract_session_id(jsonl_path)
     return nil
   end
   local ok, adapter = pcall(require, "harness-decorators." .. M.harness)
-  if ok and adapter and adapter.session_id then
+  if ok then
     local id = adapter.session_id(jsonl_path)
     if id then
       return id
