@@ -384,9 +384,8 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     assert.are.equal(inst.buf, entries[1].bufnr)
   end)
 
-  it("spawn cwd is the current buffer's dir when it names a real file (project-scoped resume)", function()
-    -- The point of project-scoped resume: when you are editing a file in /proj/a, the harness
-    -- spawns in /proj/a so `--continue` resumes /proj/a's session, not getcwd()'s.
+  it("recorded cwd is getcwd() even when the current buffer is a file in another directory", function()
+    -- The harness runs in nvim's cwd (snacks gets no cwd), so that is what must be recorded.
     local term = require("harness-decorators.term")
     term._reset()
     local dir = vim.fn.tempname()
@@ -399,7 +398,7 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     vim.api.nvim_buf_set_name(buf, file)
     vim.api.nvim_set_current_buf(buf)
     term.open("maki")
-    assert.are.equal(dir, term.cwd("maki"), "spawn cwd must be the edited file's directory")
+    assert.are.equal(vim.fn.getcwd(), term.cwd("maki"), "recorded cwd must be nvim's cwd")
     pcall(vim.api.nvim_buf_delete, buf, { force = true })
     term._reset()
   end)

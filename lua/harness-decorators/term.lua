@@ -1091,13 +1091,6 @@ function M.open(harness, opts)
     cmd = cmd .. " " .. opts.args
   end
 
-  -- Spawn in the current file's dir so --continue picks that project; else getcwd().
-  local spawn_cwd = vim.fn.getcwd()
-  local cur_buf = vim.api.nvim_get_current_buf()
-  local cur_file = vim.api.nvim_buf_get_name(cur_buf)
-  if cur_file ~= "" and vim.uv.fs_stat(cur_file) then
-    spawn_cwd = vim.fn.fnamemodify(cur_file, ":h")
-  end
   local inst = snacks.open(cmd, {
     auto_insert = false,
     start_insert = false,
@@ -1110,7 +1103,8 @@ function M.open(harness, opts)
   follow_focus(inst)
   follow_lifecycle(harness, inst)
   schedule_enter_terminal_mode(inst.win, inst.buf)
-  e.cwd = spawn_cwd
+  -- Snacks spawns the job in nvim's cwd; the state adapters look up sessions under this.
+  e.cwd = vim.fn.getcwd()
   -- Open time, used by cwd-keyed label adapters (utils.pick_jsonl_by_time).
   e.opened_at = os.time()
   return inst
