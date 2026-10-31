@@ -8,7 +8,7 @@
 
 local helper = require("tests.helper")
 
-describe("swap: switch() re-points terminal_cmd", function()
+describe("swap: switch() makes the new harness active with its own command", function()
   local original_harness
 
   setup(function()
@@ -23,7 +23,7 @@ describe("swap: switch() re-points terminal_cmd", function()
     end
   end)
 
-  it("switches to a different harness and its float resolves its own command (Task 7)", function()
+  it("switches to a different harness and its float resolves its own command", function()
     local sw = require("harness-decorators.switch")
     -- Pick a harness that is not the current one (deterministic: first in the list).
     local target = nil

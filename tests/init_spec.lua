@@ -9,7 +9,7 @@ local utils = require("harness-decorators.utils")
 local active = require("harness-decorators.active")
 local watcher = require("harness-decorators.watcher")
 
-describe("setup_auto_follow idempotency (Task 14)", function()
+describe("setup_auto_follow idempotency", function()
   it("a second call does not re-run the startup resets", function()
     -- Prime a dedup key and a pin, as a live session would.
     utils.mark_key_seen("sentinel-key")

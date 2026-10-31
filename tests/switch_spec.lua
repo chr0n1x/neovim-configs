@@ -14,7 +14,7 @@ local keymaps = require("harness-decorators.keymaps")
 local utils = require("harness-decorators.utils")
 local active = require("harness-decorators.active")
 
-describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", function()
+describe("switch: backgrounds (parks) instead of kills", function()
   local original_harness
   local orig_env
   local target
@@ -105,7 +105,7 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
     -- The core assertion: the outgoing buffer was NOT deleted.
     assert.is_true(
       vim.api.nvim_buf_is_valid(inst.buf),
-      "switch deleted the outgoing harness's terminal buffer (Option A must keep it alive)"
+      "switch deleted the outgoing harness's terminal buffer (it must stay alive)"
     )
     -- And it was recorded so a later re-pick can resume the same process.
     local entries = park.list()
@@ -169,7 +169,7 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
     end
   )
 
-  it("resolves the incoming harness's command from its env module at open time (Task 7)", function()
+  it("resolves the incoming harness's command from its env module at open time", function()
     -- There is no global terminal_cmd to re-point: term.lua resolves each harness's command from its
     -- env module when its float opens. So after switching to `target`, opening ITS float must spawn
     -- TARGET's command (helper.env_command reads that env.lua).

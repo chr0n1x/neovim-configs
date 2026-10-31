@@ -13,7 +13,7 @@ local keymaps = require("harness-decorators.keymaps")
 local utils = require("harness-decorators.utils")
 local active = require("harness-decorators.active")
 
-describe("state: single per-harness record (Task 8)", function()
+describe("state: single per-harness record", function()
   local state
   local term_mod
   local snacks

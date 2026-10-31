@@ -25,7 +25,7 @@ end
 
 local tmpdir = vim.fn.tempname() .. "-ownership"
 
-describe("watcher session pin (Option B: pin by declared session id)", function()
+describe("watcher session pin: pin by declared session id", function()
   local cwd
   local file_a, file_b
 

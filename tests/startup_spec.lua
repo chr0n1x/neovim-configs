@@ -43,7 +43,7 @@ describe("startup: env command is well-formed for the active harness", function(
     assert.is_not.equal("", cmd, "env command is empty")
   end)
 
-  it("term.lua resolves the same command at open time (Task 7 contract)", function()
+  it("term.lua resolves the same command at open time", function()
     local harness = helper.active_harness()
     assert.is_not_nil(harness)
     local expected = helper.env_command(harness)

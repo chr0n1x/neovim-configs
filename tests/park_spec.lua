@@ -20,7 +20,7 @@ local function park_reset_all()
   require("harness-decorators.state")._reset()
 end
 
-describe("park: unified harness terminal table (Task 6/7)", function()
+describe("park: unified harness terminal table", function()
   local term_mod
   local snacks
   local orig_open

@@ -11,7 +11,7 @@ local sw = require("harness-decorators.switch")
 local keymaps = require("harness-decorators.keymaps")
 local utils = require("harness-decorators.utils")
 
-describe("picker: collect_terminal_bufs maps harnesses to live buffers (Task 6/7)", function()
+describe("picker: collect_terminal_bufs maps harnesses to live buffers", function()
   local term_mod
   local snacks
   local orig_open
@@ -226,7 +226,7 @@ end)
 -- The picker's static config (layout strategy + the three titles) is not observable without opening
 -- telescope UI, so this spec stubs telescope.pickers to capture the opts M.pick() passes and asserts
 -- on them. This keeps the layout/titles contract tested headless.
-describe("picker: M.pick uses a horizontal layout with the expected titles (Task 9)", function()
+describe("picker: M.pick uses a horizontal layout with the expected titles", function()
   local captured
 
   setup(function()

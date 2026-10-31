@@ -10,12 +10,11 @@
 --   * show/hide route to that harness's own instance, never another's
 --
 -- term.lua must not load claudecode.nvim. The stubbed Snacks.open would let a require("claudecode...")
--- in term.lua pass these tests, so "does not require any claudecode module (the whole point of the
--- swap)" asserts it directly.
+-- in term.lua pass these tests, so "does not require any claudecode module" asserts it directly.
 local helper = require("tests.helper")
 local layout = require("harness-decorators.layout")
 
-describe("term: per-harness Snacks float owner (Task 7)", function()
+describe("term: per-harness Snacks float owner", function()
   local snacks
   local orig_open
   local calls -- the { cmd, opts } of every stubbed open, in call order
@@ -401,7 +400,7 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
     term._reset()
   end)
 
-  it("does not require any claudecode module (the whole point of the swap)", function()
+  it("does not require any claudecode module", function()
     -- Snapshot which claudecode modules are loaded, load term.lua fresh, and confirm none were added.
     local before = {}
     for k in pairs(package.loaded) do

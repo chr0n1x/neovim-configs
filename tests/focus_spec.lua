@@ -78,7 +78,6 @@ describe("focus: harness float opens", function()
     -- produce a terminal-buftype window.
     local park = require("harness-decorators.park")
     local shown = park.show_selected()
-    local shown = park.show_selected()
     assert.is_not_nil(shown, "show_selected returned nil (no float opened)")
     local term_win = helper.wait_for_terminal(5000)
     assert.is_not_nil(term_win, "harness terminal float did not appear after <leader>c")
