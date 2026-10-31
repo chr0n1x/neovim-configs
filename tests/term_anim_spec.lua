@@ -126,4 +126,113 @@ describe("window animation lands on the target rect", function()
       assert.is_true(lands_in_dock(inst))
     end)
   end)
+
+  describe("with a terminal in the float", function()
+    local term = require("harness-decorators.term")
+    local layout = require("harness-decorators.layout")
+    local anims = require("harness-decorators.terminal-animations")
+    local jobs, real_set, real_animate_resize
+
+    ---Start a job in the fake float's buffer, so the window shows a real terminal.
+    local function make_terminal(inst)
+      vim.api.nvim_buf_call(inst.buf, function()
+        jobs[#jobs + 1] = vim.fn.jobstart({ "sh", "-c", "sleep 30" }, { term = true })
+      end)
+    end
+
+    ---Count, per window, the nvim_win_set_config calls that change its width or height.
+    local function count_sizes()
+      local sizes = {}
+      vim.api.nvim_win_set_config = function(w, cfg)
+        local ok, old = pcall(vim.api.nvim_win_get_config, w)
+        if ok and ((cfg.width and cfg.width ~= old.width) or (cfg.height and cfg.height ~= old.height)) then
+          sizes[w] = (sizes[w] or 0) + 1
+        end
+        return real_set(w, cfg)
+      end
+      return sizes
+    end
+
+    before_each(function()
+      jobs = {}
+      real_set = vim.api.nvim_win_set_config
+      real_animate_resize = anims.animate_resize
+    end)
+
+    after_each(function()
+      vim.api.nvim_win_set_config = real_set
+      anims.animate_resize = real_animate_resize
+      for _, j in ipairs(jobs) do
+        pcall(vim.fn.jobstop, j)
+      end
+    end)
+
+    it(
+      "Given a harness float, When <C-f> makes it fullscreen, Then its width grows over more than 2 frames and it lands on the fullscreen rect",
+      function()
+        assert.is_true(pcall(require, "animation"), "this case needs the real animation.nvim")
+        local inst = term.open("claude")
+        make_terminal(inst)
+        local sizes = count_sizes()
+        term.fullscreen_key(inst)
+        local target = layout.fullscreen_rect()
+        assert.is_true(
+          vim.wait(3000, function()
+            return vim.deep_equal(target, rect_of(inst.win))
+          end, 10),
+          "the float should land on the fullscreen rect"
+        )
+        assert.is_true((sizes[inst.win] or 0) > 2, ("width changed on %d frames"):format(sizes[inst.win] or 0))
+      end
+    )
+
+    it(
+      "Given a fullscreen harness float, When <C-f> retracts it, Then its size shrinks over more than 2 frames and it lands on its saved rect",
+      function()
+        assert.is_true(pcall(require, "animation"), "this case needs the real animation.nvim")
+        local inst = term.open("claude")
+        make_terminal(inst)
+        term.fullscreen_key(inst)
+        assert.is_true(vim.wait(3000, function()
+          return vim.deep_equal(layout.fullscreen_rect(), rect_of(inst.win))
+        end, 10))
+        local sizes = count_sizes()
+        term.fullscreen_key(inst)
+        assert.is_true(
+          vim.wait(3000, function()
+            return lands_on_opts(inst)
+          end, 10),
+          "the float should land back on its saved rect"
+        )
+        assert.is_true((sizes[inst.win] or 0) > 2, ("size changed on %d frames"):format(sizes[inst.win] or 0))
+      end
+    )
+
+    it(
+      "Given two harness floats, When term.tile() moves them, Then each changes size at most twice and no move asks for smooth size",
+      function()
+        assert.is_true(pcall(require, "animation"), "this case needs the real animation.nvim")
+        local copilot = term.open("copilot")
+        local claude = term.open("claude")
+        make_terminal(copilot)
+        make_terminal(claude)
+        vim.api.nvim_set_current_win(claude.win)
+        local flags = {}
+        anims.animate_resize = function(inst, rect, on_done, smooth)
+          flags[#flags + 1] = smooth or false
+          return real_animate_resize(inst, rect, on_done, smooth)
+        end
+        local sizes = count_sizes()
+        term.tile()
+        vim.wait(1000)
+        assert.is_true(#flags > 0, "tiling should move at least one float")
+        for _, f in ipairs(flags) do
+          assert.is_false(f, "a tiling move must stay position-only")
+        end
+        for _, inst in ipairs({ claude, copilot }) do
+          assert.is_true((sizes[inst.win] or 0) <= 2, ("size changed %d times"):format(sizes[inst.win] or 0))
+        end
+      end
+    )
+  end)
 end)

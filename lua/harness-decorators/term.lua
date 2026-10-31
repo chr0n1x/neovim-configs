@@ -139,7 +139,8 @@ local scroll_to_bottom -- forward declaration; defined below
 ---@param inst table the Snacks terminal instance
 ---@param rect { row: integer, col: integer, width: integer, height: integer }
 ---@param on_done? fun() runs once the animation lands (not when a newer resize cuts it off)
-local function resize_to(inst, rect, on_done)
+---@param smooth_size? boolean animate the size every frame (single-float fullscreen and shelf moves)
+local function resize_to(inst, rect, on_done, smooth_size)
   inst._resized_at = vim.uv.now()
   inst.opts.row, inst.opts.col, inst.opts.width, inst.opts.height = rect.row, rect.col, rect.width, rect.height
   require("harness-decorators.terminal-animations").animate_resize(inst, rect, function()
@@ -151,7 +152,7 @@ local function resize_to(inst, rect, on_done)
     if on_done then
       on_done()
     end
-  end)
+  end, smooth_size)
 end
 
 ---Save the float's current geometry as the <C-f> retract target, unless one is saved already (so
@@ -179,7 +180,7 @@ local function animate_collapse(self)
     return
   end
   layout.set(self, "normal")
-  resize_to(self, retract_rect(self))
+  resize_to(self, retract_rect(self), nil, true)
 end
 
 local shelve -- forward declaration; defined below
@@ -296,12 +297,12 @@ function M.fullscreen_key(self)
   end
   if self._shelf_mode then
     layout.set(self, "normal", { shelf_mode = false })
-    resize_to(self, retract_rect(self))
+    resize_to(self, retract_rect(self), nil, true)
     return
   end
   save_baseline(self)
   layout.set(self, "fullscreen", { shelf_mode = true })
-  resize_to(self, fullscreen_rect())
+  resize_to(self, fullscreen_rect(), nil, true)
 end
 
 ---Terminal-mode keys and footer legend shared by every harness float.
@@ -748,13 +749,13 @@ shelve = function(inst)
     if layout.get(inst) == "shelved" then
       resize_to(inst, shelf_rect(), function()
         scroll_to_bottom(inst)
-      end)
+      end, true)
     end
   end
   if at_rect(inst.win, fullscreen_rect()) then
     slide_up()
   else
-    resize_to(inst, fullscreen_rect(), slide_up)
+    resize_to(inst, fullscreen_rect(), slide_up, true)
   end
 end
 
@@ -766,7 +767,7 @@ local function unshelve(inst, shelf_mode)
     return
   end
   layout.set(inst, "fullscreen", { shelf_mode = shelf_mode })
-  resize_to(inst, fullscreen_rect())
+  resize_to(inst, fullscreen_rect(), nil, true)
 end
 
 ---<C-l>: with shelf mode on and the float focused at fullscreen inside tmux, move to the tmux pane on

@@ -1,7 +1,8 @@
--- Pins terminal-animations.animate_win's cost and timing contract. A move resizes the window (and
--- so the terminal inside it, which sends the harness SIGWINCH and makes it redraw) at most twice:
--- position is animated, size is applied in one step. NVIM_HARNESS_ANIMATION_MS sets the duration,
--- read at call time; 0 jumps straight to the target.
+-- Pins terminal-animations.animate_win's cost and timing contract. By default a move resizes a
+-- terminal window (and so the terminal inside it, which sends the harness SIGWINCH and makes it
+-- redraw) at most twice: position is animated, size is applied in one step. With smooth_size it
+-- interpolates the size every frame, as it does for any other window. NVIM_HARNESS_ANIMATION_MS sets
+-- the duration, read at call time; 0 jumps straight to the target.
 describe("terminal-animations: animate_win", function()
   local anims = require("harness-decorators.terminal-animations")
   local VAR = "NVIM_HARNESS_ANIMATION_MS"
@@ -117,6 +118,31 @@ describe("terminal-animations: animate_win", function()
       end
     )
   end
+
+  it(
+    "Given a terminal float and smooth_size, When animated with animation.nvim, Then its size changes on more than 2 frames, it lands on the target and on_done runs once",
+    function()
+      assert.is_true(pcall(require, "animation"), "this case needs the real animation.nvim")
+      local from = { row = 2, col = 10, width = 40, height = 10 }
+      local to = { row = 1, col = 4, width = 100, height = 30 }
+      local win = terminal_float(from)
+      local c = count_configs(win)
+      local done = 0
+      anims.animate_win({}, "_anim", win, to, nil, function()
+        done = done + 1
+      end, true)
+      assert.is_true(
+        vim.wait(3000, function()
+          return done > 0
+        end, 10),
+        "the animation never landed"
+      )
+      vim.wait(100)
+      assert.are.equal(1, done)
+      assert.are.same(to, rect_of(win))
+      assert.is_true(c.size > 2, ("smooth_size should resize every frame, got %d size changes"):format(c.size))
+    end
+  )
 
   it(
     "Given NVIM_HARNESS_ANIMATION_MS=0, When a float moves, Then it lands with one set_config and on_done runs synchronously",

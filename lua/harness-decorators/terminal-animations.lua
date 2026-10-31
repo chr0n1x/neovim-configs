@@ -1,7 +1,7 @@
 -- Window animation for the harness floats and their minimized bars: an in_out_sine move to a target
 -- rect at 60fps, 300ms unless NVIM_HARNESS_ANIMATION_MS says otherwise (0 jumps straight there). A
--- terminal float's size is applied in one step. Without animation.nvim it jumps straight to the
--- target.
+-- terminal float's size is applied in one step unless the caller asks for a smooth size. Without
+-- animation.nvim it jumps straight to the target.
 
 local DEFAULT_MS = 300
 
@@ -26,8 +26,9 @@ end
 ---@param to { row: number, col: number, width: number, height: number }
 ---@param base? table window config merged into every frame
 ---@param on_done? fun()
+---@param smooth_size? boolean interpolate a terminal window's size every frame too
 ---@return boolean started false when win is not valid
-local function animate_win(handle, key, win, to, base, on_done)
+local function animate_win(handle, key, win, to, base, on_done, smooth_size)
   if not win or not vim.api.nvim_win_is_valid(win) then
     return false
   end
@@ -61,12 +62,13 @@ local function animate_win(handle, key, win, to, base, on_done)
   local cur = vim.api.nvim_win_get_config(win)
   local from = { row = cur.row or 0, col = cur.col or 0, width = cur.width, height = cur.height }
   -- Each size change of a terminal window resizes the terminal, and the harness redraws its whole
-  -- screen on that SIGWINCH. So a terminal window animates only its position: per axis, a shrinking
-  -- size applies on the first frame and a growing one on the last, and it never covers more than the
-  -- larger of its two rects. Other windows (the minimized bars) resize smoothly.
-  local terminal = vim.bo[vim.api.nvim_win_get_buf(win)].buftype == "terminal"
+  -- screen on that SIGWINCH. So by default a terminal window animates only its position: per axis, a
+  -- shrinking size applies on the first frame and a growing one on the last, and it never covers more
+  -- than the larger of its two rects. Other windows (the minimized bars), and terminal windows with
+  -- smooth_size (a single float going to or from fullscreen), resize smoothly.
+  local stepped = not smooth_size and vim.bo[vim.api.nvim_win_get_buf(win)].buftype == "terminal"
   local function size(f, a, b)
-    if terminal then
+    if stepped then
       return math.min(a, b)
     end
     return math.floor(a + f * (b - a))
@@ -101,10 +103,11 @@ end
 ---@param self table the Snacks terminal instance
 ---@param target { row: number, col: number, width: number, height: number }
 ---@param on_done? fun()
+---@param smooth_size? boolean see animate_win
 ---@return boolean started
-local function animate_resize(self, target, on_done)
+local function animate_resize(self, target, on_done, smooth_size)
   local base = { style = "minimal", border = self.opts.border or "rounded" }
-  return animate_win(self, "_resize_anim", self.win, target, base, on_done)
+  return animate_win(self, "_resize_anim", self.win, target, base, on_done, smooth_size)
 end
 
 return { animate_win = animate_win, animate_resize = animate_resize }
