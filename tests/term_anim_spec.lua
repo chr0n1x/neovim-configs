@@ -131,7 +131,7 @@ describe("window animation lands on the target rect", function()
     local term = require("harness-decorators.term")
     local layout = require("harness-decorators.layout")
     local anims = require("harness-decorators.terminal-animations")
-    local jobs, real_set, real_animate_resize
+    local jobs, real_set, real_animate_resize, saved_anim_ms
 
     ---Start a job in the fake float's buffer, so the window shows a real terminal.
     local function make_terminal(inst)
@@ -157,9 +157,12 @@ describe("window animation lands on the target rect", function()
       jobs = {}
       real_set = vim.api.nvim_win_set_config
       real_animate_resize = anims.animate_resize
+      saved_anim_ms = vim.env.NVIM_HARNESS_ANIMATION_MS
+      vim.env.NVIM_HARNESS_ANIMATION_MS = nil
     end)
 
     after_each(function()
+      vim.env.NVIM_HARNESS_ANIMATION_MS = saved_anim_ms
       vim.api.nvim_win_set_config = real_set
       anims.animate_resize = real_animate_resize
       for _, j in ipairs(jobs) do
