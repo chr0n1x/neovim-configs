@@ -93,14 +93,11 @@ function M.open_scratch(name)
   return buf
 end
 
----The command string a harness's env module resolves to. This is the ground truth the
--- A1 assertion compares against: after startup, claudecode.state.config.terminal_cmd
--- must equal this for the active harness.
+---Evaluate a harness's current command without reloading its env module or preparing job env.
 ---@param harness string
 ---@return string
 function M.env_command(harness)
-  package.loaded["harness-decorators." .. harness .. ".env"] = nil
-  return require("harness-decorators." .. harness .. ".env")
+  return require("harness-decorators." .. harness .. ".env").command()
 end
 
 ---The currently-active harness name per the switcher module.
@@ -126,13 +123,14 @@ function M.term_spawn_cmd(harness, opts)
     return nil
   end
   local ok_env, env = pcall(require, "harness-decorators." .. harness .. ".env")
-  if not ok_env or type(env) ~= "string" then
+  if not ok_env or type(env) ~= "table" or type(env.command) ~= "function" then
     return nil
   end
+  local cmd = env.command()
   if opts and opts.args then
-    env = env .. " " .. opts.args
+    cmd = cmd .. " " .. opts.args
   end
-  return env
+  return cmd
 end
 
 ---Collect any Lua errors logged during the session so a red spec can surface them.

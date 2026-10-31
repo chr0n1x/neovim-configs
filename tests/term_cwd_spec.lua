@@ -7,7 +7,14 @@ describe("term: recorded cwd matches the harness's real cwd", function()
 
   before_each(function()
     saved_env = package.loaded[env_mod]
-    package.loaded[env_mod] = "sleep 30"
+    package.loaded[env_mod] = {
+      command = function()
+        return "sleep 30"
+      end,
+      prepare_env = function()
+        return {}
+      end,
+    }
   end)
 
   after_each(function()

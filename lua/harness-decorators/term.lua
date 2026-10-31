@@ -107,11 +107,11 @@ end
 ---@param harness string
 ---@return string? cmd
 local function resolve_cmd(harness)
-  local ok, cmd = pcall(require, "harness-decorators." .. harness .. ".env")
-  if not ok or type(cmd) ~= "string" then
+  local ok, env = pcall(require, "harness-decorators." .. harness .. ".env")
+  if not ok or type(env) ~= "table" or type(env.command) ~= "function" or type(env.prepare_env) ~= "function" then
     return nil
   end
-  return cmd
+  return env.command(), env
 end
 
 local float_util = require("harness-decorators.float-util")
@@ -692,7 +692,7 @@ function M.open(harness, opts)
     vim.notify("harness: snacks.nvim terminal unavailable", vim.log.levels.ERROR)
     return nil
   end
-  local cmd = resolve_cmd(harness)
+  local cmd, env = resolve_cmd(harness)
   if not cmd then
     vim.notify("harness: no command for " .. harness, vim.log.levels.ERROR)
     return nil
@@ -701,7 +701,9 @@ function M.open(harness, opts)
     cmd = cmd .. " " .. opts.args
   end
 
+  local job_env = env.prepare_env()
   local inst = snacks.open(cmd, {
+    env = next(job_env) and job_env or nil,
     auto_insert = false,
     start_insert = false,
     win = win_opts(harness),

@@ -1,8 +1,6 @@
 -- Unit spec for pi's env module: the spawn command built from PI_COMMAND /
--- NVIM_LLM_HARNESS_PI_PROVIDER_NAME / LLAMA_DEFAULT_MODEL. The module reads os.getenv at
--- require time and returns a bare string, so each case forces the env state, reloads the
--- module via helper.env_command (which clears package.loaded first), and teardown restores
--- whatever the environment had before - the suite must never leak these vars into other specs.
+-- NVIM_LLM_HARNESS_PI_PROVIDER_NAME / LLAMA_DEFAULT_MODEL. Each case forces env state and calls
+-- the cached module's command() via helper.env_command; teardown restores the parent env.
 
 local helper = require("tests.helper")
 

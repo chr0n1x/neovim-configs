@@ -84,7 +84,7 @@ describe("command selection: current override semantics", function()
       before_each(function()
         saved_env, saved_mod = {}, package.loaded[env_mod]
         for _, k in ipairs(vars) do
-          saved_env[k] = vim.fn.getenv(k)
+          saved_env[k] = os.getenv(k) or vim.NIL
           vim.env[k] = nil
         end
       end)

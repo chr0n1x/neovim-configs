@@ -1,6 +1,6 @@
 -- Unit spec for pig's env module: the spawn command built from PIG_COMMAND /
 -- NVIM_LLM_HARNESS_PIG_PROVIDER_NAME / LLAMA_DEFAULT_MODEL. Same shape as pi_env_spec: each case
--- forces the env state, reloads the module via helper.env_command, and teardown restores it.
+-- forces env state, calls command() via helper.env_command, and teardown restores it.
 
 local helper = require("tests.helper")
 

@@ -143,17 +143,71 @@ describe("agent-state: shared child-process check", function()
     for _, h in ipairs(harnesses) do
       assert.is_boolean(h.installed, "installed must be a boolean for " .. h.name)
       -- Cross-check: require the env module and verify the executable check matches.
-      local ok_env, cmd = pcall(require, "harness-decorators." .. h.name .. ".env")
-      if ok_env and type(cmd) == "string" then
-        local exe = cmd:match("^%S+")
-        assert.are.equal(
-          vim.fn.executable(exe) == 1,
-          h.installed,
-          "installed flag for " .. h.name .. " must match vim.fn.executable(" .. exe .. ")"
-        )
-      end
+      local env = require("harness-decorators." .. h.name .. ".env")
+      local exe = env.command():match("^%S+")
+      assert.are.equal(
+        vim.fn.executable(exe) == 1,
+        h.installed,
+        "installed flag for " .. h.name .. " must match vim.fn.executable(" .. exe .. ")"
+      )
     end
   end)
+end)
+
+describe("agent-state: installed CLI command interface", function()
+  local u = require("harness-decorators.utils")
+  local harnesses = { "claude", "copilot", "crush", "maki", "pi", "pig" }
+  local saved_modules, real_list, real_executable
+
+  before_each(function()
+    saved_modules = {}
+    real_list, real_executable = u.list_harnesses, u.command_executable
+    for _, harness in ipairs(harnesses) do
+      local mod = "harness-decorators." .. harness .. ".env"
+      saved_modules[mod] = package.loaded[mod] or false
+    end
+  end)
+
+  after_each(function()
+    u.list_harnesses, u.command_executable = real_list, real_executable
+    for mod, orig in pairs(saved_modules) do
+      package.loaded[mod] = orig or nil
+    end
+  end)
+
+  it(
+    "Given callable env modules, When installed CLIs are listed, Then command() runs but prepare_env() never does",
+    function()
+      local commanded, checked, prepared = {}, {}, 0
+      u.list_harnesses = function()
+        return harnesses
+      end
+      u.command_executable = function(cmd)
+        checked[#checked + 1] = cmd
+        return cmd ~= "synthetic-pig --flag"
+      end
+      local expected, commands = {}, {}
+      for _, harness in ipairs(harnesses) do
+        package.loaded["harness-decorators." .. harness .. ".env"] = {
+          command = function()
+            commanded[#commanded + 1] = harness
+            return "synthetic-" .. harness .. " --flag"
+          end,
+          prepare_env = function()
+            prepared = prepared + 1
+            return {}
+          end,
+        }
+        expected[#expected + 1] = { name = harness, installed = harness ~= "pig" }
+        commands[#commands + 1] = "synthetic-" .. harness .. " --flag"
+      end
+      local actual = agent_state.harnesses()
+      assert.are.equal(0, prepared, "listing must never prepare a child environment")
+      assert.are.same(harnesses, commanded, "listing must evaluate every command()")
+      assert.are.same(commands, checked)
+      assert.are.same(expected, actual)
+    end
+  )
 end)
 
 describe("agent-state: per-harness adapters (sandboxed HOME)", function()
@@ -564,6 +618,18 @@ describe("agent-state: per-harness adapters (sandboxed HOME)", function()
   end)
 
   describe("term.opened_at", function()
+    local snacks, orig_open
+
+    before_each(function()
+      snacks = require("snacks.terminal")
+      orig_open = snacks.open
+    end)
+
+    after_each(function()
+      snacks.open = orig_open
+      require("harness-decorators.term")._reset()
+    end)
+
     it("returns nil when the harness has no live instance", function()
       local term = require("harness-decorators.term")
       term._reset()
@@ -571,8 +637,6 @@ describe("agent-state: per-harness adapters (sandboxed HOME)", function()
     end)
 
     it("records the open time on a fresh open and exposes it while live", function()
-      local snacks = require("snacks.terminal")
-      local orig_open = snacks.open
       snacks.open = function(_cmd, _opts)
         return {
           buf = vim.api.nvim_create_buf(false, true),
@@ -593,8 +657,6 @@ describe("agent-state: per-harness adapters (sandboxed HOME)", function()
       local t = term.opened_at("maki")
       assert.is_not_nil(t, "opened_at must be set after a fresh open")
       assert.is_true(t >= before and t <= os.time(), "open time must be ~now")
-      snacks.open = orig_open
-      term._reset()
     end)
   end)
 end)
