@@ -127,6 +127,8 @@ describe("command selection: current override semantics", function()
         it("Given an empty command and a model, When resolving, Then only supported model flags appear", function()
           vim.env[h .. "_COMMAND"] = ""
           vim.env[h .. "_MODEL"] = "local/model"
+          vim.env["NVIM_LLM_HARNESS_" .. h .. "_PROVIDER_NAME"] = "competing-provider"
+          vim.env.LLAMA_DEFAULT_MODEL = "competing/llama"
           local flag = ({ claude = " --model ", maki = " -m " })[harness]
           assert.are.equal(harness .. (flag and flag .. "local/model" or ""), helper.env_command(harness))
         end)

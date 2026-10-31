@@ -5,6 +5,9 @@ local vars = {
   "ANTHROPIC_BASE_URL",
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_AUTH_TOKEN",
+  "HD_ENV_INHERITED",
+  "HD_ENV_LOCAL",
+  "HD_ENV_EMPTY",
 }
 for _, harness in ipairs(harnesses) do
   local h = harness:upper()
@@ -179,4 +182,47 @@ describe("env: callable commands and job-local overrides", function()
     assert.are.equal("claude-wrapper --custom", env.command())
     assert.are.same(parent, snapshot())
   end)
+
+  it(
+    "Given parent env, When one real child gets overrides, Then it inherits siblings, keeps an empty value and leaves later jobs unchanged",
+    function()
+      vim.env.HD_ENV_INHERITED = "parent-marker"
+      vim.env.HD_ENV_LOCAL = "parent-local"
+      vim.env.HD_ENV_EMPTY = "parent-empty"
+      local parent = snapshot()
+
+      local function child(overrides)
+        local output
+        local job = vim.fn.jobstart({
+          "/bin/sh",
+          "-c",
+          [[printf '%s\n' "$HD_ENV_INHERITED" "$HD_ENV_LOCAL" "${HD_ENV_EMPTY-unset}" "${HD_ENV_EMPTY+set}"]],
+        }, {
+          env = overrides,
+          stdout_buffered = true,
+          on_stdout = function(_, data)
+            output = data
+          end,
+        })
+        assert.is_true(job > 0, "jobstart must launch a real child")
+        local code = vim.fn.jobwait({ job }, 5000)[1]
+        if code == -1 then
+          vim.fn.jobstop(job)
+        end
+        assert.are.equal(0, code)
+        return output
+      end
+
+      assert.are.same(
+        { "parent-marker", "job-local", "", "set", "" },
+        child({
+          HD_ENV_LOCAL = "job-local",
+          HD_ENV_EMPTY = "",
+        })
+      )
+      assert.are.same(parent, snapshot())
+      assert.are.same({ "parent-marker", "parent-local", "parent-empty", "set", "" }, child())
+      assert.are.same(parent, snapshot())
+    end
+  )
 end)

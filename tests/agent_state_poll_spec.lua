@@ -237,6 +237,60 @@ describe("agent-state poll inputs", function()
 
   for _, name in ipairs({ "crush", "copilot" }) do
     it(
+      "Given "
+        .. name
+        .. "'s available reader throws on its first open, When polled without file changes, Then it retries and caches the recovered title",
+      function()
+        local sql, fallback
+        local rows = {}
+        if name == "crush" then
+          write(home .. "/project/.crush/crush.db", {})
+          rows["SELECT id FROM sessions ORDER BY updated_at DESC LIMIT 1"] = { "crush-session" }
+          rows["SELECT finished_at FROM messages ORDER BY created_at DESC, rowid DESC LIMIT 1"] = {}
+          sql = "SELECT title FROM sessions ORDER BY updated_at DESC LIMIT 1"
+          replace(utils, "command_executable", function()
+            return false
+          end)
+          replace(vim, "notify", function() end)
+        else
+          write(home .. "/.copilot/session-state/abcdef123456/inuse.1234.lock", {})
+          write(home .. "/.copilot/session-state/abcdef123456/events.jsonl", { '{"type":"assistant.turn_start"}' })
+          write(home .. "/.copilot/session-store.db", {})
+          sql = "SELECT summary FROM sessions WHERE id=?"
+          fallback = "abcdef12"
+        end
+        rows[sql] = name == "crush" and { "Recovered title" } or "Recovered title"
+        local opened = {}
+        sqlite(rows, opened)
+        local reader = package.loaded.lsqlite3
+        local native_open, attempts = reader.open, 0
+        replace(reader, "open", function(...)
+          attempts = attempts + 1
+          if attempts == 1 then
+            error("temporary database open failure")
+          end
+          return native_open(...)
+        end)
+
+        for i = 1, 3 do
+          local result = agent_state.poll(name, "")
+          local expected = "Recovered title"
+          if i == 1 then
+            expected = fallback
+          end
+          assert.are.equal(expected, result.label)
+          if name == "copilot" or i > 1 then
+            assert.are.equal("working", result.status)
+          end
+        end
+        assert.are.equal(name == "crush" and 3 or 2, attempts)
+        assert.are.equal(attempts - 1, opened.count, "only successful opens yield handles")
+        assert.are.equal(opened.count, opened.closed, "every successful handle must close")
+        assert.are.equal(1, opened[sql], "the recovered title is cached after one successful query")
+      end
+    )
+
+    it(
       "Given " .. name .. "'s first label query fails, When polled again without file changes, Then it retries",
       function()
         local sql, fallback

@@ -145,4 +145,95 @@ describe("agent-state polls the terminal's recorded cwd", function()
       end
     )
   end
+
+  it(
+    "Given a running harness from cwd A, When its float is hidden, minimized and restored after changing cwd, Then polls keep its original session until its terminal buffer is wiped",
+    function()
+      replace(require("snacks.terminal"), "open", function()
+        local inst = {
+          buf = vim.api.nvim_create_buf(false, true),
+          opts = { border = "rounded", row = 2, col = 10, width = 40, height = 10 },
+        }
+        buffers[#buffers + 1] = inst.buf
+        function inst:buf_valid()
+          return vim.api.nvim_buf_is_valid(self.buf)
+        end
+        function inst:show()
+          self.win = vim.api.nvim_open_win(self.buf, false, {
+            relative = "editor",
+            row = self.opts.row,
+            col = self.opts.col,
+            width = self.opts.width,
+            height = self.opts.height,
+            border = "rounded",
+          })
+        end
+        function inst:hide()
+          if self.win and vim.api.nvim_win_is_valid(self.win) then
+            vim.api.nvim_win_close(self.win, true)
+          end
+          self.win = nil
+        end
+        function inst:focus() end
+        inst:show()
+        return inst
+      end)
+
+      local inst = term.open("pig")
+      local record = require("harness-decorators.state").table.pig
+      local buf, opened_at = inst.buf, term.opened_at("pig")
+      for _, cwd in ipairs({ spawn, later }) do
+        local encoded = cwd:sub(2):gsub("/", "-"):gsub("\\", "-"):gsub(":", "-")
+        local id = cwd == spawn and "abcdef12-3456" or "ffffffff-3456"
+        local path = home .. "/.pig/agent/sessions/--" .. encoded .. "--/2026-01-01_" .. id .. ".jsonl"
+        write(path, { '{"type":"message","message":{"role":"user"}}' })
+        vim.uv.fs_utime(path, opened_at, opened_at)
+      end
+      replace(os, "time", function()
+        return opened_at + 60
+      end)
+      vim.fn.chdir(later)
+
+      local function assert_inputs()
+        assert.are.equal(record, require("harness-decorators.state").table.pig)
+        assert.are.equal(inst, record.inst)
+        assert.are.equal(buf, term.bufnr("pig"))
+        assert.are.equal(spawn, term.cwd("pig"))
+        assert.are.equal(opened_at, term.opened_at("pig"))
+        assert.are.same({ { harness = "pig", bufnr = buf } }, term.list())
+        local result = agent_state.poll("pig", "")
+        assert.are.equal("working", result.status)
+        assert.are.equal("abcdef12", result.label)
+      end
+
+      assert_inputs()
+      term.hide("pig")
+      assert.is_nil(inst.win)
+      assert_inputs()
+      term.show("pig")
+      assert.is_true(vim.api.nvim_win_is_valid(inst.win))
+      assert.is_true(term.minimize("pig"))
+      assert.is_nil(inst.win)
+      assert.is_true(vim.api.nvim_win_is_valid(inst._pill_win))
+      assert.are_not.equal(buf, vim.api.nvim_win_get_buf(inst._pill_win))
+      assert_inputs()
+      term.show("pig")
+      assert_inputs()
+      assert.is_true(
+        vim.wait(2000, function()
+          return inst.win ~= nil and vim.api.nvim_win_is_valid(inst.win) and inst._pill_win == nil
+        end, 10),
+        "the same terminal must be restored from its bar"
+      )
+      assert_inputs()
+
+      vim.api.nvim_buf_delete(buf, { force = true })
+      assert.is_nil(require("harness-decorators.state").table.pig)
+      assert.is_nil(term.bufnr("pig"))
+      assert.is_nil(term.cwd("pig"))
+      assert.is_nil(term.opened_at("pig"))
+      assert.is_nil(agent_state.poll("pig", ""))
+      assert.are.same({}, term.list())
+    end
+  )
 end)
