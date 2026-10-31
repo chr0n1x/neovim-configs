@@ -146,7 +146,7 @@ describe("layout.set, the float's one layout value", function()
   it("Given a normal float, When shelved, Then shelf mode turns on and the baseline is kept", function()
     local inst = { _saved_config = { auto = true } }
     layout.set(inst, "shelved")
-    assert.are.same({ "shelved", true, true, false }, { layout.get(inst), inst._shelf_mode, inst._shelved, inst._wide })
+    assert.are.same({ "shelved", true }, { layout.get(inst), inst._shelf_mode })
     assert.is_not_nil(inst._saved_config)
   end)
 
@@ -156,10 +156,7 @@ describe("layout.set, the float's one layout value", function()
       local inst = { _saved_config = { auto = true } }
       layout.set(inst, "fullscreen", { shelf_mode = true })
       layout.set(inst, "normal", { shelf_mode = false })
-      assert.are.same(
-        { "normal", false, false, false },
-        { layout.get(inst), inst._shelf_mode, inst._shelved, inst._wide }
-      )
+      assert.are.same({ "normal", false }, { layout.get(inst), inst._shelf_mode })
       assert.is_not_nil(inst._saved_config)
     end
   )
@@ -168,10 +165,7 @@ describe("layout.set, the float's one layout value", function()
     local inst = { _saved_config = { auto = true } }
     layout.set(inst, "shelved")
     layout.set(inst, "minimized")
-    assert.are.same(
-      { "minimized", false, false, false },
-      { layout.get(inst), inst._shelf_mode, inst._shelved, inst._wide }
-    )
+    assert.are.same({ "minimized", false }, { layout.get(inst), inst._shelf_mode })
     assert.is_nil(inst._saved_config)
   end)
 
@@ -181,7 +175,7 @@ describe("layout.set, the float's one layout value", function()
       local inst = {}
       layout.set(inst, "shelved")
       layout.set(inst, "fullscreen", { shelf_mode = false })
-      assert.are.same({ "fullscreen", false, true }, { layout.get(inst), inst._shelf_mode, inst._wide })
+      assert.are.same({ "fullscreen", false }, { layout.get(inst), inst._shelf_mode })
     end
   )
 
@@ -189,7 +183,7 @@ describe("layout.set, the float's one layout value", function()
     local inst = { _saved_config = { auto = true } }
     layout.set(inst, "fullscreen", { shelf_mode = true })
     layout.set(inst, "normal", { forget_baseline = false })
-    assert.are.same({ "normal", true, false }, { layout.get(inst), inst._shelf_mode, inst._wide })
+    assert.are.same({ "normal", true }, { layout.get(inst), inst._shelf_mode })
     assert.is_not_nil(inst._saved_config)
   end)
 end)

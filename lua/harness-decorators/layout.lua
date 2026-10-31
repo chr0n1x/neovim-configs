@@ -14,11 +14,11 @@ M.ZEN_MIN_WIDTH, M.ZEN_HEIGHT = 0.20, 0.70
 -- <C-f> fullscreen padding, as fractions of the editor.
 M.FULL_ROW_PAD, M.FULL_COL_PAD = 0.05, 0.1
 
--- Text rows a shelved float keeps (see term's shelve). term.shelf_rows reads and writes this.
+-- Text rows a shelved float keeps (see term's shelve). Specs set layout.shelf_rows directly.
 M.shelf_rows = 10
 
--- When not nil, zen_active returns it instead of asking zen-mode. Specs set it through
--- term._zen_active_override.
+-- When not nil, zen_active returns it instead of asking zen-mode. Specs set
+-- layout.zen_active_override directly.
 M.zen_active_override = nil
 
 ---True when zen mode is currently open.
