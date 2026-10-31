@@ -141,11 +141,21 @@ describe("session following across harness exits", function()
     open_and_exit("claude")
     starts, resets = {}, 0
 
-    term._reset()
+    require("harness-decorators.state").table.claude = nil
     term.open("claude")
 
     assert.are.same({ "claude" }, starts, "a fresh start must restart following")
     assert.is_true(resets > 0, "the old session's pin must be dropped")
+  end)
+
+  it("Given claude exited with following off, When term._reset runs, Then following is no longer paused", function()
+    active.set("claude")
+    open_and_exit("claude")
+    assert.is_true(term.follow_paused("claude"), "precondition: claude's following is paused")
+
+    term._reset()
+
+    assert.is_false(term.follow_paused("claude"), "_reset must clear the follow pause")
   end)
 
   it(

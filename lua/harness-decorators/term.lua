@@ -1254,6 +1254,7 @@ end
 ---Test-only: clear the shared state table (instances and their records) without touching any buffer.
 function M._reset()
   state._reset()
+  follow_paused = {}
   M._tiled, M._tile_focus, M._focus_target = false, nil, nil
 end
 

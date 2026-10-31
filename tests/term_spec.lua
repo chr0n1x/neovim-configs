@@ -952,7 +952,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
         return exited and stops > 0
       end, 2000)
       local starts_before_reopen = starts
-      term._reset()
+      require("harness-decorators.state").table.claude = nil
       term.open("claude")
       local restarted = starts > starts_before_reopen
       watcher.stop, watcher.start = orig_stop, orig_start
