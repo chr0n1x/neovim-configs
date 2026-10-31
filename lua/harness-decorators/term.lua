@@ -899,6 +899,10 @@ local function restore_from_bar(inst)
     return
   end
   require("harness-decorators.switch").switch(harness)
+  if require("harness-decorators.active").get() ~= harness then
+    focus_instance(inst)
+    return
+  end
   require("harness-decorators.park").show_selected()
 end
 

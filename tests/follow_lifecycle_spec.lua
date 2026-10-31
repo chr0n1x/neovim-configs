@@ -147,4 +147,73 @@ describe("session following across harness exits", function()
     assert.are.same({ "claude" }, starts, "a fresh start must restart following")
     assert.is_true(resets > 0, "the old session's pin must be dropped")
   end)
+
+  it(
+    "Given claude exited and is active with following off, When copilot is activated, Then watcher.start is called once for copilot",
+    function()
+      active.set("claude")
+      open_and_exit("claude")
+      starts = {}
+
+      require("harness-decorators.switch").activate("copilot")
+
+      assert.are.same({ "copilot" }, starts, "a live harness must be followed after leaving an exited one")
+    end
+  )
+
+  it(
+    "Given claude was opened with <leader>cc and its process exited non-zero before any <leader>c, When <leader>c runs, Then watcher.start is not called for claude",
+    function()
+      active.set("claude")
+      open_and_exit("claude")
+      starts = {}
+      -- A fresh module, so its once-per-session follow setup has not run yet.
+      local saved = package.loaded["harness-decorators"]
+      package.loaded["harness-decorators"] = nil
+      local ok, err = pcall(function()
+        require("harness-decorators").setup_auto_follow()
+      end)
+      package.loaded["harness-decorators"] = saved
+      assert.is_true(ok, tostring(err))
+
+      assert.are.same({}, starts, "the first <leader>c must not follow an exited harness")
+    end
+  )
+
+  it(
+    "Given a minimized float whose harness switch rejects, When its bar restore is clicked, Then that float comes back and the active harness is not re-shown",
+    function()
+      local utils = require("harness-decorators.utils")
+      local orig_list = utils.list_harnesses
+      active.set("claude")
+      local claude = term.open("claude")
+      local copilot = term.open("copilot")
+      claude:hide()
+      active.set("claude")
+      utils.list_harnesses = function()
+        return { "claude" }
+      end
+      local ok, err = pcall(function()
+        assert.is_true(term.minimize("copilot"), "precondition: copilot minimizes")
+        assert.is_true(
+          vim.wait(3000, function()
+            return copilot._pill_win ~= nil and vim.api.nvim_win_is_valid(copilot._pill_win)
+          end, 10),
+          "precondition: copilot's bar is shown"
+        )
+        local pos = vim.api.nvim_win_get_position(copilot._pill_win)
+        term.mouse.press({ screenrow = pos[1] + 2, screencol = pos[2] + 2 + copilot._bar_close_col - 3 })
+        term.mouse.release()
+        assert.is_true(
+          vim.wait(3000, function()
+            return copilot.win ~= nil and vim.api.nvim_win_is_valid(copilot.win)
+          end, 10),
+          "the clicked float must come back"
+        )
+        assert.is_nil(claude.win, "the active harness must not be shown instead")
+      end)
+      utils.list_harnesses = orig_list
+      assert.is_true(ok, tostring(err))
+    end
+  )
 end)

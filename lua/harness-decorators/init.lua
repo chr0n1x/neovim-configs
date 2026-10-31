@@ -144,6 +144,11 @@ function M.setup_auto_follow()
   utils.reset_log()
   watcher.reset_pin_state()
 
+  -- A harness whose process exited before this first follow stays unfollowed (term.follow_paused).
+  local term = package.loaded["harness-decorators.term"]
+  if term and term.follow_paused(require("harness-decorators.active").get()) then
+    return
+  end
   watcher.start()
 end
 
