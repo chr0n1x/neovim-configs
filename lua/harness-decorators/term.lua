@@ -624,14 +624,21 @@ local function focus_instance(inst)
   show_instance(inst)
 end
 
--- True after the active harness's process exited and session following was stopped for it; the next
--- fresh start of that harness restarts following.
-local follow_paused = false
+-- Harnesses whose process exited, keyed by name. Following stays off for them (activating the dead
+-- float does not restart it) until a fresh start of that harness.
+local follow_paused = {}
 
----Tie session following (the JSONL watcher) to the active harness's process. When it exits (close
--- button, /exit, crash) the watcher stops and forgets its pinned session, so it does not go on to
--- pin some other session in the same project ("<harness> session detected"). A later fresh start of
--- that harness restarts the watcher for the new session.
+---Whether session following is off for this harness because its process exited.
+---@param harness string
+---@return boolean
+function M.follow_paused(harness)
+  return follow_paused[harness] == true
+end
+
+---Tie session following (the JSONL watcher) to each harness's process. When it exits (close
+-- button, /exit, crash) the watcher stops and forgets its pinned session if that harness is active,
+-- so it does not go on to pin some other session in the same project ("<harness> session detected").
+-- A later fresh start of that harness restarts the watcher for the new session.
 ---@param harness string
 ---@param inst table the Snacks terminal instance just spawned
 local function follow_lifecycle(harness, inst)
@@ -642,10 +649,12 @@ local function follow_lifecycle(harness, inst)
   local function active()
     return require("harness-decorators.active").get() == harness
   end
-  if follow_paused and active() then
-    follow_paused = false
-    watcher.reset_pin_state()
-    watcher.start()
+  if follow_paused[harness] then
+    follow_paused[harness] = nil
+    if active() then
+      watcher.reset_pin_state()
+      watcher.start()
+    end
   end
   if not (inst.buf and vim.api.nvim_buf_is_valid(inst.buf)) then
     return
@@ -654,10 +663,10 @@ local function follow_lifecycle(harness, inst)
     buffer = inst.buf,
     once = true,
     callback = function()
+      follow_paused[harness] = true
       if active() then
         watcher.stop()
         watcher.reset_pin_state()
-        follow_paused = true
       end
     end,
   })

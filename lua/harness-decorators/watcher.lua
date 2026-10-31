@@ -867,9 +867,14 @@ M._process_watcher_log = process_watcher_log
 M._reap_dead_watchers = reap_dead_watchers
 
 -- Only the active harness is followed: restart on every switch.
+-- A harness whose process exited stays unfollowed until it is started fresh (term.follow_paused).
 active.subscribe("watcher", function()
   M.stop()
   repoint()
+  local term = package.loaded["harness-decorators.term"]
+  if term and term.follow_paused(active.get()) then
+    return
+  end
   M.start()
 end)
 
