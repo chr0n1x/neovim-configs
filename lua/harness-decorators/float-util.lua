@@ -11,16 +11,11 @@ local function valid_buf(win_id)
   return not config.z and win_id ~= terminal_win and vim.uv.fs_stat(buf_name) ~= nil
 end
 
----Focus the first eligible window in reverse tab-window order.
+---Focus the first eligible window in reverse tab-window order. Hidden windows stay eligible.
 function M.find_base_window()
-  local wins = vim.api.nvim_tabpage_list_wins(0)
-
-  for ix = #wins, 1, -1 do
-    local win_id = wins[ix]
-    if valid_buf(win_id) then
-      vim.api.nvim_set_current_win(win_id)
-      return
-    end
+  local win = require("harness-decorators.windows").find(valid_buf, { reverse = true })
+  if win then
+    vim.api.nvim_set_current_win(win)
   end
 end
 
