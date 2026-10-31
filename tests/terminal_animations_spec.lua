@@ -1,9 +1,11 @@
 -- Pins terminal-animations.animate_win's cost and timing contract. A move resizes the window (and
 -- so the terminal inside it, which sends the harness SIGWINCH and makes it redraw) at most twice:
--- position is animated, size is applied in one step.
+-- position is animated, size is applied in one step. NVIM_HARNESS_ANIMATION_MS sets the duration,
+-- read at call time; 0 jumps straight to the target.
 describe("terminal-animations: animate_win", function()
   local anims = require("harness-decorators.terminal-animations")
-  local saved_set, saved_anim, wins, jobs
+  local VAR = "NVIM_HARNESS_ANIMATION_MS"
+  local saved_var, saved_set, saved_anim, wins, jobs
 
   ---A float showing a live terminal job, so a size change really resizes a terminal.
   local function terminal_float(rect)
@@ -40,6 +42,8 @@ describe("terminal-animations: animate_win", function()
   end
 
   before_each(function()
+    saved_var = os.getenv(VAR)
+    vim.env[VAR] = nil
     saved_set = vim.api.nvim_win_set_config
     saved_anim = package.loaded["animation"]
     wins, jobs = {}, {}
@@ -49,6 +53,8 @@ describe("terminal-animations: animate_win", function()
   after_each(function()
     vim.api.nvim_win_set_config = saved_set
     package.loaded["animation"] = saved_anim
+    package.preload["animation"] = nil
+    vim.env[VAR] = saved_var
     for _, j in ipairs(jobs) do
       pcall(vim.fn.jobstop, j)
     end
@@ -111,6 +117,73 @@ describe("terminal-animations: animate_win", function()
       end
     )
   end
+
+  it(
+    "Given NVIM_HARNESS_ANIMATION_MS=0, When a float moves, Then it lands with one set_config and on_done runs synchronously",
+    function()
+      vim.env[VAR] = "0"
+      local win = terminal_float({ row = 1, col = 1, width = 20, height = 5 })
+      local c = count_configs(win)
+      local done = 0
+      local to = { row = 8, col = 30, width = 50, height = 20 }
+      assert.is_true(anims.animate_win({}, "_anim", win, to, nil, function()
+        done = done + 1
+      end))
+      assert.are.equal(1, done)
+      assert.are.equal(1, c.calls)
+      assert.are.same(to, rect_of(win))
+      vim.wait(400)
+      assert.are.equal(1, done)
+      assert.are.equal(1, c.calls)
+    end
+  )
+
+  ---Run one move with an animation.nvim stand-in and return the duration it was built with.
+  local function duration_used()
+    local got
+    package.loaded["animation"] = function(duration)
+      got = duration
+      return { run = function() end, finish = function() end }
+    end
+    local win = terminal_float({ row = 1, col = 1, width = 20, height = 5 })
+    anims.animate_win({}, "_anim", win, { row = 2, col = 2, width = 30, height = 6 })
+    return got
+  end
+
+  it("Given NVIM_HARNESS_ANIMATION_MS unset, When a float moves, Then the animation runs for 300ms", function()
+    assert.are.equal(300, duration_used())
+  end)
+
+  it("Given NVIM_HARNESS_ANIMATION_MS=150, When a float moves, Then the animation runs for 150ms", function()
+    vim.env[VAR] = "150"
+    assert.are.equal(150, duration_used())
+  end)
+
+  for _, value in ipairs({ "fast", "", "-5" }) do
+    it(("Given NVIM_HARNESS_ANIMATION_MS=%q, When a float moves, Then it falls back to 300ms"):format(value), function()
+      vim.env[VAR] = value
+      assert.are.equal(300, duration_used())
+    end)
+  end
+
+  it(
+    "Given no animation.nvim and NVIM_HARNESS_ANIMATION_MS=150, When a float moves, Then it jumps to the target and on_done runs once, synchronously",
+    function()
+      vim.env[VAR] = "150"
+      package.loaded["animation"] = nil
+      package.preload["animation"] = function()
+        error("animation.nvim not installed")
+      end
+      local win = terminal_float({ row = 1, col = 1, width = 20, height = 5 })
+      local done = 0
+      local to = { row = 5, col = 9, width = 40, height = 12 }
+      anims.animate_win({}, "_anim", win, to, nil, function()
+        done = done + 1
+      end)
+      assert.are.equal(1, done)
+      assert.are.same(to, rect_of(win))
+    end
+  )
 
   it(
     "Given a float showing a plain buffer (a minimized bar), When it grows, Then its size grows during the animation",

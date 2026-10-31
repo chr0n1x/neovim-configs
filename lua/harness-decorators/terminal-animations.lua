@@ -1,6 +1,20 @@
--- Window animation for the harness floats and their minimized bars: a 300ms, 60fps in_out_sine move
--- to a target rect, with the size applied in one step. Without animation.nvim it jumps straight to
--- the target.
+-- Window animation for the harness floats and their minimized bars: an in_out_sine move to a target
+-- rect at 60fps, 300ms unless NVIM_HARNESS_ANIMATION_MS says otherwise (0 jumps straight there). A
+-- terminal float's size is applied in one step. Without animation.nvim it jumps straight to the
+-- target.
+
+local DEFAULT_MS = 300
+
+---The animation length in ms from NVIM_HARNESS_ANIMATION_MS, read on every call; anything that is
+-- not a number of 0 or more gives the default.
+---@return number
+local function duration_ms()
+  local ms = tonumber(os.getenv("NVIM_HARNESS_ANIMATION_MS") or "")
+  if not ms or ms < 0 then
+    return DEFAULT_MS
+  end
+  return ms
+end
 
 ---Animate `win` from where it is now to `to` ({ row, col, width, height }), landing exactly on `to`
 -- and then calling on_done. The running animation is kept in handle[key]; one already running there
@@ -35,8 +49,9 @@ local function animate_win(handle, key, win, to, base, on_done)
     width = math.floor(to.width),
     height = math.floor(to.height),
   }
+  local ms = duration_ms()
   local ok_anim, Animation = pcall(require, "animation")
-  if not ok_anim then
+  if ms == 0 or not ok_anim then
     set(final)
     if on_done then
       on_done()
@@ -57,7 +72,7 @@ local function animate_win(handle, key, win, to, base, on_done)
     return math.floor(a + f * (b - a))
   end
   local finished = false
-  handle[key] = Animation(300, 60, require("animation.easing").in_out_sine, function(f)
+  handle[key] = Animation(ms, 60, require("animation.easing").in_out_sine, function(f)
     if not vim.api.nvim_win_is_valid(win) then
       return true
     end
