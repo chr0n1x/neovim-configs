@@ -181,12 +181,21 @@ describe("session following across harness exits", function()
       local saved = package.loaded["harness-decorators"]
       package.loaded["harness-decorators"] = nil
       local ok, err = pcall(function()
-        require("harness-decorators").setup_auto_follow()
+        local decorators = require("harness-decorators")
+        decorators.setup_auto_follow()
+        assert.are.same({}, starts, "the first <leader>c must not follow an exited harness")
+
+        require("harness-decorators.state").table.claude = nil
+        term.open("claude")
+        assert.are.same({ "claude" }, starts, "a fresh claude process must restart following once")
+
+        local resets_after_restart = resets
+        decorators.setup_auto_follow()
+        assert.are.same({ "claude" }, starts, "a second <leader>c must not start following again")
+        assert.are.equal(resets_after_restart, resets, "a second <leader>c must keep the new session's pin")
       end)
       package.loaded["harness-decorators"] = saved
       assert.is_true(ok, tostring(err))
-
-      assert.are.same({}, starts, "the first <leader>c must not follow an exited harness")
     end
   )
 
@@ -221,6 +230,9 @@ describe("session following across harness exits", function()
           "the clicked float must come back"
         )
         assert.is_nil(claude.win, "the active harness must not be shown instead")
+        vim.wait(200)
+        assert.are.equal("claude", active.get(), "a rejected restore must leave the old harness active")
+        assert.are.same({}, starts, "a rejected restore must not start following")
       end)
       utils.list_harnesses = orig_list
       assert.is_true(ok, tostring(err))
