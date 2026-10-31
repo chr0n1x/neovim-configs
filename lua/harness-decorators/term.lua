@@ -989,16 +989,18 @@ local function tile_members()
 end
 
 ---Move a tiled float to `rect` unless it is there already or its running animation, started by an
--- earlier retile, is heading there. One <C-t> cycle press retiles several times (the switch, then
--- the WinLeave and WinEnter of the focus change); the later ones find the floats mid-animation and
--- would otherwise restart the same move from the intermediate rect.
+-- earlier retile on the same window, is heading there. One <C-t> cycle press retiles several times
+-- (the switch, then the WinLeave and WinEnter of the focus change); the later ones find the floats
+-- mid-animation and would otherwise restart the same move from the intermediate rect.
 ---@param inst table the Snacks terminal instance
 ---@param rect { row: integer, col: integer, width: integer, height: integer }
 local function tile_to(inst, rect)
   if at_rect(inst.win, rect) then
     return
   end
-  if inst._resize_anim and inst._resize_anim == inst._tile_anim and vim.deep_equal(inst._tile_rect, rect) then
+  local anim = inst._resize_anim
+  local same_move = anim and anim == inst._tile_anim and inst.win == inst._tile_win
+  if same_move and anim:is_running() and vim.deep_equal(inst._tile_rect, rect) then
     return
   end
   inst._tile_rect = vim.deepcopy(rect)
@@ -1006,6 +1008,7 @@ local function tile_to(inst, rect)
     inst._tile_rect = nil
   end)
   inst._tile_anim = inst._resize_anim
+  inst._tile_win = inst.win
 end
 
 ---Lay the open harness floats out in the grid. The focused float (else the one focused last, if
