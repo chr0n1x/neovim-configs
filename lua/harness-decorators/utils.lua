@@ -407,8 +407,8 @@ function M.shorten_path(file_path)
       if file_path == bare_home then
         return "~"
       end
-      -- Only shorten when the path is home + "/" + more, so /home/kran2/foo is NOT
-      -- shortened when HOME=/home/kran (the char right after home must be a slash).
+      -- Only shorten when the path is home + "/" + more, so /home/u2/foo is NOT
+      -- shortened when HOME=/home/u (the char right after home must be a slash).
       local prefix = bare_home .. "/"
       if file_path:sub(1, #prefix) == prefix then
         return "~/" .. file_path:sub(#prefix + 1)

@@ -2,7 +2,7 @@
 -- float per harness), keyed by harness name:
 --
 --   {
---     claude = { inst = <snacks.terminal instance>, cwd = "/Users/kran/Code/app", opened_at = 1767225600 },
+--     claude = { inst = <snacks.terminal instance>, cwd = "/home/u/Code/app", opened_at = 1767225600 },
 --   }
 --
 -- A record for a harness that was never opened has inst = nil.

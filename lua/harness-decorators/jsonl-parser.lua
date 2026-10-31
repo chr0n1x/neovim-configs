@@ -28,7 +28,7 @@ end
 ---from this shape). All fields are passed explicitly; nil is a valid value for any of them.
 ---
 ---  {
----    file_path = "/Users/kran/Code/app/lua/init.lua",
+---    file_path = "/home/u/Code/app/lua/init.lua",
 ---    operation = "Edit",
 ---    starting_line = 42,
 ---    delta = "-local x = 1\\n+local x = 2",

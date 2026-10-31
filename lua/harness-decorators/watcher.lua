@@ -96,7 +96,7 @@ M._last_reap_ms = nil
 ---lines and knows their absolute line numbers.
 ---
 ---  {
----    ["/Users/kran/.claude/projects/-Users-kran-Code-app/4f1c.jsonl"] = { byte_pos = 18342, line_count = 57 },
+---    ["/home/u/.claude/projects/-home-u-Code-app/4f1c.jsonl"] = { byte_pos = 18342, line_count = 57 },
 ---  }
 ---
 ---A file appears only after its first write event is seen.

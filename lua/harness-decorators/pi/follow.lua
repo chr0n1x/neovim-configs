@@ -24,15 +24,15 @@ local EXT_NAME = "nvim-harness-follow.ts"
 -- cwd to the latest session id there (pi/state.lua is handed a cwd).
 --
 --   sessions = {
---     ["01a18e96-8d5c-7675-b88f-778acd4cb7ee"] = {
+--     ["0b6f2c1e-7d3a-4f1b-9c2e-5a8d1e4b7f90"] = {
 --       status = "working",
---       cwd = "/Users/kran/app",
---       session_file = "/Users/kran/.pi/agent/sessions/--Users-kran-app--/"
---         .. "2026-10-30T20-53-13-693Z_01a18e96-8d5c-7675-b88f-778acd4cb7ee.jsonl",
+--       cwd = "/home/u/app",
+--       session_file = "/home/u/.pi/agent/sessions/--home-u-app--/"
+--         .. "2026-01-15T09-30-00-000Z_0b6f2c1e-7d3a-4f1b-9c2e-5a8d1e4b7f90.jsonl",
 --       updated_at = 1793400000,
 --     },
 --   }
---   by_cwd = { ["/Users/kran/app"] = "01a18e96-8d5c-7675-b88f-778acd4cb7ee" }
+--   by_cwd = { ["/home/u/app"] = "0b6f2c1e-7d3a-4f1b-9c2e-5a8d1e4b7f90" }
 --
 -- A shutdown event drops the session; an event with no session id is skipped, and one with no
 -- cwd is stored without a by_cwd entry.

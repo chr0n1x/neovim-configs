@@ -45,7 +45,7 @@ describe("utils.is_noise", function()
   end)
 
   it("accepts ordinary source files", function()
-    assert.is_falsy(utils.is_noise("/home/kran/Code/foo.lua"))
+    assert.is_falsy(utils.is_noise("/home/u/Code/foo.lua"))
     assert.is_falsy(utils.is_noise("README.md"))
   end)
 end)
@@ -170,7 +170,7 @@ describe("shorten_path (2-tier display rule, shared across callers)", function()
   end)
 
   it("never collapses a sibling that merely shares a name prefix", function()
-    -- /home/kran2/foo must NOT become ~/2/foo when HOME=/home/kran (the char right after
+    -- /home/u2/foo must NOT become ~/2/foo when HOME=/home/u (the char right after
     -- home must be a slash).
     local f = home .. "2/foo.txt"
     assert.are.equal(f, utils.shorten_path(f))

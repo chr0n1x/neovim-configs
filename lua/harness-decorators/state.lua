@@ -2,7 +2,7 @@
 -- directory the harness was started in, and its start time (os.time()), keyed by harness name.
 --
 --   {
---     maki = { inst = <snacks.terminal>, cwd = "/Users/kran/Code/app", opened_at = 1793376000 },
+--     maki = { inst = <snacks.terminal>, cwd = "/home/u/Code/app", opened_at = 1793376000 },
 --     pi = { inst = nil },
 --   }
 --
