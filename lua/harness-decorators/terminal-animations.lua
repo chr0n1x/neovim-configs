@@ -1,5 +1,6 @@
 -- Window animation for the harness floats and their minimized bars: a 300ms, 60fps in_out_sine move
--- and resize to a target rect. Without animation.nvim it jumps straight to the target.
+-- to a target rect, with the size applied in one step. Without animation.nvim it jumps straight to
+-- the target.
 
 ---Animate `win` from where it is now to `to` ({ row, col, width, height }), landing exactly on `to`
 -- and then calling on_done. The running animation is kept in handle[key]; one already running there
@@ -44,6 +45,17 @@ local function animate_win(handle, key, win, to, base, on_done)
   end
   local cur = vim.api.nvim_win_get_config(win)
   local from = { row = cur.row or 0, col = cur.col or 0, width = cur.width, height = cur.height }
+  -- Each size change of a terminal window resizes the terminal, and the harness redraws its whole
+  -- screen on that SIGWINCH. So a terminal window animates only its position: per axis, a shrinking
+  -- size applies on the first frame and a growing one on the last, and it never covers more than the
+  -- larger of its two rects. Other windows (the minimized bars) resize smoothly.
+  local terminal = vim.bo[vim.api.nvim_win_get_buf(win)].buftype == "terminal"
+  local function size(f, a, b)
+    if terminal then
+      return math.min(a, b)
+    end
+    return math.floor(a + f * (b - a))
+  end
   local finished = false
   handle[key] = Animation(300, 60, require("animation.easing").in_out_sine, function(f)
     if not vim.api.nvim_win_is_valid(win) then
@@ -62,8 +74,8 @@ local function animate_win(handle, key, win, to, base, on_done)
     set({
       row = math.floor(from.row + f * (to.row - from.row)),
       col = math.floor(from.col + f * (to.col - from.col)),
-      width = math.max(1, math.floor(from.width + f * (to.width - from.width))),
-      height = math.max(1, math.floor(from.height + f * (to.height - from.height))),
+      width = math.max(1, size(f, from.width, final.width)),
+      height = math.max(1, size(f, from.height, final.height)),
     })
   end)
   handle[key]:run()
