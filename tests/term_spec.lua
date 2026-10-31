@@ -1630,7 +1630,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
         tallest > fullscreen_rect().height - 3,
         "it should pass through fullscreen first, tallest was " .. tallest
       )
-      assert.is_true(inst._shelved == true, "the float must be marked shelved")
+      assert.are.equal("shelved", layout.get(inst), "the float must be marked shelved")
       assert.are.same(
         shelf,
         { row = inst.opts.row, col = inst.opts.col, width = inst.opts.width, height = inst.opts.height },
@@ -1658,7 +1658,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
       assert.are.equal("", term.mouse.double(shelf_corner(inst.win)))
       term.mouse.release()
       assert.is_true(at_rect(inst, fullscreen_rect()), "the float should grow back to fullscreen")
-      assert.is_false(inst._shelved, "the float must no longer be shelved")
+      assert.are_not.equal("shelved", layout.get(inst), "the float must no longer be shelved")
     end
   )
 
@@ -1749,9 +1749,9 @@ describe("term: float mouse handling, minimized bars and flash", function()
       assert.is_true(shelve(inst), "precondition: shelved")
       term.minimize("claude")
       assert.is_true(docked("claude", 1))
-      assert.is_false(inst._shelved == true, "minimizing clears the shelf")
+      assert.are_not.equal("shelved", layout.get(inst), "minimizing clears the shelf")
       assert.is_false(inst._shelf_mode == true, "minimizing turns shelf mode off")
-      assert.is_false(inst._wide == true, "minimizing clears fullscreen")
+      assert.are_not.equal("fullscreen", layout.get(inst), "minimizing clears fullscreen")
       term.show("claude")
       assert.is_true(
         wait_for(function()
@@ -1774,7 +1774,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
       assert.is_true(at_rect(inst, fullscreen_rect()), "precondition: fullscreen")
       term.minimize("claude")
       assert.is_false(inst._shelf_mode == true)
-      assert.is_false(inst._wide == true)
+      assert.are_not.equal("fullscreen", layout.get(inst))
       assert.is_nil(inst._saved_config)
       term.show("claude")
       assert.is_true(
@@ -1791,7 +1791,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
       assert.is_true(shelve(inst), "precondition: shelved")
       term.fullscreen_key(inst)
       assert.is_false(inst._shelf_mode == true)
-      assert.is_false(inst._shelved == true)
+      assert.are_not.equal("shelved", layout.get(inst))
       assert.is_true(
         wait_for(function()
           local r = rect_of(inst.win)
@@ -1810,7 +1810,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
       term.shelf_key(inst)
       vim.wait(400)
       assert.are.same(shelf_rect(), rect_of(inst.win))
-      assert.is_true(inst._shelved == true)
+      assert.are.equal("shelved", layout.get(inst))
     end
   )
 
@@ -1824,7 +1824,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
       vim.api.nvim_set_current_win(inst.win)
       assert.is_true(at_rect(inst, fullscreen_rect()), "focus should grow the shelf to fullscreen")
       assert.is_true(inst._shelf_mode == true, "shelf mode stays on while focused")
-      assert.is_false(inst._shelved)
+      assert.are_not.equal("shelved", layout.get(inst))
     end
   )
 
@@ -1853,7 +1853,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
       assert.is_true(at_rect(inst, fullscreen_rect()), "precondition: focused at fullscreen")
       vim.api.nvim_set_current_win(work_win)
       assert.is_true(at_rect(inst, shelf_rect()), "leaving should shelve again: " .. vim.inspect(rect_of(inst.win)))
-      assert.is_true(inst._shelved == true)
+      assert.are.equal("shelved", layout.get(inst))
     end
   )
 
@@ -2082,7 +2082,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
     term.go_back_key(inst)
     vim.wait(400)
     assert.are.same(shelf_rect(), rect_of(inst.win))
-    assert.is_true(inst._shelved)
+    assert.are.equal("shelved", layout.get(inst))
   end)
 
   it("Given shelf mode off, When <C-f> is pressed, Then shelf mode is on and the float is fullscreen", function()
@@ -2124,7 +2124,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
         end),
         "pressing the shelf corner still starts a move"
       )
-      assert.is_false(inst._shelved == true)
+      assert.are_not.equal("shelved", layout.get(inst))
     end
   )
 
@@ -2471,7 +2471,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
         require("harness-decorators.layout").set(inst, "fullscreen")
         term.set_zen_width(true)
         assert.is_true(at_rect(inst, shelf_rect()), "should land on the shelf: " .. vim.inspect(rect_of(inst.win)))
-        assert.is_true(inst._shelved == true)
+        assert.are.equal("shelved", layout.get(inst))
       end
     )
 

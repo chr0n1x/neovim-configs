@@ -273,7 +273,6 @@ end
 ---The one place a float's layout changes. It keeps the related fields consistent:
 --   * "shelved" turns shelf mode on; "minimized" turns it off and drops the <C-f> baseline.
 --   * opts.shelf_mode sets shelf mode explicitly; opts.forget_baseline drops the baseline.
---   * _shelved and _wide mirror the layout for readers outside these modules; nothing here reads them.
 -- Otherwise the baseline (_saved_config) is kept, so toggling <C-f> does not drift the float.
 ---@param inst table the Snacks terminal instance
 ---@param to harness.Layout
@@ -292,8 +291,6 @@ function M.set(inst, to, opts)
   if to == "minimized" or opts.forget_baseline then
     inst._saved_config = nil
   end
-  inst._shelved = to == "shelved"
-  inst._wide = to == "fullscreen"
 end
 
 ---The 0-based screen row/col of a float's outer top-left corner (border included) as drawn.

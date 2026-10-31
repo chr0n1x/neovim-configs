@@ -46,7 +46,7 @@ describe("term.go_back_key: <C-h> moves focus back without hiding the float", fu
       show = function() end,
       focus = function() end,
       close = function() end,
-      -- _wide/_saved_config unset, so animate_collapse is a no-op (no animation to run).
+      -- layout normal and _saved_config unset, so animate_collapse is a no-op (no animation to run).
     }
 
     local ok, err = pcall(term_mod.go_back_key, fake)
