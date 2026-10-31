@@ -53,6 +53,23 @@ return {
           })
         end,
       })
+      vim.lsp.config("lua_ls", {
+        settings = {
+          Lua = {
+            runtime = {
+              version = "LuaJIT",
+            },
+            diagnostics = {
+              globals = { "vim" },
+            },
+            workspace = {
+              library = {
+                vim.env.VIMRUNTIME,
+              },
+            },
+          },
+        },
+      })
 
       -- Mason manages LSP server installations.
       require("mason").setup({
@@ -73,36 +90,6 @@ return {
           -- 'yamlls',
           "gopls",
           "lua_ls",
-        },
-        handlers = {
-          function(server_name)
-            require("lspconfig")[server_name].setup({
-              capabilities = lsp_capabilities,
-            })
-          end,
-          lua_ls = function()
-            require("lspconfig").lua_ls.setup({
-              capabilities = lsp_capabilities,
-              settings = {
-                Lua = {
-                  runtime = {
-                    version = "LuaJIT",
-                  },
-                  diagnostics = {
-                    globals = { "vim" },
-                    -- LuaLS has no diagnostics.library setting (it reads library paths from
-                    -- workspace.library), so LuaLS ignores this entry.
-                    library = { require("vim.runtime").get_runtime_file() },
-                  },
-                  workspace = {
-                    library = {
-                      vim.env.VIMRUNTIME,
-                    },
-                  },
-                },
-              },
-            })
-          end,
         },
       })
     end,
