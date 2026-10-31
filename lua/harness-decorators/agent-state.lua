@@ -63,7 +63,12 @@ function M.harnesses()
     if ok then
       local installed = false
       local ok_env, env = pcall(require, "harness-decorators." .. name .. ".env")
-      if ok_env and type(env) == "table" and type(env.command) == "function" then
+      if
+        ok_env
+        and type(env) == "table"
+        and type(env.command) == "function"
+        and type(env.prepare_env) == "function"
+      then
         installed = u.command_executable(env.command())
       end
       out[#out + 1] = { name = name, installed = installed }

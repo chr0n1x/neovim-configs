@@ -136,16 +136,48 @@ describe("env: fresh terminal spawn boundary", function()
     assert.is_nil(calls[1].opts.env)
     assert.are.same(parent, snapshot())
   end)
+
+  for _, case in ipairs({
+    { name = "nil", value = nil },
+    { name = "false", value = false },
+    { name = "a string", value = "invalid-env" },
+  }) do
+    it(
+      "Given prepare_env returns "
+        .. case.name
+        .. ", When opened, Then it reports no command and returns nil without spawning",
+      function()
+        local notes = {}
+        replace(package.loaded, "harness-decorators.maki.env", {
+          command = function()
+            return "maki"
+          end,
+          prepare_env = function()
+            return case.value
+          end,
+        })
+        replace(vim, "notify", function(message, level)
+          notes[#notes + 1] = { message, level }
+        end)
+        local ok, inst = pcall(term.open, "maki")
+        assert.is_true(ok, tostring(inst))
+        assert.is_nil(inst)
+        assert.are.same({ { "harness: no command for maki", vim.log.levels.ERROR } }, notes)
+        assert.are.equal(0, #calls)
+      end
+    )
+  end
 end)
 
 describe("env: real Snacks terminal jobs", function()
   local env_mod = "harness-decorators.maki.env"
-  local saved_module, saved_probe, saved_notify, notes, files
+  local saved_module, saved_probe, saved_parent, saved_notify, notes, files
 
   before_each(function()
     term._reset()
     saved_module = package.loaded[env_mod]
     saved_probe = os.getenv("HD_PROBE") or vim.NIL
+    saved_parent = os.getenv("HD_PARENT") or vim.NIL
     saved_notify = vim.notify
     notes, files = {}, {}
     vim.env.HD_PROBE = nil
@@ -158,6 +190,7 @@ describe("env: real Snacks terminal jobs", function()
     term._reset()
     package.loaded[env_mod] = saved_module
     vim.env.HD_PROBE = saved_probe ~= vim.NIL and saved_probe or nil
+    vim.env.HD_PARENT = saved_parent ~= vim.NIL and saved_parent or nil
     vim.notify = saved_notify
     for _, file in ipairs(files) do
       vim.fn.delete(file)
@@ -218,5 +251,13 @@ describe("env: real Snacks terminal jobs", function()
     assert.is_true(ok, tostring(inst))
     assert.is_nil(inst)
     assert.are.same({ { "harness: no command for maki", vim.log.levels.ERROR } }, notes)
+  end)
+
+  it("Given a parent marker and a job-local override, When a real Snacks job opens, Then it receives both", function()
+    vim.env.HD_PARENT = "parent-marker"
+    local file = spawn({ HD_PROBE = "job-local" }, '"$HD_PARENT:$HD_PROBE"')
+    assert.are.same({ "parent-marker:job-local" }, vim.fn.readfile(file))
+    assert.are.equal("parent-marker", os.getenv("HD_PARENT"))
+    assert.is_nil(os.getenv("HD_PROBE"))
   end)
 end)

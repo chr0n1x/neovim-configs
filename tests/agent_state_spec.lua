@@ -208,6 +208,24 @@ describe("agent-state: installed CLI command interface", function()
       assert.are.same(expected, actual)
     end
   )
+
+  it(
+    "Given an env module with command but no prepare_env, When harnesses are listed, Then it is not installed",
+    function()
+      u.list_harnesses = function()
+        return { "maki" }
+      end
+      u.command_executable = function()
+        return true
+      end
+      package.loaded["harness-decorators.maki.env"] = {
+        command = function()
+          return "maki"
+        end,
+      }
+      assert.are.same({ { name = "maki", installed = false } }, agent_state.harnesses())
+    end
+  )
 end)
 
 describe("agent-state: per-harness adapters (sandboxed HOME)", function()

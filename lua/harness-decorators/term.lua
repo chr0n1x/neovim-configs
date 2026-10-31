@@ -674,7 +674,8 @@ function M.open(harness, opts)
     return nil
   end
   local cmd, env = resolve_cmd(harness)
-  if not cmd then
+  local job_env = cmd and env.prepare_env()
+  if not cmd or type(job_env) ~= "table" then
     vim.notify("harness: no command for " .. harness, vim.log.levels.ERROR)
     return nil
   end
@@ -682,7 +683,6 @@ function M.open(harness, opts)
     cmd = cmd .. " " .. opts.args
   end
 
-  local job_env = env.prepare_env()
   local inst = snacks.open(cmd, {
     env = next(job_env) and job_env or nil,
     auto_insert = false,
