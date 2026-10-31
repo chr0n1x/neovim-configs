@@ -641,7 +641,7 @@ local function follow_lifecycle(harness, inst)
     return
   end
   local function active()
-    return require("harness-decorators.utils").harness == harness
+    return require("harness-decorators.active").get() == harness
   end
   if follow_paused and active() then
     follow_paused = false
