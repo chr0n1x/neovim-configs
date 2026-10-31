@@ -4,6 +4,7 @@
 -- sends SIGTERM to belongs to this spec. stdpath("cache") points at a temp dir.
 
 local utils = require("harness-decorators.utils")
+local active = require("harness-decorators.active")
 local watcher = require("harness-decorators.watcher")
 
 describe("watcher.start", function()
@@ -13,7 +14,7 @@ describe("watcher.start", function()
   local orig = {}
 
   before_each(function()
-    assert.are.equal("claude", utils.harness, "watcher start spec assumes the claude adapter")
+    assert.are.equal("claude", active.get(), "watcher start spec assumes the claude adapter")
     pcall(watcher.stop)
     -- Other specs switch harnesses, which reloads the adapter module; take the one the watcher uses.
     watcher.set_harness("claude")
@@ -205,7 +206,7 @@ describe("watcher.start", function()
             end),
             "the old watcher must be stopped"
           )
-          assert.are.equal("copilot", utils.harness)
+          assert.are.equal("copilot", active.get())
           assert.is_not_nil(watcher.watcher_handle, "a new watcher runs")
           assert.are_not.equal(old_pid, watcher.watcher_pid)
           assert.are.equal(log, watcher.watcher_log)

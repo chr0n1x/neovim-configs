@@ -7,7 +7,7 @@
 -- The display logic lives in harness-decorators.session_component (a plain module function),
 -- not in plugins/lualine.lua, so this spec drives it without a live statusline.
 local decorators = require("harness-decorators")
-local utils = require("harness-decorators.utils")
+local active = require("harness-decorators.active")
 local watcher = require("harness-decorators.watcher")
 
 describe("lualine session component", function()
@@ -15,16 +15,16 @@ describe("lualine session component", function()
 
   setup(function()
     orig_pin = watcher.pinned_jsonl_path
-    orig_harness = utils.harness
+    orig_harness = active.get()
   end)
 
   teardown(function()
     watcher.pinned_jsonl_path = orig_pin
-    utils.harness = orig_harness
+    active.set(orig_harness)
   end)
 
   it("shows a spinner when there is no pin and the harness can pin (claude)", function()
-    utils.harness = "claude"
+    active.set("claude")
     watcher.pinned_jsonl_path = nil
     local display = require("harness-decorators.agent-display")
     display._set_agents({ claude = { status = "idle", pid = 1 } })
@@ -43,13 +43,13 @@ describe("lualine session component", function()
     display._set_agents({})
     watcher.pinned_jsonl_path = nil
     for _, h in ipairs({ "claude", "crush" }) do
-      utils.harness = h
+      active.set(h)
       assert.are.equal("0 agents", decorators.session_component("⠋"), h .. ": no live harness must read '0 agents'")
     end
   end)
 
   it("shows the pinned session slug (claude stem)", function()
-    utils.harness = "claude"
+    active.set("claude")
     watcher.pinned_jsonl_path = "/home/u/.claude/projects/x/deadbeef.jsonl"
     assert.are.equal("%#lualine_x_normal#🤖%* deadbeef", decorators.session_component("⠋"))
   end)
@@ -57,7 +57,7 @@ describe("lualine session component", function()
   it("shows the harness-aware slug (copilot parent dir, not the events.jsonl stem)", function()
     -- The raw path:match("([^/]+)%.jsonl$") would yield "events" here; the correct id is the
     -- parent dir. This is the bug the refactor fixes.
-    utils.harness = "copilot"
+    active.set("copilot")
     watcher.pinned_jsonl_path = "/home/u/.copilot/sess-42/events.jsonl"
     assert.are.equal("%#lualine_x_normal#🤖%* sess-42", decorators.session_component("⠋"))
   end)
@@ -73,7 +73,7 @@ describe("lualine session component", function()
           session_id = h == "crush" and "d5bb8c50-400e" or nil,
         },
       })
-      utils.harness = h
+      active.set(h)
       watcher.pinned_jsonl_path = nil
       local out = decorators.session_component("⠋")
       local expected = h == "crush" and display.HL_WORKING or display.HL_IDLE
@@ -86,7 +86,7 @@ describe("lualine session component", function()
   it("appends the active agent's own status dot when its state is known", function()
     -- The session component reads the cached poll result so fast spinner redraws never run ps/SQLite.
     local display = require("harness-decorators.agent-display")
-    utils.harness = "claude"
+    active.set("claude")
     watcher.pinned_jsonl_path = "/home/u/.claude/projects/x/deadbeef.jsonl"
 
     display._set_agents({ claude = { status = "working", label = nil, pid = 1 } })

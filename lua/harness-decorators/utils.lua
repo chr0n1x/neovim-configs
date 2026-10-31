@@ -576,20 +576,4 @@ function M.session_ownership(nvim_cwd, lines, jsonl_path, extract_cwd, read_firs
   return M.ownership_from_cwd(nvim_cwd, cwd)
 end
 
--- utils.harness reads and writes the value owned by harness-decorators.active.
-setmetatable(M, {
-  __index = function(_, k)
-    if k == "harness" then
-      return active_harness()
-    end
-  end,
-  __newindex = function(t, k, v)
-    if k == "harness" then
-      require("harness-decorators.active").set(v)
-    else
-      rawset(t, k, v)
-    end
-  end,
-})
-
 return M

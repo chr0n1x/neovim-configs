@@ -450,7 +450,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
   local state = require("harness-decorators.state")
   local sw = require("harness-decorators.switch")
   local keymaps = require("harness-decorators.keymaps")
-  local utils = require("harness-decorators.utils")
+  local active = require("harness-decorators.active")
   local snacks
   local orig_open
   local orig_notify
@@ -560,7 +560,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
     if orig_env then
       vim.fn.setenv("NVIM_LLM_HARNESS", orig_env)
     end
-    utils.harness = original_harness
+    active.set(original_harness)
     sw.init(original_harness)
     keymaps.clear()
     keymaps.apply(keymaps.build(original_harness))
@@ -899,7 +899,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
     "Given the active harness's process exits, When it is started again, Then session following stops on exit and restarts on the new start",
     function()
       local watcher = require("harness-decorators.watcher")
-      local orig_stop, orig_start, orig_harness = watcher.stop, watcher.start, utils.harness
+      local orig_stop, orig_start, orig_harness = watcher.stop, watcher.start, active.get()
       local stops, starts = 0, 0
       watcher.stop = function()
         stops = stops + 1
@@ -907,7 +907,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
       watcher.start = function()
         starts = starts + 1
       end
-      utils.harness = "claude"
+      active.set("claude")
       local exited = false
       snacks.open = function()
         local inst = make_float_fake(vim.api.nvim_create_buf(false, true))
@@ -931,7 +931,8 @@ describe("term: float mouse handling, minimized bars and flash", function()
       term._reset()
       term.open("claude")
       local restarted = starts > starts_before_reopen
-      watcher.stop, watcher.start, utils.harness = orig_stop, orig_start, orig_harness
+      watcher.stop, watcher.start = orig_stop, orig_start
+      active.set(orig_harness)
       snacks.open = function()
         local fake = make_float_fake(vim.api.nvim_create_buf(false, true))
         fake:show()

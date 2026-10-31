@@ -54,7 +54,7 @@ describe("picker: collect_terminal_bufs maps harnesses to live buffers (Task 6/7
     if orig_env then
       vim.fn.setenv("NVIM_LLM_HARNESS", orig_env)
     end
-    utils.harness = original_harness
+    require("harness-decorators.active").set(original_harness)
   end)
 
   it("includes a harness's live terminal buffer", function()

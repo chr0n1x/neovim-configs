@@ -2,7 +2,7 @@
 -- sidecar files live. Specs that compute a real sidecar path point stdpath("cache") at a temp
 -- dir so nothing lands in the container user's cache.
 
-local utils = require("harness-decorators.utils")
+local active = require("harness-decorators.active")
 local sidecar = require("harness-decorators.sidecar")
 
 local function read_lines(path)
@@ -22,7 +22,7 @@ describe("sidecar", function()
   local tmpdir, orig_stdpath
 
   before_each(function()
-    assert.are.equal("claude", utils.harness, "sidecar spec assumes the claude adapter")
+    assert.are.equal("claude", active.get(), "sidecar spec assumes the claude adapter")
     tmpdir = vim.fn.tempname() .. "-sidecar"
     vim.fn.mkdir(tmpdir, "p")
     orig_stdpath = vim.fn.stdpath

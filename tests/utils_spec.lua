@@ -4,6 +4,7 @@
 -- harness, so they get direct coverage independent of the watcher/adapter stack.
 
 local utils = require("harness-decorators.utils")
+local active = require("harness-decorators.active")
 local ci = require("harness-decorators.context-inject")
 
 describe("utils.read_json_file", function()
@@ -81,14 +82,14 @@ describe("utils.extract_session_id", function()
   end)
 
   it("uses the parent dir as the id for copilot's <id>/events.jsonl layout", function()
-    -- Flip utils.harness to copilot so its session_id adapter method (parent-dir rule) is
+    -- Flip active.get() to copilot so its session_id adapter method (parent-dir rule) is
     -- in play, then restore. We set the field directly rather than calling switch.switch:
     -- that restarts the watcher and re-points claudecode state, which a unit spec must not
-    -- do. extract_session_id only reads utils.harness to pick the adapter.
-    local orig = utils.harness
-    utils.harness = "copilot"
+    -- do. extract_session_id only reads active.get() to pick the adapter.
+    local orig = active.get()
+    active.set("copilot")
     assert.are.equal("sess-42", utils.extract_session_id("/home/u/.copilot/sess-42/events.jsonl"))
-    utils.harness = orig
+    active.set(orig)
   end)
 end)
 

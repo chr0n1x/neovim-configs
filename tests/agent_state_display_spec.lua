@@ -2,11 +2,12 @@ local agent_state = require("harness-decorators.agent-state")
 local display = require("harness-decorators.agent-display")
 local decorators = require("harness-decorators")
 local utils = require("harness-decorators.utils")
+local active = require("harness-decorators.active")
 local watcher = require("harness-decorators.watcher")
 local term = require("harness-decorators.term")
 
 describe("agent-state asynchronous Crush identity through the display", function()
-  local originals, dir, old_cwd, old_buf, buf, callbacks
+  local originals, dir, old_cwd, old_buf, buf, callbacks, saved_active
 
   local function replace(object, key, value)
     originals[#originals + 1] = { object, key, object[key] }
@@ -26,7 +27,8 @@ describe("agent-state asynchronous Crush identity through the display", function
     display._reset()
     term._reset()
     require("harness-decorators.crush.state")._reset()
-    replace(utils, "harness", "crush")
+    saved_active = active.get()
+    active.set("crush")
     replace(watcher, "pinned_jsonl_path", nil)
     replace(utils, "sqlite_open_ro", function()
       return nil, "native reader unavailable"
@@ -62,6 +64,7 @@ describe("agent-state asynchronous Crush identity through the display", function
   end)
 
   after_each(function()
+    active.set(saved_active)
     display.stop_timer()
     display._reset()
     require("harness-decorators.crush.state")._reset()

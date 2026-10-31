@@ -10,6 +10,7 @@
 -- regression would drop diffs before they ever reach the picker.
 
 local utils = require("harness-decorators.utils")
+local active = require("harness-decorators.active")
 local watcher = require("harness-decorators.watcher")
 
 -- A minimal claude toolUseResult line: an Edit with a structuredPatch whose first changed
@@ -31,9 +32,9 @@ describe("watcher dispatch: HarnessEdit fires with the parsed fields", function(
 
   setup(function()
     -- Only meaningful for the claude dialect; skip cleanly if CI runs another harness.
-    assert.are.equal("claude", utils.harness, "watcher dispatch spec assumes the claude adapter")
+    assert.are.equal("claude", active.get(), "watcher dispatch spec assumes the claude adapter")
 
-    orig_harness = utils.harness
+    orig_harness = active.get()
     orig_pin = watcher.pinned_jsonl_path
     -- Fresh dedup state so a prior spec's seen keys can't suppress our events.
     utils.reset_dedup()
@@ -51,7 +52,7 @@ describe("watcher dispatch: HarnessEdit fires with the parsed fields", function(
 
   teardown(function()
     pcall(vim.api.nvim_del_augroup_by_id, group)
-    utils.harness = orig_harness
+    active.set(orig_harness)
     watcher.pinned_jsonl_path = orig_pin
     utils.reset_dedup()
   end)

@@ -54,12 +54,13 @@ describe("utils module load errors", function()
     "Given a broken adapter for the active harness, When a session id is extracted, Then the load error is raised",
     function()
       local utils = require("harness-decorators.utils")
-      local orig = utils.harness
-      utils.harness = "claude"
+      local active = require("harness-decorators.active")
+      local orig = active.get()
+      active.set("claude")
       failing_require("harness-decorators.claude", function()
         utils.extract_session_id("/home/u/.claude/projects/x/abc.jsonl")
       end)
-      utils.harness = orig
+      active.set(orig)
     end
   )
 end)

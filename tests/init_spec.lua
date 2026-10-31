@@ -6,6 +6,7 @@
 
 local decorators = require("harness-decorators")
 local utils = require("harness-decorators.utils")
+local active = require("harness-decorators.active")
 local watcher = require("harness-decorators.watcher")
 
 describe("setup_auto_follow idempotency (Task 14)", function()
@@ -74,7 +75,7 @@ describe("setup activation contracts", function()
   before_each(function()
     saved = {
       current = switch.current(),
-      harness = utils.harness,
+      harness = active.get(),
       records = state.table,
       pi = require("harness-decorators.pi"),
       autocmds = {},

@@ -12,6 +12,7 @@ local helper = require("tests.helper")
 local sw = require("harness-decorators.switch")
 local keymaps = require("harness-decorators.keymaps")
 local utils = require("harness-decorators.utils")
+local active = require("harness-decorators.active")
 
 describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", function()
   local original_harness
@@ -79,14 +80,14 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
       snacks.open = orig_open
     end
     require("harness-decorators.state")._reset()
-    -- M.switch changed the active harness (env var + utils.harness + current_harness + keymaps).
+    -- M.switch changed the active harness (env var + active.get() + current_harness + keymaps).
     -- Restore all of it directly rather than calling switch again, which would spawn/kill terminals -
     -- perturbing later specs that assume the config's default harness. Re-apply the original
     -- harness's keymaps so bindings match the restored current_harness.
     if orig_env then
       vim.fn.setenv("NVIM_LLM_HARNESS", orig_env)
     end
-    utils.harness = original_harness
+    active.set(original_harness)
     sw.init(original_harness)
     keymaps.clear()
     keymaps.apply(keymaps.build(original_harness))
@@ -122,7 +123,7 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
     -- harness must be `target` (the foregrounded one), NOT the backgrounded `original_harness`.
     assert.are.equal(
       target,
-      utils.harness,
+      active.get(),
       "watcher must follow the active (foregrounded) harness, not the backgrounded one"
     )
   end)
@@ -165,7 +166,7 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
       assert.is_true(ok, tostring(err))
       assert.are.equal(target, sw.current())
       assert.are.equal(target, require("harness-decorators.park").selected_harness())
-      assert.are.equal(target, utils.harness, "the watcher must follow the activated harness")
+      assert.are.equal(target, active.get(), "the watcher must follow the activated harness")
       assert.are.equal(win, vim.api.nvim_get_current_win(), "activate must not move focus")
       assert.are.equal(0, resets, "activate must not re-lay out the floats")
     end
@@ -340,7 +341,7 @@ describe("switch activation failure boundaries", function()
   local function activation_state()
     return {
       current = sw.current(),
-      harness = utils.harness,
+      harness = active.get(),
       env = vim.env.NVIM_LLM_HARNESS,
       selected = require("harness-decorators.park").selected_harness(),
       maps = leader_maps(),
@@ -362,7 +363,7 @@ describe("switch activation failure boundaries", function()
     require("harness-decorators.pi")
     saved = {
       current = sw.current(),
-      harness = utils.harness,
+      harness = active.get(),
       env = vim.env.NVIM_LLM_HARNESS,
       records = state.table,
       stop = watcher.stop,
@@ -378,7 +379,7 @@ describe("switch activation failure boundaries", function()
       steps[#steps + 1] = "stop"
     end
     watcher.start = function()
-      steps[#steps + 1] = "start:" .. utils.harness
+      steps[#steps + 1] = "start:" .. active.get()
     end
     vim.notify = function(message, level)
       notes[#notes + 1] = { message = tostring(message), level = level }
@@ -429,7 +430,7 @@ describe("switch activation failure boundaries", function()
         working_pi()
         sw.activate("pi")
         assert.are.equal("pi", sw.current())
-        assert.are.equal("pi", utils.harness)
+        assert.are.equal("pi", active.get())
         assert.are.equal("pi", vim.env.NVIM_LLM_HARNESS)
         assert.are.equal("pi", require("harness-decorators.park").selected_harness())
         assert.are.equal("pi", vim.fn.maparg("<leader>c", "n", false, true).desc)
@@ -501,7 +502,7 @@ describe("switch activation failure boundaries", function()
       assert.has_no.errors(function()
         sw.activate("pi")
       end)
-      assert.are.equal("pi", utils.harness)
+      assert.are.equal("pi", active.get())
       assert.are.equal("pi", sw.current())
       assert.are.same({ "stop", "start:pi" }, steps)
     end

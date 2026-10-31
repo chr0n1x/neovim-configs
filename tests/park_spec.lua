@@ -9,7 +9,7 @@
 local helper = require("tests.helper")
 local state = require("harness-decorators.state")
 local keymaps = require("harness-decorators.keymaps")
-local utils = require("harness-decorators.utils")
+local active = require("harness-decorators.active")
 
 ---Reset the shared state table (term and park now share it - one reset clears both).
 local function park_reset_all()
@@ -61,7 +61,7 @@ describe("park: unified harness terminal table (Task 6/7)", function()
     if orig_env then
       vim.fn.setenv("NVIM_LLM_HARNESS", orig_env)
     end
-    utils.harness = original_harness
+    active.set(original_harness)
   end)
 
   it("set_selected marks the given harness and clears the others", function()

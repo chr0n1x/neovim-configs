@@ -4,6 +4,7 @@
 -- write (the first write only records the read position).
 
 local utils = require("harness-decorators.utils")
+local active = require("harness-decorators.active")
 local watcher = require("harness-decorators.watcher")
 local edit_jump = require("harness-decorators.edit-jump")
 local parser = require("harness-decorators.jsonl-parser")
@@ -39,7 +40,7 @@ describe("watcher pinned session", function()
   local tmpdir, path, cwd, group, seen
 
   before_each(function()
-    assert.are.equal("claude", utils.harness, "watcher pinned spec assumes the claude adapter")
+    assert.are.equal("claude", active.get(), "watcher pinned spec assumes the claude adapter")
     -- Other specs switch harnesses, which reloads the adapter module; point the watcher at claude.
     watcher.set_harness("claude")
     tmpdir = vim.fn.tempname() .. "-pinned"

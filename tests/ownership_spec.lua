@@ -13,6 +13,7 @@
 -- the declared id. Hence every fixture appends two lines before asserting the pin.
 
 local utils = require("harness-decorators.utils")
+local active = require("harness-decorators.active")
 local watcher = require("harness-decorators.watcher")
 local edit_jump = require("harness-decorators.edit-jump")
 
@@ -29,7 +30,7 @@ describe("watcher session pin (Option B: pin by declared session id)", function(
   local file_a, file_b
 
   setup(function()
-    assert.are.equal("claude", utils.harness, "ownership spec assumes the claude adapter")
+    assert.are.equal("claude", active.get(), "ownership spec assumes the claude adapter")
     vim.fn.mkdir(tmpdir, "p")
     -- Ownership is checked against watcher.nvim_cwd (captured at watcher start). Headless
     -- specs never call start(), so set it explicitly; both files declare this same cwd.
@@ -42,7 +43,7 @@ describe("watcher session pin (Option B: pin by declared session id)", function(
   teardown(function()
     watcher.reset_all()
     watcher.nvim_cwd = nil
-    utils.harness = "claude"
+    active.set("claude")
     vim.fn.delete(tmpdir, "rf")
   end)
 
@@ -150,7 +151,7 @@ describe("watcher pin with the stub base's optional fields", function()
   end
 
   before_each(function()
-    assert.are.equal("claude", utils.harness, "ownership spec assumes the claude adapter")
+    assert.are.equal("claude", active.get(), "ownership spec assumes the claude adapter")
     watcher.set_harness("claude")
     adapter = require("harness-decorators.claude")
     orig.session_id_from_lines = rawget(adapter, "session_id_from_lines")

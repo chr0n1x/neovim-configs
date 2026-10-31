@@ -11,6 +11,7 @@
 local helper = require("tests.helper")
 local keymaps = require("harness-decorators.keymaps")
 local utils = require("harness-decorators.utils")
+local active = require("harness-decorators.active")
 
 describe("state: single per-harness record (Task 8)", function()
   local state
@@ -59,7 +60,7 @@ describe("state: single per-harness record (Task 8)", function()
     if orig_env then
       vim.fn.setenv("NVIM_LLM_HARNESS", orig_env)
     end
-    utils.harness = original_harness
+    active.set(original_harness)
   end)
 
   it("holds one record per harness with inst and selected fields", function()

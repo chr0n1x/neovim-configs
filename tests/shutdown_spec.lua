@@ -8,7 +8,7 @@
 -- test can inspect post-conditions; the contract is that the stub is only reachable
 -- after all cleanup finished.
 
-local utils = require("harness-decorators.utils")
+local active = require("harness-decorators.active")
 local watcher = require("harness-decorators.watcher")
 local state = require("harness-decorators.state")
 local init = require("harness-decorators")
@@ -52,7 +52,7 @@ describe("M.shutdown: <leader>qq cleans up before :qa!", function()
   local watcher_was_running
 
   setup(function()
-    assert.are.equal("claude", utils.harness, "shutdown spec assumes the claude adapter")
+    assert.are.equal("claude", active.get(), "shutdown spec assumes the claude adapter")
 
     quit_called = false
     orig_quit_cmd = init._quit_cmd
@@ -93,7 +93,7 @@ describe("M.shutdown: <leader>qq cleans up before :qa!", function()
     -- <stdpath cache>/harness/<pid>.watcher.{log,pid} paths to remove. The claude adapter
     -- points at $HOME/.claude/projects, which the test container does not have -
     -- create it for the duration of the test.
-    local ok_adapter, adapter = pcall(require, "harness-decorators." .. utils.harness)
+    local ok_adapter, adapter = pcall(require, "harness-decorators." .. active.get())
     local projects_dir = ok_adapter and type(adapter.projects_dir) == "function" and adapter.projects_dir() or nil
     if projects_dir then
       vim.fn.mkdir(projects_dir, "p")
@@ -121,7 +121,7 @@ describe("M.shutdown: <leader>qq cleans up before :qa!", function()
     end)
     -- Remove the scratch projects dir only if it is still empty (no other spec
     -- populated it in the meantime).
-    local ok_adapter2, adapter2 = pcall(require, "harness-decorators." .. utils.harness)
+    local ok_adapter2, adapter2 = pcall(require, "harness-decorators." .. active.get())
     local projects_dir2 = ok_adapter2 and type(adapter2.projects_dir) == "function" and adapter2.projects_dir() or nil
     if
       projects_dir2
