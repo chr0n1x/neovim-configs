@@ -105,21 +105,23 @@ end)
 
 describe("term.go_back_key: <C-h> in zen mode", function()
   local term_mod
+  local layout
   local focus
 
   setup(function()
     term_mod = require("harness-decorators.term")
+    layout = require("harness-decorators.layout")
     focus = require("harness-decorators.focus")
     focus.reset()
   end)
 
   teardown(function()
-    term_mod._zen_active_override = nil
+    layout.zen_active_override = nil
     focus.reset()
   end)
 
   it("jumps to the zen window (a float) instead of the saved parent window", function()
-    term_mod._zen_active_override = true
+    layout.zen_active_override = true
     -- Create a fake zen window (a float) that zen-mode.view would report.
     local zen_buf = vim.api.nvim_create_buf(false, true)
     local zen_win = vim.api.nvim_open_win(zen_buf, false, {
@@ -156,7 +158,7 @@ describe("term.go_back_key: <C-h> in zen mode", function()
   end)
 
   it("falls back to the saved window when zen window is invalid", function()
-    term_mod._zen_active_override = true
+    layout.zen_active_override = true
     local zen_view = require("zen-mode.view")
     local real_win = zen_view.win
     zen_view.win = nil -- no valid zen window

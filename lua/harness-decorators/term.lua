@@ -130,25 +130,6 @@ local fullscreen_rect, shelf_rect, auto_float_rect = layout.fullscreen_rect, lay
 local retract_rect, at_rect = layout.retract_rect, layout.at_rect
 local stack_rects = layout.stack_rects
 
--- term.shelf_rows and term._zen_active_override are spec knobs kept on M; they live in layout.
-local layout_knobs = { shelf_rows = "shelf_rows", _zen_active_override = "zen_active_override" }
-setmetatable(M, {
-  __index = function(_, k)
-    local name = layout_knobs[k]
-    if name then
-      return layout[name]
-    end
-  end,
-  __newindex = function(t, k, v)
-    local name = layout_knobs[k]
-    if name then
-      layout[name] = v
-    else
-      rawset(t, k, v)
-    end
-  end,
-})
-
 local retile -- forward declaration; defined below
 local scroll_to_bottom -- forward declaration; defined below
 
@@ -753,7 +734,7 @@ scroll_to_bottom = function(inst)
 end
 
 ---Shelve the float: animate it out to fullscreen, then shrink it to the shelf (the bottom
--- M.shelf_rows rows of the fullscreen rect, scrolled to the end), so the harness slides down out of
+-- layout.shelf_rows rows of the fullscreen rect, scrolled to the end), so the harness slides down out of
 -- view and leaves only its prompt showing. The pre-shelf geometry is saved as the <C-f> retract
 -- target. While shelved, new output bounces the shelf instead of flashing it (notify_output).
 ---@param inst table the Snacks terminal instance

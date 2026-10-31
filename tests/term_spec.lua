@@ -14,6 +14,7 @@
 -- require("claudecode...") into term.lua the stubbed Snacks.open would still pass these tests, so
 -- we also assert term.lua does not load any claudecode module (see the final test).
 local helper = require("tests.helper")
+local layout = require("harness-decorators.layout")
 
 describe("term: per-harness Snacks float owner (Task 7)", function()
   local snacks
@@ -1462,7 +1463,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
   end)
 
   -- Shelf: the top-left border corner is the shelf button. Double-clicking it takes the float
-  -- fullscreen and then shrinks it to term.shelf_rows rows at the bottom of the editor. While shelf mode
+  -- fullscreen and then shrinks it to layout.shelf_rows rows at the bottom of the editor. While shelf mode
   -- is on, focusing the float grows it to fullscreen and leaving it slides it back down to the shelf.
 
   ---The <C-f> fullscreen rect for the current editor size: 5% row padding, 10% column padding.
@@ -1495,17 +1496,17 @@ describe("term: float mouse handling, minimized bars and flash", function()
     return rect
   end
 
-  ---The shelf: term.shelf_rows rows at the bottom of the fullscreen rect, the normal float's width
+  ---The shelf: layout.shelf_rows rows at the bottom of the fullscreen rect, the normal float's width
   -- (the zen float's while zen is open), centered.
   local function shelf_rect()
     local full = fullscreen_rect()
     local cols = vim.o.columns
     local w = zen_inner_width() or math.floor(cols * 0.30) - 2
     return {
-      row = full.row + full.height - term.shelf_rows,
+      row = full.row + full.height - layout.shelf_rows,
       col = math.floor((cols - w - 2) / 2),
       width = w,
-      height = term.shelf_rows,
+      height = layout.shelf_rows,
     }
   end
 

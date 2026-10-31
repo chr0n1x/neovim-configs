@@ -1,7 +1,7 @@
 -- Spec for the shared terminal-mode key legend (term.terminal_keys) - one test per key, driving the
 -- extracted module-level handlers with fake Snacks instances. Terminal-mode keys can't be fed in a
 -- headless nvim, so each handler is exposed on M and driven directly here:
---   * <C-f> -> term.fullscreen_key : toggles the float's _wide flag (fullscreen <-> collapse)
+--   * <C-f> -> term.fullscreen_key : toggles the float's layout (fullscreen <-> collapse)
 --   * <C-h> -> term.go_back_key    : moves focus back WITHOUT hiding the float (see go_back_key_spec)
 --   * <C-n> -> term.normal_mode_key: drops into normal mode (stopinsert), float stays open
 --   * <Esc> -> term.close_key      : minimizes the float (here: hides it, the fakes have no window)
@@ -9,6 +9,7 @@ local helper = require("tests.helper")
 
 describe("terminal key legend: one handler per key", function()
   local term_mod
+  local layout
   local focus
   local original_harness
   local orig_env
@@ -21,7 +22,6 @@ describe("terminal key legend: one handler per key", function()
       buf = vim.api.nvim_create_buf(false, true),
       win = opts.win,
       opts = { border = "rounded" }, -- harness-decorators/terminal-animations reads self.opts.border during resize
-      _wide = opts._wide,
       _saved_config = opts._saved_config,
       hide_called = false,
       show_called = false,
@@ -44,6 +44,7 @@ describe("terminal key legend: one handler per key", function()
     assert.is_not_nil(original_harness, "no active harness")
     orig_env = os.getenv("NVIM_LLM_HARNESS")
     term_mod = require("harness-decorators.term")
+    layout = require("harness-decorators.layout")
     focus = require("harness-decorators.focus")
     focus.reset()
   end)
@@ -86,14 +87,14 @@ describe("terminal key legend: one handler per key", function()
     -- Trigger <C-f> on a real terminal window, let the resize animation actually run (it ticks on a
     -- ~300ms timer), then MEASURE the resulting window geometry. The target is 5% vertical / 10%
     -- horizontal padding from the editor edges, so the measured width/height must be close to that -
-    -- a real assertion on dimensions, not just the _wide flag.
+    -- a real assertion on dimensions, not just the layout.
     local win = open_term_window()
     local fake = make_fake({ win = win })
-    assert.is_nil(fake._wide, "precondition: not yet wide")
+    assert.are.equal("normal", layout.get(fake), "precondition: not yet wide")
 
     local ok, err = pcall(term_mod.fullscreen_key, fake)
     assert.is_true(ok, "fullscreen_key raised: " .. tostring(err))
-    assert.is_true(fake._wide == true, "<C-f> first press must set _wide (fullscreen)")
+    assert.are.equal("fullscreen", layout.get(fake), "<C-f> first press must go fullscreen")
     assert.is_not_nil(fake._saved_config, "first <C-f> must save the window geometry (as ratios) for later collapse")
 
     -- Wait until the animation finishes (its timer stops) so the window is at its final size.
@@ -134,7 +135,7 @@ describe("terminal key legend: one handler per key", function()
     -- Second press collapses back to the saved config.
     local ok, err = pcall(term_mod.fullscreen_key, fake)
     assert.is_true(ok, "fullscreen_key (collapse) raised: " .. tostring(err))
-    assert.is_false(fake._wide, "<C-f> second press must clear _wide (collapse)")
+    assert.are.equal("normal", layout.get(fake), "<C-f> second press must collapse")
 
     vim.wait(2000, function()
       return not (fake._resize_anim and fake._resize_anim:is_running())
