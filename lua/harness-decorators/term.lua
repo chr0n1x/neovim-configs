@@ -1007,6 +1007,26 @@ local function tile_members()
   end, list)
 end
 
+---Move a tiled float to `rect` unless it is there already or its running animation, started by an
+-- earlier retile, is heading there. One <C-t> cycle press retiles several times (the switch, then
+-- the WinLeave and WinEnter of the focus change); the later ones find the floats mid-animation and
+-- would otherwise restart the same move from the intermediate rect.
+---@param inst table the Snacks terminal instance
+---@param rect { row: integer, col: integer, width: integer, height: integer }
+local function tile_to(inst, rect)
+  if at_rect(inst.win, rect) then
+    return
+  end
+  if inst._resize_anim and inst._resize_anim == inst._tile_anim and vim.deep_equal(inst._tile_rect, rect) then
+    return
+  end
+  inst._tile_rect = vim.deepcopy(rect)
+  resize_to(inst, rect, function()
+    inst._tile_rect = nil
+  end)
+  inst._tile_anim = inst._resize_anim
+end
+
 ---Lay the open harness floats out in the grid. The focused float (else the one focused last, if
 -- still open) takes its normal spot; the others fill the grid left of the zen window while zen is
 -- open, else at the far right before the dock's reserved space, with the focused float just left of
@@ -1097,13 +1117,11 @@ retile = function(cycle)
     end
   end
 
-  if focused and not at_rect(focused.win, focus_rect) then
-    resize_to(focused, focus_rect)
+  if focused then
+    tile_to(focused, focus_rect)
   end
   for k, i in ipairs(others) do
-    if not at_rect(i.win, stack[k]) then
-      resize_to(i, stack[k])
-    end
+    tile_to(i, stack[k])
   end
   repack_dock()
 end
