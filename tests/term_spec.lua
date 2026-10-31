@@ -766,6 +766,37 @@ describe("term: float mouse handling, minimized bars and flash", function()
   )
 
   it(
+    "Given copilot is active and minimized, When its bar restore button is clicked, Then the same float comes back focused without a new spawn",
+    function()
+      sw.switch("copilot")
+      local inst = term.open("copilot")
+      local buf = inst.buf
+      term.minimize("copilot")
+      assert.is_true(wait_for(function()
+        return bar_of("copilot") ~= nil
+      end))
+      assert.are.equal("copilot", active.get(), "precondition: copilot is still active")
+      local saved_open, opens = snacks.open, 0
+      snacks.open = function(...)
+        opens = opens + 1
+        return saved_open(...)
+      end
+      term.mouse.press(bar_text_pos(bar_of("copilot"), inst._bar_close_col - 3))
+      term.mouse.release()
+      local restored = wait_for(function()
+        return bar_of("copilot") == nil and inst.win ~= nil and vim.api.nvim_win_is_valid(inst.win)
+      end)
+      snacks.open = saved_open
+      assert.is_true(restored, "copilot's float should reopen and its bar close")
+      assert.is_true(rawequal(inst, state.table.copilot.inst), "the same instance must be restored")
+      assert.are.equal(buf, inst.buf)
+      assert.are.equal(inst.win, vim.api.nvim_get_current_win(), "the restored float must have focus")
+      assert.are.equal(buf, vim.api.nvim_get_current_buf())
+      assert.are.equal(0, opens, "restoring must not spawn a second terminal")
+    end
+  )
+
+  it(
     "Given a docked bar, When its restore button is pressed and released, Then the release is swallowed so focus stays in the restored float",
     function()
       term.open("copilot")
