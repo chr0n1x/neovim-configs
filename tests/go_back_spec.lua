@@ -99,12 +99,10 @@ describe("<C-h>: go back to the previous buffer", function()
     local term_win = vim.api.nvim_get_current_win()
 
     -- Reproduce float-util.find_base_window's selection logic directly: pick the last window
-    -- that is not the terminal and shows a file on disk (the `cfg.z` check mirrors
-    -- valid_buf's, which never excludes a float because the config field is `zindex`).
+    -- that is not the terminal and shows a file on disk.
     local function valid(win_id)
-      local cfg = vim.api.nvim_win_get_config(win_id)
       local buf = vim.api.nvim_win_get_buf(win_id)
-      return not cfg.z and win_id ~= term_win and vim.uv.fs_stat(vim.api.nvim_buf_get_name(buf)) ~= nil
+      return win_id ~= term_win and vim.uv.fs_stat(vim.api.nvim_buf_get_name(buf)) ~= nil
     end
     local base = nil
     for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do

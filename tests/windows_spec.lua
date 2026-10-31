@@ -352,14 +352,11 @@ describe("window selection contracts", function()
     end
   )
 
-  it(
-    "Given a file-backed special float, When term falls back, Then config.z does not reject its real zindex",
-    function()
-      local win = window({ name = file("tree-float.txt"), buftype = "nofile", filetype = "neo-tree", float = true })
-      term.go_back_key({})
-      assert.are.equal(win, vim.api.nvim_get_current_win())
-    end
-  )
+  it("Given a file-backed special float, When term falls back, Then the float is eligible", function()
+    local win = window({ name = file("tree-float.txt"), buftype = "nofile", filetype = "neo-tree", float = true })
+    term.go_back_key({})
+    assert.are.equal(win, vim.api.nvim_get_current_win())
+  end)
 end)
 
 describe("windows.find", function()

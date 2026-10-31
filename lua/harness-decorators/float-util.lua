@@ -1,15 +1,11 @@
 -- Small window helpers shared by the harness float (term.lua) and its minimized bar (dock.lua).
 local M = {}
 
----Whether win_id is a window other than the current one that shows a file on disk. Floats pass too:
----nvim_win_get_config names the z-index `zindex`, so `config.z` is always nil.
+---Whether win_id is a window other than the current one that shows a file on disk (floats
+---included).
 local function valid_buf(win_id)
-  local config = vim.api.nvim_win_get_config(win_id)
-  local buf_info = vim.api.nvim_win_get_buf(win_id)
-  local buf_name = vim.api.nvim_buf_get_name(buf_info)
-  local terminal_win = vim.api.nvim_get_current_win()
-
-  return not config.z and win_id ~= terminal_win and vim.uv.fs_stat(buf_name) ~= nil
+  local buf_name = vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win_id))
+  return win_id ~= vim.api.nvim_get_current_win() and vim.uv.fs_stat(buf_name) ~= nil
 end
 
 ---Focus the first eligible window in reverse tab-window order. Hidden windows stay eligible.
