@@ -283,27 +283,50 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
   )
 
   it(
-    "Given harnesses in shelf mode or fullscreen, When another harness is selected, Then every harness leaves shelf mode and fullscreen so the grid can tile them, and the selected one restores to the normal spot",
+    "Given harnesses at fullscreen or on the shelf and one minimized, When another harness is selected, Then every shown harness is back in the normal layout with shelf mode off so the grid can tile them, the minimized one keeps its bar, and only the selected one moves to the normal spot",
     function()
+      local layout = require("harness-decorators.layout")
       sw.init(original_harness)
+      local third
+      for _, h in ipairs(utils.list_harnesses()) do
+        if h ~= original_harness and h ~= target then
+          third = h
+          break
+        end
+      end
       local a = term_mod.open(original_harness)
       local b = term_mod.open(target)
+      local c = term_mod.open(third)
       for _, inst in ipairs({ a, b }) do
         inst.opts = { row = 3, col = 12, width = 999, height = 63 }
-        inst._shelf_mode, inst._shelved, inst._wide = true, true, true
+      end
+      layout.set(a, "fullscreen", { shelf_mode = true })
+      layout.set(b, "shelved")
+      for _, inst in ipairs({ a, b }) do
         inst._saved_config = { auto = false, row_ratio = 0, col_ratio = 0, width_ratio = 1, height_ratio = 1 }
       end
+      layout.set(c, "minimized")
+      c._pill_win = vim.api.nvim_open_win(
+        vim.api.nvim_create_buf(false, true),
+        false,
+        { relative = "editor", row = 0, col = 0, width = 10, height = 1 }
+      )
+      local pill = c._pill_win
+
       local ok, err = pcall(sw.switch, target)
+      local bar_ok = vim.api.nvim_win_is_valid(pill)
+      pcall(vim.api.nvim_win_close, pill, true)
       assert.is_true(ok, tostring(err))
+      assert.are.equal("normal", layout.get(b), "the selected harness must leave the shelf")
       assert.is_false(b._shelf_mode == true, "the selected harness must leave shelf mode")
-      assert.is_false(b._shelved == true, "the selected harness must leave the shelf")
-      assert.is_false(b._wide == true, "the selected harness must leave fullscreen")
       assert.is_nil(b._saved_config, "the selected harness must forget its pre-fullscreen geometry")
       assert.are_not.equal(999, b.opts.width, "the selected harness must restore to the normal spot")
+      assert.are.equal("normal", layout.get(a), "the other harness must leave fullscreen to join the grid")
       assert.is_false(a._shelf_mode == true, "the other harness must leave shelf mode to join the grid")
-      assert.is_false(a._shelved == true, "the other harness must leave the shelf")
-      assert.is_false(a._wide == true, "the other harness must leave fullscreen")
       assert.is_nil(a._saved_config, "the other harness must forget its pre-fullscreen geometry")
+      assert.are.equal(999, a.opts.width, "only the selected harness is moved to the normal spot")
+      assert.are.equal("minimized", layout.get(c), "a minimized harness stays minimized")
+      assert.is_true(bar_ok, "a minimized harness keeps its bar")
     end
   )
 end)

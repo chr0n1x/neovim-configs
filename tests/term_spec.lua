@@ -1852,6 +1852,53 @@ describe("term: float mouse handling, minimized bars and flash", function()
   )
 
   it(
+    "Given tiling on, a second float off its grid cell and claude focused at fullscreen in shelf mode, When focus leaves claude, Then its handler shelves claude, then hides its key legend, then re-tiles the other float",
+    function()
+      local layout = require("harness-decorators.layout")
+      local anim = require("harness-decorators.terminal-animations")
+      local work_win = vim.api.nvim_get_current_win()
+      local copilot = term.open("copilot")
+      local claude = term.open("claude")
+      term.fullscreen_key(claude)
+      assert.is_true(at_rect(claude, fullscreen_rect()), "precondition: fullscreen")
+      assert.is_true(claude._shelf_mode == true, "precondition: shelf mode on")
+      vim.wait(400)
+      term._tiled = true
+
+      local seq = {}
+      local function note(step)
+        if seq[#seq] ~= step then
+          seq[#seq + 1] = step
+        end
+      end
+      local orig_set, orig_cfg, orig_anim = layout.set, vim.api.nvim_win_set_config, anim.animate_resize
+      layout.set = function(inst, to, ...)
+        if inst == claude and to == "shelved" then
+          note("shelf")
+        end
+        return orig_set(inst, to, ...)
+      end
+      vim.api.nvim_win_set_config = function(win, cfg)
+        if win == claude.win and cfg.footer ~= nil then
+          note("footer")
+        end
+        return orig_cfg(win, cfg)
+      end
+      anim.animate_resize = function(inst, ...)
+        if inst == copilot then
+          note("tile")
+        end
+        return orig_anim(inst, ...)
+      end
+      vim.api.nvim_set_current_win(work_win)
+      vim.wait(100)
+      layout.set, vim.api.nvim_win_set_config, anim.animate_resize = orig_set, orig_cfg, orig_anim
+
+      assert.are.same({ "shelf", "footer", "tile" }, seq)
+    end
+  )
+
+  it(
     "Given shelf mode on and the float focused, When focus leaves, Then it shelves and the key legend is hidden",
     function()
       local work_win = vim.api.nvim_get_current_win()
