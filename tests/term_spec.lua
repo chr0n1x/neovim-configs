@@ -313,33 +313,25 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
   end)
 
   it(
-    "list() does NOT delete a selected-but-never-opened harness entry (regression: <leader>c dead after opening the picker)",
+    "Given claude active with a never-opened record, When the picker calls list(), Then the record is kept and show_selected still opens claude",
     function()
-      -- The bug: in a fresh instance switch.init seeds state.table["claude"] = {inst=nil, selected=true}.
-      -- Opening the <leader>cl picker calls park.list -> term.list, which treated ANY entry without a live
-      -- instance as "dead" and DELETED it - wiping claude's selected bit. After that, picking claude (which
-      -- early-returns in switch because it is already current) left nothing selected, so <leader>c /
-      -- show_selected bailed before term.open and no terminal appeared. list() must only drop entries whose
-      -- instance actually EXITED (had a buffer that died), never a harness that was merely selected but not
-      -- yet opened (inst=nil).
+      -- list() must only drop entries whose instance actually EXITED (had a buffer that died), never a
+      -- harness that has a record but was not opened yet (inst=nil).
       local term = require("harness-decorators.term")
       local park = require("harness-decorators.park")
       term._reset()
 
-      -- Seed the fresh-instance state: claude is selected but has never been opened (no instance).
-      park.set_selected("claude")
-      assert.is_not_nil(require("harness-decorators.state").table["claude"], "precondition: claude record exists")
+      require("harness-decorators.active").set("claude")
+      require("harness-decorators.state").entry("claude")
 
       -- Opening the picker drives park.list -> term.list. This must NOT delete claude's record.
       local entries = term.list()
       assert.are.equal(0, #entries, "a never-opened harness has no live terminal to list")
       assert.is_not_nil(
         require("harness-decorators.state").table["claude"],
-        "list() must not delete a selected-but-never-opened entry"
+        "list() must not delete a never-opened entry"
       )
-      assert.are.equal("claude", park.selected_harness(), "selection must survive the picker's list() call")
 
-      -- The downstream effect: show_selected can still open claude (it is still selected).
       local shown = park.show_selected()
       assert.are.equal("claude", shown, "show_selected must still open claude after the picker ran list()")
       term._reset()
@@ -2543,7 +2535,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
     )
 
     it(
-      "Given the floats are all in their grid spots with claude active, When <C-t> cycles focus to copilot, Then copilot becomes the active and selected harness",
+      "Given the floats are all in their grid spots with claude active, When <C-t> cycles focus to copilot, Then copilot becomes the active harness",
       function()
         sw.init("claude")
         local copilot = term.open("copilot")
@@ -2555,7 +2547,6 @@ describe("term: float mouse handling, minimized bars and flash", function()
         term.tile()
         assert.are.equal(copilot.win, vim.api.nvim_get_current_win(), "focus cycles to copilot")
         assert.are.equal("copilot", sw.current(), "copilot is the active harness")
-        assert.are.equal("copilot", require("harness-decorators.park").selected_harness(), "copilot is selected")
       end
     )
 

@@ -107,14 +107,12 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
       vim.api.nvim_buf_is_valid(inst.buf),
       "switch deleted the outgoing harness's terminal buffer (Option A must keep it alive)"
     )
-    -- And it was recorded so a later re-pick can resume the same process. The backgrounded outgoing
-    -- harness must be unselected.
+    -- And it was recorded so a later re-pick can resume the same process.
     local entries = park.list()
     local found = false
     for _, e in ipairs(entries) do
       if e.harness == original_harness and e.buff_nr == inst.buf then
         found = true
-        assert.is_false(e.selected, "backgrounded outgoing harness must not stay selected")
       end
     end
     assert.is_true(found, "outgoing harness was not recorded in the park table")
@@ -152,7 +150,7 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
   )
 
   it(
-    "Given a harness is active, When another harness is activated, Then it becomes active and selected without moving focus or the floats",
+    "Given a harness is active, When another harness is activated, Then it becomes active without moving focus or the floats",
     function()
       sw.init(original_harness)
       local real_reset = term_mod.reset_layout
@@ -165,7 +163,6 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
       term_mod.reset_layout = real_reset
       assert.is_true(ok, tostring(err))
       assert.are.equal(target, sw.current())
-      assert.are.equal(target, require("harness-decorators.park").selected_harness())
       assert.are.equal(target, active.get(), "the watcher must follow the activated harness")
       assert.are.equal(win, vim.api.nvim_get_current_win(), "activate must not move focus")
       assert.are.equal(0, resets, "activate must not re-lay out the floats")
@@ -343,7 +340,6 @@ describe("switch activation failure boundaries", function()
       current = sw.current(),
       harness = active.get(),
       env = vim.env.NVIM_LLM_HARNESS,
-      selected = require("harness-decorators.park").selected_harness(),
       maps = leader_maps(),
     }
   end
@@ -432,7 +428,6 @@ describe("switch activation failure boundaries", function()
         assert.are.equal("pi", sw.current())
         assert.are.equal("pi", active.get())
         assert.are.equal("pi", vim.env.NVIM_LLM_HARNESS)
-        assert.are.equal("pi", require("harness-decorators.park").selected_harness())
         assert.are.equal("pi", vim.fn.maparg("<leader>c", "n", false, true).desc)
         assert.are.same({ "stop", "start:pi" }, steps)
       end

@@ -78,10 +78,8 @@ describe("focus: harness float opens", function()
 
   it("opens a terminal-buftype window via <leader>c (the real focus path)", function()
     -- Drive the actual keymap callback: <leader>c now routes through park.show_selected -> term.open
-    -- (Task 7), NOT ClaudeCodeFocus. Selecting the active harness and showing it must produce a
-    -- terminal-buftype window.
+    -- (Task 7), NOT ClaudeCodeFocus. Showing the active harness must produce a terminal-buftype window.
     local park = require("harness-decorators.park")
-    park.set_selected(helper.active_harness())
     local shown = park.show_selected()
     local shown = park.show_selected()
     assert.is_not_nil(shown, "show_selected returned nil (no float opened)")

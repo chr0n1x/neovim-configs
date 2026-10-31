@@ -240,10 +240,8 @@ describe("picker: M.pick uses a horizontal layout with the expected titles (Task
   end)
 
   teardown(function()
-    -- Restore the real telescope module. Do NOT reset the shared state table here: M.pick() only
-    -- reads config (it never mutates selection), and wiping state would clear the selected-harness
-    -- bit that <leader>c (park.show_selected) depends on - leaving <leader>c dead for the rest of
-    -- the in-process session. Other specs manage their own selection via park.set_selected.
+    -- Restore the real telescope module. M.pick() only reads config, so the shared state table is
+    -- left as the specs before it set it up.
     package.loaded["telescope.pickers"] = nil
   end)
 

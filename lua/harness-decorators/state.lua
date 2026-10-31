@@ -2,12 +2,11 @@
 --
 --   table[harness] = {
 --     inst = snacks.terminal|nil, -- the float; nil until first opened
---     selected = boolean,         -- at most one entry is selected
 --     cwd = string|nil,           -- the directory the harness was started in
 --     opened_at = number|nil,     -- os.time() when the harness was started
 --   }
 --
--- term owns .inst, .cwd and .opened_at; park owns .selected. Where the float is (its layout:
+-- term owns .inst, .cwd and .opened_at. Where the float is (its layout:
 -- normal, fullscreen, shelved or minimized) lives on the instance, read with layout.get(entry.inst)
 -- and changed only through layout.set.
 local M = {}
@@ -15,25 +14,16 @@ local M = {}
 ---Per-harness records keyed by harness name.
 M.table = {}
 
----The record for `harness`, created if absent (inst=nil, selected=false).
+---The record for `harness`, created if absent (inst=nil).
 ---@param harness string
----@return table entry { inst = snacks.terminal|nil, selected = boolean }
+---@return table entry { inst = snacks.terminal|nil }
 function M.entry(harness)
   local e = M.table[harness]
   if not e then
-    e = { inst = nil, selected = false }
+    e = { inst = nil }
     M.table[harness] = e
   end
   return e
-end
-
----Make `harness` the only selected entry, creating it if absent.
----@param harness string
-function M.select(harness)
-  for _, e in pairs(M.table) do
-    e.selected = false
-  end
-  M.entry(harness).selected = true
 end
 
 ---The harness whose record holds `inst`, or nil.

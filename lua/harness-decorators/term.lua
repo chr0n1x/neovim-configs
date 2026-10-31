@@ -1,5 +1,4 @@
--- Owns one Snacks floating terminal per harness, stored in state.table[harness].inst; park.lua
--- owns the selection bit.
+-- Owns one Snacks floating terminal per harness, stored in state.table[harness].inst.
 local M = {}
 
 local state = require("harness-decorators.state")
@@ -83,7 +82,7 @@ end
 
 ---See state.entry.
 ---@param harness string
----@return table entry { inst = snacks.terminal|nil, selected = boolean }
+---@return table entry { inst = snacks.terminal|nil }
 local function entry(harness)
   return state.entry(harness)
 end
@@ -889,7 +888,6 @@ local function restore_from_bar(inst)
     return
   end
   require("harness-decorators.switch").switch(harness)
-  require("harness-decorators.park").set_selected(harness)
   require("harness-decorators.park").show_selected()
 end
 
@@ -1211,8 +1209,7 @@ function M.is_open(harness)
   return e ~= nil and is_live(e.inst)
 end
 
----Drop records whose instance exited. Never-opened records (inst nil) are kept so their selection
----bit survives.
+---Drop records whose instance exited. Never-opened records (inst nil) are kept.
 function M.prune()
   local dead = {}
   for harness, e in pairs(state.table) do
@@ -1240,7 +1237,7 @@ function M.list()
   return out
 end
 
----Test-only: clear the shared state table (instances AND selection bits) without touching any buffer.
+---Test-only: clear the shared state table (instances and their records) without touching any buffer.
 function M._reset()
   state._reset()
   M._tiled, M._tile_focus, M._focus_target = false, nil, nil

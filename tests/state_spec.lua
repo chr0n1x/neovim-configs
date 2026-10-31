@@ -1,11 +1,11 @@
 -- Spec for the unified per-harness terminal state (Task 8).
 --
 -- The contract under test: there is ONE table holding every annotation about a harness - its live
--- Snacks instance AND its selection bit - so nothing has to be kept in sync across modules. term.lua
+-- Snacks instance, cwd and open time - so nothing has to be kept in sync across modules. term.lua
 -- and park.lua are thin layers over it; this spec pins the invariant that makes that safe:
 --   * state.table[harness] is the single record (no parallel registry anywhere)
 --   * term.open records the SAME instance on that record (inst == what open returned)
---   * park.set_selected / selected_harness read and write the selection bit on that same record
+--   * changing the active harness leaves every record's instance in place
 -- Snacks.terminal.open is stubbed to return fake instances backed by windowless buffers, so no real
 -- PTY or window is created in headless.
 local helper = require("tests.helper")
@@ -16,7 +16,6 @@ local active = require("harness-decorators.active")
 describe("state: single per-harness record (Task 8)", function()
   local state
   local term_mod
-  local park
   local snacks
   local orig_open
   local original_harness
@@ -43,7 +42,6 @@ describe("state: single per-harness record (Task 8)", function()
     orig_env = os.getenv("NVIM_LLM_HARNESS")
     state = require("harness-decorators.state")
     term_mod = require("harness-decorators.term")
-    park = require("harness-decorators.park")
     snacks = require("snacks.terminal")
     orig_open = snacks.open
     snacks.open = function()
@@ -63,15 +61,9 @@ describe("state: single per-harness record (Task 8)", function()
     active.set(original_harness)
   end)
 
-  it("holds one record per harness with inst and selected fields", function()
-    -- A never-opened, just-selected harness must still have a record: selection does not require a
-    -- live instance (the first <leader>c spawns it).
-    park.set_selected(original_harness)
-
-    local entry = state.table[original_harness]
-    assert.is_not_nil(entry, "set_selected must create the harness's record")
-    assert.is_boolean(entry.selected, "selection bit must be a boolean on the record")
-    assert.is_true(entry.selected, "the record must carry selected=true")
+  it("Given a never-opened harness, When its record is created, Then it is in the table with no instance", function()
+    local entry = state.entry(original_harness)
+    assert.are.equal(entry, state.table[original_harness], "entry must create the harness's record")
     assert.is_nil(entry.inst, "a never-opened harness has no instance yet")
   end)
 
@@ -87,31 +79,31 @@ describe("state: single per-harness record (Task 8)", function()
     assert.are.equal(inst, entry.inst, "state.table[harness].inst must be the SAME table open returned")
   end)
 
-  it("park.set_selected and selected_harness read/write the selection bit on the shared record", function()
-    -- Selection must live on the same record as the instance: select one harness while another is
-    -- open, and both the selection query and the per-entry bits must agree with state.table.
-    local a = term_mod.open(original_harness)
-    local other = nil
-    for _, h in ipairs(utils.list_harnesses()) do
-      if h ~= original_harness then
-        other = h
-        break
+  it(
+    "Given an open harness, When another harness becomes active, Then the open instance stays on its record",
+    function()
+      local a = term_mod.open(original_harness)
+      local other = nil
+      for _, h in ipairs(utils.list_harnesses()) do
+        if h ~= original_harness then
+          other = h
+          break
+        end
       end
+      assert.is_not_nil(other, "no alternate harness to activate")
+
+      active.set(other)
+
+      assert.are.equal(
+        a,
+        state.table[original_harness].inst,
+        "activating another harness must not drop the open instance"
+      )
     end
-    assert.is_not_nil(other, "no alternate harness to select")
-
-    park.set_selected(other)
-
-    assert.are.equal(other, park.selected_harness(), "selected_harness must report the newly selected one")
-    assert.is_true(state.table[other].selected, "the selected record must carry selected=true")
-    assert.is_false(state.table[original_harness].selected, "the other record must be unselected")
-    -- The open instance is untouched by selection: still live on its own record.
-    assert.are.equal(a, state.table[original_harness].inst, "selecting another harness must not drop the open instance")
-  end)
+  )
 
   it("state._reset clears every record", function()
     term_mod.open(original_harness)
-    park.set_selected(original_harness)
     state._reset()
     assert.are.equal(0, vim.tbl_count(state.table), "_reset must leave an empty table")
   end)

@@ -1,4 +1,4 @@
--- Runtime harness switcher: marks the new harness selected, rebinds <leader>c*, runs the adapter's
+-- Runtime harness switcher: makes the new harness active, rebinds <leader>c*, runs the adapter's
 -- on_activate, and re-points the watcher. Harnesses are sibling dirs with env.lua + keymaps.lua.
 local M = {}
 
@@ -39,14 +39,13 @@ function M.current()
   return active.get()
 end
 
----Record the startup harness and mark it selected so the first <leader>c has a target.
+---Record the startup harness so the first <leader>c has a target.
 ---@param harness string
 function M.init(harness)
   active.set(harness)
-  park.set_selected(harness)
 end
 
----Make new_harness active: selection, keymaps, watcher. Other floats stay open.
+---Make new_harness active: keymaps, watcher. Other floats stay open.
 ---@param new_harness string
 function M.switch(new_harness)
   if new_harness == M.current() then
@@ -87,7 +86,7 @@ function M.activate_adapter(harness, adapter)
   end
 end
 
----Make new_harness the active harness: selection, <leader>c* keymaps, adapter on_activate and the
+---Make new_harness the active harness: <leader>c* keymaps, adapter on_activate and the
 ---watcher. Focus and the floats stay where they are, so focusing a float can call this directly.
 ---@param new_harness string
 function M.activate(new_harness)
@@ -95,7 +94,7 @@ function M.activate(new_harness)
     return
   end
 
-  -- Finish imports before changing selection or bindings so a failed load can be retried.
+  -- Finish imports before changing the active harness or bindings so a failed load can be retried.
   local adapter = require("harness-decorators." .. new_harness)
   require("harness-decorators.watcher")
   package.loaded["harness-decorators." .. new_harness .. ".env"] = nil
@@ -103,9 +102,6 @@ function M.activate(new_harness)
   local specs = keymaps.build(new_harness)
 
   vim.fn.setenv("NVIM_LLM_HARNESS", new_harness)
-
-  -- The next <leader>c (or after_pick) shows or spawns it.
-  park.set_selected(new_harness)
 
   keymaps.clear()
   keymaps.apply(specs)
@@ -118,7 +114,7 @@ function M.activate(new_harness)
   active.notify(new_harness, old)
 end
 
----After a pick: start following and show the selected harness.
+---After a pick: start following and show the active harness.
 function M.after_pick()
   -- Same first step as <leader>c: register the edit-jump autocmds and start the watcher (once per
   -- session), so a harness started from the picker follows its edits too.
