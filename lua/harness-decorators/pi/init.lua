@@ -1,7 +1,6 @@
--- Pi harness adapter (pi.dev / @earendil-works/pi-coding-agent). Implements the
--- generic adapter interface (see docs/ai/agents/adapter-structure.md) so the
--- harness-agnostic modules (watcher, jsonl-parser) can require it without
--- crashing when pi is the active harness.
+-- Pi harness adapter (pi.dev / @earendil-works/pi-coding-agent). Implements the generic adapter
+-- interface (docs/ai/agents/adapter-structure.md) so the harness-agnostic modules (watcher,
+-- jsonl-parser) can load it while pi is the active harness.
 --
 -- Context keymaps (<leader>ca / <C-t> / visual <leader>ca / <leader>cc / <leader>cr) are
 -- wired in pi/keymaps.lua.
@@ -17,8 +16,7 @@ local M = setmetatable({}, { __index = stub })
 ---Title color: white (pi.dev logo).
 M.title_color = "#ffffff"
 
--- The pi extension pushes structured edit events into Neovim, so the generic filesystem watcher
--- must not warn or attempt to start for this adapter.
+-- The pi extension pushes edit events into nvim, so the filesystem watcher stays off for pi.
 M.push_following = true
 
 -- ==========================================================================

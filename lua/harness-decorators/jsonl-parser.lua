@@ -26,6 +26,21 @@ end
 ---per-harness parse_tool_result constructs its result through here, so adding or renaming a field is
 ---one edit (the watcher's dispatch_change autocmd data and edit-jump's store_edit_source both read
 ---from this shape). All fields are passed explicitly; nil is a valid value for any of them.
+---
+---  {
+---    file_path = "/Users/kran/Code/app/lua/init.lua",
+---    operation = "Edit",
+---    starting_line = 42,
+---    delta = "-local x = 1\\n+local x = 2",
+---    event_uuid = "9b2f6c1e-5d1a-4c7e-9f3a-2b8d1e0c4a77",
+---    event_timestamp = "2026-10-30T14:02:11.512Z",
+---    event_id = nil,
+---    dedup_key = "9b2f6c1e-5d1a-4c7e-9f3a-2b8d1e0c4a772026-10-30T14:02:11.512Z",
+---    source_line = 118,
+---  }
+---
+---starting_line is nil on an early (line-less) event; event_id is set only when the source
+---record has a per-item id, and dedup_key is nil when the record carries no id to build it from.
 ---@param file_path string? path the edit touched
 ---@param operation string "Edit"|"Create"
 ---@param starting_line? integer 1-based line the change starts at, or nil (early/line-less events)

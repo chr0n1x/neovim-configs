@@ -3,8 +3,9 @@
 --
 -- AGENTS: the guards below (_restoring/_suppress/_skip_buf/_skip_restore_buf and the
 -- "already shown elsewhere" bail in restore()) each prevent a specific buffer-
--- duplication regression. Do not remove or simplify them without re-running the
--- neo-tree <leader>c repro (see docs/focus-duplication-debug.md).
+-- duplication regression. Do not remove or simplify them without re-running
+-- tests/focus_spec.lua ("restore does not duplicate a buffer already shown elsewhere" is the
+-- neo-tree <leader>c case).
 local M = {}
 
 M.last_win = nil -- last non-terminal window we left
@@ -17,10 +18,11 @@ local _skip_restore_buf = nil -- buffer last left; restore() bails if we're stil
 ---Capture the current window as the restore target. Called from WinLeave; skips
 -- terminal and floating windows and any transition the guards mark as ours to ignore.
 --
--- Consume the one-shot _suppress (see suppress_next_leave) here; nothing else clears it.
+-- Consumes the one-shot _suppress (set by suppress_next_leave and jump_to_saved), so it does not
+-- swallow later captures; restore() and reset() clear it too.
 function M.capture()
   if _restoring or _suppress then
-    _suppress = false -- consume the one-shot suppress so it doesn't poison later captures
+    _suppress = false
     return
   end
   local win = vim.api.nvim_get_current_win()
@@ -73,7 +75,8 @@ function M.restore()
     return false
   end
   local buf = vim.api.nvim_win_get_buf(win)
-  -- Bail if the saved buffer is already on screen in a different window.
+  -- The "already shown elsewhere" bail: skip the restore when the saved buffer is on
+  -- screen in another window.
   if buf ~= cur_buf then
     for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
       if w ~= cur_win and vim.api.nvim_win_get_buf(w) == buf then

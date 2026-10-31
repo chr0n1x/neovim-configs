@@ -1,7 +1,8 @@
 -- Selected neo-tree paths for <C-t>, always absolute (see tests/tree_selection_spec.lua).
 local M = {}
 
----Read the current neo-tree filesystem state, or nil if neo-tree isn't open.
+---Read neo-tree's filesystem state for the current tab (neo-tree creates it on first request),
+---or nil when neo-tree is not installed.
 ---@return table|nil state
 local function get_state()
   local ok, manager = pcall(require, "neo-tree.sources.manager")

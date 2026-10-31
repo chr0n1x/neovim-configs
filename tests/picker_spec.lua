@@ -1,8 +1,8 @@
--- Spec for the <leader>cl picker's preview data path (Option A, Task 6; Task 7 rework).
+-- Spec for the <leader>cl picker's preview data path.
 --
 -- The picker itself is telescope UI and can't be driven headless, but its preview pane is fed by
--- switch.collect_terminal_bufs(): a harness -> terminal-buffer map built entirely from the unified
--- park table, which is now backed by term.lua (one Snacks float per harness). That map is what lets
+-- switch.collect_terminal_bufs(): a map from harness name to terminal buffer, built entirely from
+-- the shared state table that term.lua fills (one Snacks float per harness). That map is what lets
 -- the preview show "what each harness is doing". This spec drives it directly: it opens fake per-
 -- harness instances via term.open (Snacks.terminal.open stubbed to return windowless-buffer fakes),
 -- so no real PTY or window is created in headless.
@@ -225,7 +225,7 @@ end)
 
 -- The picker's static config (layout strategy + the three titles) is not observable without opening
 -- telescope UI, so this spec stubs telescope.pickers to capture the opts M.pick() passes and asserts
--- on them. This keeps the layout/titles contract tested headless (Task 9).
+-- on them. This keeps the layout/titles contract tested headless.
 describe("picker: M.pick uses a horizontal layout with the expected titles (Task 9)", function()
   local captured
 

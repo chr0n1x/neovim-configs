@@ -51,8 +51,8 @@ return {
       end
     end
 
-    -- :ZenMode is the user toggle (<leader>z runs it). Clearing view.parent on a
-    -- user close tells the FocusGained handler below not to reopen; zen-mode's own
+    -- :ZenMode is the user toggle (<leader>z runs it). Clearing view.parent on a user close tells
+    -- the FocusGained autocmd ("Reopen zen mode when focus returns") not to reopen; zen-mode's own
     -- WinEnter auto-close leaves parent set.
     vim.api.nvim_create_user_command("ZenMode", function()
       local v = view()

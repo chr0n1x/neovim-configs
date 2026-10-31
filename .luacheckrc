@@ -1,7 +1,7 @@
 -- Luacheck configuration for Neovim Lua config.
 -- Neovim injects globals at runtime so luacheck needs to be told about them.
 
--- vim and vim.* are runtime-injected — allow any field access.
+-- vim and vim.* are runtime-injected - allow any field access.
 globals = {
   vim = { any = true },
   IN_PERF_MODE = {},

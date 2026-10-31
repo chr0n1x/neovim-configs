@@ -1,7 +1,8 @@
 -- Small window helpers shared by the harness float (term.lua) and its minimized bar (dock.lua).
 local M = {}
 
----Whether this is another window with no z-index and an existing buffer path.
+---Whether win_id is a window other than the current one that shows a file on disk. Floats pass too:
+---nvim_win_get_config names the z-index `zindex`, so `config.z` is always nil.
 local function valid_buf(win_id)
   local config = vim.api.nvim_win_get_config(win_id)
   local buf_info = vim.api.nvim_win_get_buf(win_id)

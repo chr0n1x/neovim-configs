@@ -66,11 +66,10 @@ end
 ---@return "working"|"idle"|nil
 local function read_turn_state(path)
   return utils.read_tail_lines(path, 512 * 1024, function(line)
-    -- Match the value (the quoted string), not the key: copilot writes
-    -- "assistant.turn_start" with a space after the colon, so a compact-key
-    -- pattern would never hit. No alternation here: in this LuaJIT the bare
-    -- word `end` inside (start|end) matches empty and the capture returns nil.
-    -- plain=true: no pattern magic, so the dot is literal and needs no %. escape.
+    -- Match the value (the quoted string), not the key: copilot writes the key with a space after
+    -- the colon, so a compact-key pattern would never hit. Two plain finds because Lua patterns
+    -- have no alternation (a "(start|end)" pattern never matches either word), and plain=true
+    -- keeps the dot literal.
     if line:find('"assistant.turn_start"', 1, true) then
       return "working"
     elseif line:find('"assistant.turn_end"', 1, true) then
@@ -92,7 +91,7 @@ function M.status(pid, _cwd, inputs)
   if st then
     return st
   end
-  -- No events file yet (fresh session) = idle.
+  -- A fresh session has no events file yet, so it is idle.
   return "idle"
 end
 

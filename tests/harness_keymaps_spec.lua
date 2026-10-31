@@ -36,7 +36,7 @@ local function has_global_map(mode, lhs)
   return false
 end
 
----The expanded lhs for a <leader>-prefixed key, e.g. LEADER .. "c" -> " c".
+---The expanded lhs for a <leader>-prefixed key, e.g. LEADER .. "c" gives " c".
 ---@param suffix string
 ---@return string
 local function leader_key(suffix)
@@ -154,15 +154,15 @@ describe("harness keymap contract (all harnesses)", function()
       end)
 
       -- Regression (claude): normal-mode <leader>ca must type into OUR per-harness float via
-      -- context-inject. It used to run claudecode's stock ClaudeCodeAdd, which routed through the
-      -- plugin's own terminal handle and opened a SECOND window in a separate pane. Now it runs our
-      -- own local ClaudeAdd command - so assert it does NOT reference any stock ClaudeCode* command.
+      -- context-inject (our local ClaudeAdd command). claudecode's stock ClaudeCodeAdd routes through
+      -- the plugin's own terminal handle and opens a SECOND window in a separate pane, so assert the
+      -- action does NOT reference any stock ClaudeCode* command.
       if harness == "claude" then
         it("claude <leader>ca does not run a stock ClaudeCode* command", function()
           local ca = find_spec(specs, "<leader>ca")
           assert.is_not_nil(ca, "claude must declare a normal-mode <leader>ca")
           -- The action is either our local command string or a Lua callback; neither may invoke the
-          -- removed stock plugin commands.
+          -- stock claudecode commands.
           local rhs = tostring(ca[2])
           for _, stock in ipairs({ "ClaudeCodeAdd", "ClaudeCodeSend", "ClaudeCodeOpen" }) do
             assert.is_falsy(
@@ -173,10 +173,9 @@ describe("harness keymap contract (all harnesses)", function()
         end)
       end
 
-      -- Regression (pi): the pre-refactor pi keymaps were stashed against claudecode.nvim
-      -- (ClaudeCodeFocus/ClaudeCodeOpen/claudecode.integrations). The re-port onto our own
-      -- term.lua/tree-select must NOT reintroduce any claudecode reference. pi now declares
-      -- both <leader>ca (PiAdd) and <C-t> (PiTreeAdd); assert their actions are claudecode-free.
+      -- Regression (pi): pi's keymaps run on our own term.lua/tree-select and must NOT reference
+      -- claudecode.nvim (ClaudeCodeFocus/ClaudeCodeOpen/claudecode.integrations). pi declares both
+      -- <leader>ca (PiAdd) and <C-t> (PiTreeAdd); assert their actions are claudecode-free.
       if harness == "pi" then
         it("pi <leader>ca and <C-t> declared and reference no claudecode command", function()
           local ca = find_spec(specs, "<leader>ca")

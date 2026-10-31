@@ -127,7 +127,7 @@ function M.after_pick()
     zen_was_open = false
     -- zen-mode open() runs :norm! zz which errors from terminal mode.
     -- After show_selected we are in terminal mode, so wait for the
-    -- user to leave it (ModeChanged t->n) before reopening zen.
+    -- user to leave it (ModeChanged with pattern `t->*`) before reopening zen.
     local function try_open_zen()
       pcall(function()
         local view = require("zen-mode.view")
@@ -328,8 +328,8 @@ function M.pick()
     return
   end
   -- Remember whether zen mode is open so after_pick can restore it: the
-  -- park/minimize/show dance in M.switch briefly moves focus to a non-float
-  -- window, which closes zen-mode via its WinEnter autocmd.
+  -- switch and show flow (M.switch, then after_pick) briefly moves focus to a
+  -- non-float window, which closes zen-mode via its WinEnter autocmd.
   local zen_ok, zen_open = pcall(function()
     return require("zen-mode.view").is_open() == true
   end)
@@ -341,8 +341,9 @@ function M.pick()
 
   local agent_state = require("harness-decorators.agent-state")
   local harnesses = M.order_harnesses(agent_state.harnesses())
-  -- Terminal buffers to preview (active + parked). Captured once at picker-open; the previewer's
-  -- refresh timer re-reads these buffers live, so a running harness's output updates in place.
+  -- Terminal buffers to preview (the active harness and every other live one). Captured once at
+  -- picker-open; the previewer's refresh timer re-reads these buffers live, so a running harness's
+  -- output updates in place.
   local bufs = M.collect_terminal_bufs()
   -- Set of installed harness names, used by both the previewer (status line) and the Enter guard.
   local installed_set = {}

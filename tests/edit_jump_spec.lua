@@ -1,8 +1,6 @@
--- Pins edit-jump's jump-autocmd wiring. The old spec here pinned the
--- ClaudeCodeDiffClosed reason mapping (jump only on an accepted diff), but that path came from
--- claudecode.nvim's diff view, which is no longer a dependency - so on_diff_closed and its
--- autocmd are gone. What remains: create_jump_autocmds must register the HarnessEdit User autocmd
--- (fired by our own JSONL watcher) and must NOT reference any removed plugin event.
+-- Pins edit-jump's jump-autocmd wiring: create_jump_autocmds must register the HarnessEdit User
+-- autocmd (fired by our own JSONL watcher) and must NOT register claudecode.nvim's
+-- ClaudeCodeDiffClosed event (claudecode.nvim's diff view is not a dependency).
 
 local edit_jump = require("harness-decorators.edit-jump")
 
@@ -24,7 +22,7 @@ describe("edit-jump.create_jump_autocmds wiring", function()
     end
     assert.is_true(has_harness_edit, "HarnessEdit autocmd not registered; got: " .. table.concat(events, ", "))
 
-    -- The removed plugin diff event must NOT be registered.
+    -- claudecode.nvim's ClaudeCodeDiffClosed event must NOT be registered.
     for _, e in ipairs(events) do
       assert.is_not.match("ClaudeCodeDiffClosed", e, "removed diff autocmd is still registered")
     end

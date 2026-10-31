@@ -1,7 +1,7 @@
--- Reading files. Covers PRD priority #2: opening a buffer must yield the file's actual
--- content with the correct filetype detected. This is basic but load-bearing - if the
--- config broke buffer loading, filetype detection, or line handling, everything else is
--- suspect. Uses real temp files (not just empty buffers) so content round-trip is checked.
+-- Reading files: opening a buffer must yield the file's actual content with the correct
+-- filetype detected. If the config broke buffer loading, filetype detection, or line handling,
+-- everything else is suspect. Uses real temp files (not just empty buffers) so the content
+-- round-trip is checked.
 
 local helper = require("tests.helper")
 

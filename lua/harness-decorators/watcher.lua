@@ -92,9 +92,14 @@ M.watcher_poll_timer = nil
 M.reap_interval_ms = 30000
 M._last_reap_ms = nil
 
----Track read position per JSONL session so we can scan new lines on each event.
----Each value is { byte_pos, line_count }: byte offset and the number of lines
----scanned up to that point, so we know the absolute line number of new content.
+---Read position of each JSONL session file, keyed by path, so each write event scans only the new
+---lines and knows their absolute line numbers.
+---
+---  {
+---    ["/Users/kran/.claude/projects/-Users-kran-Code-app/4f1c.jsonl"] = { byte_pos = 18342, line_count = 57 },
+---  }
+---
+---A file appears only after its first write event is seen.
 local jsonl_positions = {}
 
 ---Pending notification handles keyed by file path, so we can update them
@@ -263,8 +268,6 @@ end
 
 ---Dispatch one parsed line of the pinned session. The notification logic (early vs complete
 ---tool result) runs as a before_fire hook so it fires only when the autocmd fires.
----@param line string
----@param source_line integer
 ---@param change_info table The parsed line (non-nil).
 ---@param line string
 local function dispatch_live_line(change_info, line)
@@ -350,7 +353,7 @@ function M.process_jsonl_write(jsonl_path)
     else
       -- "unknown": no cwd evidence yet. Record the position so the NEXT write takes the
       -- incremental path and can read real lines to decide ownership + pin. Without this the
-      -- file would re-enter first-encounter forever (empty lines => always unknown).
+      -- file would re-enter first-encounter forever (empty lines always give "unknown").
       jsonl_positions[jsonl_path] = { byte_pos = file_size, line_count = 0 }
     end
     return
@@ -570,7 +573,7 @@ end
 ---@param pid integer
 ---@return boolean
 local function is_alive(pid)
-  -- signal 0 probes liveness without delivering a signal: non-nil => alive.
+  -- Signal 0 probes liveness without delivering a signal; a non-nil result means the pid is alive.
   return vim.uv.kill(pid, 0) ~= nil
 end
 
@@ -739,7 +742,6 @@ function M.start()
     return
   end
 
-  -- Check if directory exists.
   local f = io.open(projects_dir, "r")
   if not f then
     utils.log("projects dir does not exist: " .. projects_dir, vim.log.levels.WARN)
@@ -797,7 +799,6 @@ function M.start()
     end
   end
 
-  -- Poll the watcher's log file for new content.
   M.watcher_poll_timer = vim.uv.new_timer()
   M.watcher_poll_timer:start(0, 500, vim.schedule_wrap(on_watcher_poll))
 
@@ -813,7 +814,7 @@ end
 
 ---Make `name` the active harness and re-point the watcher at it: reload the adapter and wipe all
 ---per-session state. The caller runs stop()/start() around it. switch.activate does not call this;
----it notifies the subscriber below.
+---it notifies the watcher's `active.subscribe("watcher", ...)` callback.
 ---@param name string the new harness name (must match a sibling adapter dir)
 function M.set_harness(name)
   active.set(name)
@@ -844,7 +845,7 @@ function M.stop()
     -- Wait for the exit callback to finish cleanup. Bounded so a watcher that
     -- ignores SIGTERM can't hang us; on timeout the files are removed here as
     -- a fallback (the process is dead or dying either way).
-    local deadline = vim.uv.hrtime() + 2 * 1000000000 -- 2s
+    local deadline = vim.uv.hrtime() + 2 * 1000000000
     while M.watcher_handle and vim.uv.hrtime() < deadline do
       vim.wait(50, function()
         return false

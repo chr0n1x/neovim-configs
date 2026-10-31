@@ -1,25 +1,24 @@
--- Spec for the per-harness terminal owner (Task 7).
+-- Spec for the per-harness terminal owner (term.lua).
 --
--- The whole point of Task 7 is that each harness drives its OWN Snacks floating terminal,
--- tracked in our own table keyed by harness name - NOT claudecode.nvim's single module-level
--- `terminal` handle. This spec stubs Snacks.terminal.open to return a fake instance (a
--- windowless buffer + the hide/buf_valid methods term.lua relies on) and asserts the routing:
+-- Each harness drives its OWN Snacks floating terminal, tracked in a table keyed by harness name.
+-- This spec stubs Snacks.terminal.open to return a fake instance (a windowless buffer plus the
+-- hide/buf_valid methods term.lua relies on) and asserts the routing:
 --   * open(harness) stores an instance keyed by harness
 --   * bufnr(harness) returns it
 --   * a second open(same_harness) reuses the existing instance (no second Snacks.open call)
---   * open(other_harness) is independent - two instances coexist (the "no shared global" guarantee)
+--   * open(other_harness) is independent: two instances coexist, with no shared handle
 --   * show/hide route to that harness's own instance, never another's
 --
--- Nothing here touches claudecode.nvim: term.lua must be free of it. If a future change sneaks a
--- require("claudecode...") into term.lua the stubbed Snacks.open would still pass these tests, so
--- we also assert term.lua does not load any claudecode module (see the final test).
+-- term.lua must not load claudecode.nvim. The stubbed Snacks.open would let a require("claudecode...")
+-- in term.lua pass these tests, so "does not require any claudecode module (the whole point of the
+-- swap)" asserts it directly.
 local helper = require("tests.helper")
 local layout = require("harness-decorators.layout")
 
 describe("term: per-harness Snacks float owner (Task 7)", function()
   local snacks
   local orig_open
-  local calls -- { cmd, opts }[] every stubbed open recorded
+  local calls -- the { cmd, opts } of every stubbed open, in call order
 
   ---Build a fake Snacks.terminal instance backed by a windowless buffer.
   local function make_fake(buf)
@@ -30,9 +29,8 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
       show = function() end,
       focus = function() end,
       close = function() end,
-      -- Defined to index self (like real Snacks.win:buf_valid does `self.buf and ...`), so calling it
-      -- as a plain function (inst.buf_valid()) would E5108. This is what caught the original bug - term
-      -- must call it with method syntax (inst:buf_valid()).
+      -- Indexes self (like real Snacks.win:buf_valid does `self.buf and ...`), so calling it as a plain
+      -- function (inst.buf_valid()) would E5108; term must call it with method syntax (inst:buf_valid()).
       buf_valid = function(self)
         return self.buf ~= nil and vim.api.nvim_buf_is_valid(self.buf)
       end,
@@ -115,10 +113,10 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
   it(
     "show(harness) RE-FOCUSES an already-open window via :focus(), not :show() (regression: <leader>c after <C-h>)",
     function()
-      -- The bug: after <C-h> the float's window is still open (only focus moved back to the work buffer).
-      -- term.show must then re-focus it. Snacks' :show() on an already-open window takes an early-return
-      -- path (:update()) that does NOT move focus, so using it here would do nothing - the exact
-      -- "nothing happens" the user hit. With a VALID window, focus_instance must call :focus() instead.
+      -- After <C-h> the float's window is still open (only focus moved back to the work buffer), and
+      -- term.show must re-focus it. Snacks' :show() on an already-open window takes an early-return
+      -- path (:update()) that does NOT move focus, so with a VALID window focus_instance must call
+      -- :focus().
       local term = require("harness-decorators.term")
       term._reset()
       local inst = term.open("claude")
@@ -197,12 +195,10 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
   end)
 
   it("enters terminal mode directly when the target window is ALREADY current (WinEnter cannot fire)", function()
-    -- The bug: nvim_set_current_win on the window you're already in is a no-op and does NOT fire
-    -- WinEnter. Re-selecting a harness whose float already has focus (e.g. pressing <leader>c a
-    -- second time while sitting in it, in normal-in-terminal mode) went through focus_instance's
-    -- :focus() call, which relied solely on the WinEnter autocmd to enter insert - so it silently did
-    -- nothing and left the float stuck in "-- (terminal) --". focus_instance/open must trigger insert
-    -- directly, not only via WinEnter.
+    -- nvim_set_current_win on the window you're already in is a no-op and does NOT fire WinEnter.
+    -- Re-selecting a harness whose float already has focus (e.g. pressing <leader>c a second time
+    -- while sitting in it, in normal-in-terminal mode) must still enter insert instead of staying in
+    -- "-- (terminal) --", so focus_instance/open trigger insert directly, not only via WinEnter.
     local term = require("harness-decorators.term")
     term._reset()
 
@@ -281,7 +277,7 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
 
   it("open(same_harness) re-focuses an already-open instance via :focus(), not a second Snacks.open", function()
     -- <leader>c routes through term.open; for a live instance whose window is still open it must
-    -- re-focus (not respawn, and not no-op like the old :show()-only path did).
+    -- re-focus (not respawn, and not a no-op: Snacks' :show() alone does not move focus).
     local term = require("harness-decorators.term")
     term._reset()
     local inst = term.open("claude")
@@ -325,7 +321,7 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
       require("harness-decorators.active").set("claude")
       require("harness-decorators.state").entry("claude")
 
-      -- Opening the picker drives park.list -> term.list. This must NOT delete claude's record.
+      -- Opening the picker calls park.list, which calls term.list. This must NOT delete claude's record.
       local entries = term.list()
       assert.are.equal(0, #entries, "a never-opened harness has no live terminal to list")
       assert.is_not_nil(
@@ -340,9 +336,8 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
   )
 
   it("list() DOES drop a harness whose instance exited (dead buffer)", function()
-    -- The other half of the contract: a harness that WAS opened and whose process has now exited
-    -- (buffer wiped) is genuinely dead and must be removed so the picker never offers it. This keeps
-    -- the original cleanup behavior intact - we only stopped culling the never-opened case above.
+    -- The other half of the contract: a harness that WAS opened and whose process has exited (buffer
+    -- wiped) is dead and must be removed so the picker never offers it.
     local term = require("harness-decorators.term")
     term._reset()
 
@@ -362,8 +357,8 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
 
   it("list() calls buf_valid with method syntax (regression: E5108 on plain-function call)", function()
     -- The fake's buf_valid indexes self (like real Snacks). If term.list called inst.buf_valid() as a
-    -- plain function, self would be nil and this would raise E5108 - the exact <leader>cl crash. This
-    -- drives list() over a live instance to prove it uses method syntax.
+    -- plain function, self would be nil and this would raise E5108 (the <leader>cl picker calls
+    -- list()). This drives list() over a live instance to prove it uses method syntax.
     local term = require("harness-decorators.term")
     term._reset()
     local inst = term.open("claude")
@@ -394,7 +389,7 @@ describe("term: per-harness Snacks float owner (Task 7)", function()
   end)
 
   it("spawn cwd falls back to getcwd() when the current buffer is a scratch/unnamed file", function()
-    -- A [No Name] or scratch buffer has no directory; the harness must spawn in getcwd() as before.
+    -- A [No Name] or scratch buffer has no directory; the harness must spawn in getcwd().
     local term = require("harness-decorators.term")
     term._reset()
     local expect = vim.fn.getcwd()
@@ -1417,7 +1412,7 @@ describe("term: float mouse handling, minimized bars and flash", function()
       return inst
     end
     vim.o.columns = cols
-    -- 2 left of right edge = 239, dock avoidance pushes to 220.
+    -- 2 columns left of the right edge would be column 239; keeping clear of the dock moves it to 220.
     assert.are.equal(220, col, "the float is pushed left to clear the minimized-bar dock")
   end)
 
@@ -1466,7 +1461,6 @@ describe("term: float mouse handling, minimized bars and flash", function()
   -- fullscreen and then shrinks it to layout.shelf_rows rows at the bottom of the editor. While shelf mode
   -- is on, focusing the float grows it to fullscreen and leaving it slides it back down to the shelf.
 
-  ---The <C-f> fullscreen rect for the current editor size: 5% row padding, 10% column padding.
   ---The zen float's inner width while zen is open, else nil.
   local function zen_inner_width()
     local zen = require("zen-mode.view")

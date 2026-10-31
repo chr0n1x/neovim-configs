@@ -52,7 +52,8 @@ return {
       -- The iceberg_dark theme only defines sections a/b/c, so lualine's x/y slots would otherwise
       -- render transparent (no section fill) and the session + agents components would visually merge
       -- into one blob. Give each right-hand slot its own distinct bg (from the same theme palette:
-      -- #2e313f = b, #0f1117 = c) so lualine can draw a real section boundary between them.
+      -- #2e313f is section b's bg, #0f1117 is section c's) so lualine can draw a real section
+      -- boundary between them.
       section_separators = { left = "", right = "" },
       -- Global statusline so it stays visible while a float has focus.
       globalstatus = true,
@@ -82,9 +83,10 @@ return {
     })
 
     -- Start the poll timer here where the event loop is ready,
-    -- and define the summary status-dot highlight groups (working = blue, idle = green,
-    -- unknown = dim ring). The setup is scheduled so it runs after lualine + the theme have finished
-    -- defining their statusline groups. A ColorScheme switch re-runs it (see harness-decorators/init.lua).
+    -- and define the summary status-dot highlight groups (working is blue, idle is green,
+    -- unknown is a dim ring). The setup is scheduled so it runs after lualine + the theme have
+    -- finished defining their statusline groups. A ColorScheme switch re-runs it (see
+    -- harness-decorators/init.lua).
     pcall(function()
       local display = require("harness-decorators.agent-display")
       display.start_timer()

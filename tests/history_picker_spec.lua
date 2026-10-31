@@ -1,7 +1,7 @@
--- Contract spec for the "diffs are not lost in the history picker" invariant - the exact
--- thing the user reported as broken. M.pick() resolves the current session from the pinned
--- JSONL path via extract_session_id, then reads edit_sources[that id]. This spec pins that
--- link: a record stored under session S is returned by the same lookup the picker performs.
+-- Contract spec for the "diffs are not lost in the history picker" invariant. M.pick() resolves
+-- the current session from the pinned JSONL path via extract_session_id, then reads
+-- edit_sources[that id]. This spec pins that link: a record stored under session S is returned
+-- by a copy of the picker's lookup.
 -- It does not open the telescope UI (headless can't drive it); it asserts the data contract
 -- underneath, which is where "lost diffs" actually originate.
 
@@ -9,8 +9,9 @@ local utils = require("harness-decorators.utils")
 local watcher = require("harness-decorators.watcher")
 local edit_jump = require("harness-decorators.edit-jump")
 
----Mirror of the session-resolution + record-selection logic in M.pick(), factored out so
--- this spec asserts the same code path the picker uses without opening the UI.
+---Copy of the session-resolution + record-selection logic in M.pick(), so this spec checks the
+-- same lookup without opening the UI. The no-pin fallback differs: M.pick() takes the session
+-- with the newest record, this copy the first session with any records.
 local function pick_records(pinned_path)
   local current_session = utils.extract_session_id(pinned_path) or nil
   if not current_session then
@@ -69,8 +70,8 @@ describe("history picker: records survive the session lookup", function()
   it("returns no records when the pinned session has none (the 'lost diffs' symptom)", function()
     -- A record exists but under a DIFFERENT session than the one now pinned: the picker
     -- correctly shows nothing for the current session. This documents the failure mode -
-    -- if the pin drifts to the wrong session, its records are not shown. Task 17 targets
-    -- the root cause (pin stability); this spec pins the observable contract.
+    -- if the pin drifts to the wrong session, its records are not shown. Pin stability itself
+    -- is pinned by tests/ownership_spec.lua; this spec pins the observable contract.
     edit_jump.edit_sources = {
       ["sessionA"] = { { file_path = "/a/a.lua", timestamp = 1700000000000 } },
     }

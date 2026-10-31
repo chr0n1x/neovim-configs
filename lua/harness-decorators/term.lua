@@ -50,7 +50,6 @@ local function enter_terminal_mode(win, buf, waited)
   vim.cmd.startinsert()
 end
 
--- Forward-declared so the functions below can close over it before its definition.
 local schedule_enter_terminal_mode
 
 local function harness_terminal_buf()
@@ -103,7 +102,7 @@ local function is_live(inst)
 end
 
 ---Resolve the command a harness's terminal should run, reading its env module at call time so a
----later re-point (or an env override like CLAUDE_COMMAND) is always honored.
+---later change to that module (or an env override like CLAUDE_COMMAND) is always honored.
 ---@param harness string
 ---@return string? cmd
 local function resolve_cmd(harness)
@@ -130,8 +129,8 @@ local fullscreen_rect, shelf_rect, auto_float_rect = layout.fullscreen_rect, lay
 local retract_rect, at_rect = layout.retract_rect, layout.at_rect
 local stack_rects = layout.stack_rects
 
-local retile -- forward declaration; defined below
-local scroll_to_bottom -- forward declaration; defined below
+local retile
+local scroll_to_bottom
 
 ---Animate the float to `rect` and keep that geometry in inst.opts, so Snacks reopens it there after
 -- hide/show. _resized_at is stamped at both ends so the terminal's reflow for the new size is not
@@ -183,7 +182,7 @@ local function animate_collapse(self)
   resize_to(self, retract_rect(self), nil, true)
 end
 
-local shelve -- forward declaration; defined below
+local shelve
 
 ---With shelf mode on and the float focused at fullscreen inside tmux, move to the tmux pane in `dir`
 -- ("L" or "R") and leave the float focused and fullscreen. Returns true when it moved.
@@ -385,7 +384,7 @@ end
 local function win_opts(harness)
   return {
     position = "float",
-    -- Drag handles for the mouse move/resize below: a grip glyph in the title marks the move bar,
+    -- Drag handles for the mouse move/resize (mouse.lua): a grip glyph in the title marks the move bar,
     -- heavy side/bottom lines mark the resizable edges, and the bottom corners are resize grips.
     -- The top-left corner is the shelf button and the top-right corner the minimize button (both
     -- double-click).
@@ -406,7 +405,8 @@ local function win_opts(harness)
     ),
     b = { harness_terminal = harness },
     -- Snacks' style default maps FloatTitle:SnacksTitle, which overrides the per-segment groups in
-    -- `title`. Set winhighlight after all merging is done so our override sticks.
+    -- `title`. Replacing winhighlight once Snacks has merged its options (keeping only the footer
+    -- mapping) drops that FloatTitle mapping.
     on_win = function(self)
       pcall(vim.api.nvim_set_option_value, "winhighlight", "FloatFooter:SnacksFooter", { win = self.win })
     end,
@@ -528,7 +528,7 @@ local function notify_output(inst)
   end
 end
 
--- Defined with the shelf functions below; M.open (above them) attaches it to each new float.
+-- Defined with the shelf functions, after M.open, which attaches it to each new float.
 local follow_focus
 
 ---Signal the panel (notify_output) when its terminal gets new text while the panel is unfocused or
@@ -1062,7 +1062,8 @@ retile = function(cycle)
     focus_rect = focused and auto_float_rect(not pending and focused.win or nil)
     local zleft = math.floor(vim.api.nvim_win_get_config(zwin).col)
     local empty = math.max(3, zleft - 1)
-    -- A cell is at most half the empty area, so a single column hugs zen.
+    -- Up to 3 unfocused floats stack in one column half the empty area wide, against zen; more
+    -- fill the whole empty area.
     local width = #others <= 3 and math.max(3, math.floor(empty / 2)) or empty
     stack = stack_rects(#others, empty - width, width)
     if focused and focused.win ~= cur and not pending then
@@ -1232,7 +1233,7 @@ function M.prune()
   local dead = {}
   for harness, e in pairs(state.table) do
     if e.inst ~= nil and not is_live(e.inst) then
-      table.insert(dead, harness) -- collect; removing during pairs() is undefined
+      table.insert(dead, harness)
     end
   end
   for _, h in ipairs(dead) do

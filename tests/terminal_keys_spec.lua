@@ -1,10 +1,10 @@
 -- Spec for the shared terminal-mode key legend (term.terminal_keys) - one test per key, driving the
--- extracted module-level handlers with fake Snacks instances. Terminal-mode keys can't be fed in a
--- headless nvim, so each handler is exposed on M and driven directly here:
---   * <C-f> -> term.fullscreen_key : toggles the float's layout (fullscreen <-> collapse)
---   * <C-h> -> term.go_back_key    : moves focus back WITHOUT hiding the float (see go_back_key_spec)
---   * <C-n> -> term.normal_mode_key: drops into normal mode (stopinsert), float stays open
---   * <Esc> -> term.close_key      : minimizes the float (here: hides it, the fakes have no window)
+-- module-level handlers with fake Snacks instances. Terminal-mode keys can't be fed in a headless
+-- nvim, so each handler is exposed on M and driven directly here:
+--   * <C-f>, term.fullscreen_key: toggles the float between fullscreen and its saved size
+--   * <C-h>, term.go_back_key: moves focus back WITHOUT hiding the float (see go_back_key_spec)
+--   * <C-n>, term.normal_mode_key: drops into normal mode (stopinsert), float stays open
+--   * <Esc>, term.close_key: minimizes the float (here it hides it, since the fakes have no window)
 local helper = require("tests.helper")
 
 describe("terminal key legend: one handler per key", function()
@@ -106,8 +106,8 @@ describe("terminal key legend: one handler per key", function()
     -- Measure the terminal window's dimensions and compare to the expected near-fullscreen target.
     local cfg = vim.api.nvim_win_get_config(win)
     local lines, cols = vim.o.lines, vim.o.columns
-    local exp_w = (1 - 0.2) * cols -- 1 - 2*wide_col_pad
-    local exp_h = (1 - 0.1) * lines -- 1 - 2*wide_row_pad
+    local exp_w = (1 - 0.2) * cols -- 1 - 2 * layout.FULL_COL_PAD
+    local exp_h = (1 - 0.1) * lines -- 1 - 2 * layout.FULL_ROW_PAD
     assert.is_true(
       cfg.width >= math.floor(exp_w) - 1 and cfg.width <= math.ceil(exp_w) + 1,
       string.format("<C-f> fullscreen width %d not near expected ~%d", cfg.width or -1, exp_w)
@@ -177,7 +177,7 @@ describe("terminal key legend: one handler per key", function()
       return false
     end, 25)
 
-    -- Enter terminal insert mode (what the float does on open via start_insert).
+    -- Enter terminal insert mode (what schedule_enter_terminal_mode does when the float opens).
     vim.cmd("startinsert!")
 
     -- Drive the real <C-n> handler against this live terminal window.
@@ -185,9 +185,8 @@ describe("terminal key legend: one handler per key", function()
     local ok_handler, err = pcall(term_mod.normal_mode_key)
     assert.is_true(ok_handler, "normal_mode_key raised: " .. tostring(err))
 
-    -- We are now in normal mode (not terminal insert). A cursor jump to a specific line must work -
-    -- this is the assertion the user asked for. In terminal insert mode the same motion would be
-    -- ignored / error, so success here proves stopinsert actually took effect.
+    -- In normal mode a cursor jump to a specific line works; in terminal insert mode the same
+    -- motion would be ignored or error, so success here proves stopinsert took effect.
     local ok_jump, _ = pcall(vim.api.nvim_win_set_cursor, win, { 1, 0 })
     assert.is_true(ok_jump, "<C-n> did not reach normal mode - cursor jump failed (still in terminal insert)")
     local cur = vim.api.nvim_win_get_cursor(win)

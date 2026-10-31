@@ -93,9 +93,8 @@ local function make_previewer()
 
       vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
 
-      -- Line 0: header. Date part gets dim highlight, path part gets bright. The header is
-      -- built as "<date> <path>" (single space), so the date occupies the first #date chars
-      -- and the path starts right after.
+      -- Line 0: header, built as "<date> <path>" (single space). The date (the first #date chars)
+      -- gets the dim group; the bright path group runs from the separating space to the end.
       local sep = e.time_str
       local date_len = #sep
       highlight(bufnr, SIDECAR_DATE_HL, 0, 0, date_len)
@@ -103,7 +102,7 @@ local function make_previewer()
 
       -- Line 1: blank separator - skip.
       -- Lines 2+: diff content from extract_diff.
-      -- Format is "%5d  <prefix><content>" where <prefix> is +|-|space.
+      -- Format is "%5d  <prefix><content>" where <prefix> is "+", "-" or a space.
       -- The prefix char is always at string position 8 (1-indexed).
       for tbl_idx = 3, #lines do
         local line = lines[tbl_idx]
@@ -115,7 +114,7 @@ local function make_previewer()
           elseif prefix == "-" then
             highlight(bufnr, SIDECAR_DIFF_DEL, buf_line, 0, #line)
           else
-            -- Context or no number: dim the leading number.
+            -- Context or no number: dim the leading number and the character after it.
             local _, ne = line:find("^%s*[0-9]+")
             if ne then
               highlight(bufnr, SIDECAR_DIFF_NUM, buf_line, 0, math.min(ne + 1, #line))

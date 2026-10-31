@@ -1,10 +1,10 @@
--- Tier 3: harness swap. Verifies <leader>cl's underlying switch() re-points the
--- terminal command and rebinds keymaps, without leaving a stale harness active.
+-- Harness swap: <leader>cl's underlying switch() makes the new harness active, without leaving a
+-- stale harness active.
 --
--- We call switch().switch(new_harness) directly (the same code path <leader>cl drives
--- via the telescope picker) so the test is deterministic and doesn't depend on driving
--- an interactive picker. After switching, terminal_cmd must equal the NEW harness's env
--- command and the switcher must report the new harness as active.
+-- We call require("harness-decorators.switch").switch(new_harness) directly (the same code path
+-- <leader>cl drives via the picker) so the test is deterministic and doesn't depend on driving an
+-- interactive picker. After switching, the switcher must report the NEW harness as active, and
+-- that harness's float must resolve its own env command.
 
 local helper = require("tests.helper")
 
@@ -43,9 +43,9 @@ describe("swap: switch() re-points terminal_cmd", function()
       ("switcher did not record new harness: expected %s, got %s"):format(target, tostring(helper.active_harness()))
     )
 
-    -- Task 7 contract: there is no global terminal_cmd to re-point. The active harness's float
-    -- resolves its OWN env command at open time. After switching, that must be target's command -
-    -- never the outgoing harness's (the original A1 bug was maki starting claude).
+    -- Each harness's float resolves its OWN env command at open time (there is no shared terminal
+    -- command). After switching, that must be target's command, never the outgoing harness's (for
+    -- example maki starting claude).
     local expected = helper.env_command(target)
     local actual = helper.term_spawn_cmd(target)
     assert.are.equal(

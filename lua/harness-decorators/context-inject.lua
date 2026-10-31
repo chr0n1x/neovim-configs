@@ -13,8 +13,8 @@ function M.find_terminal_win()
 end
 
 ---Shorten a path for display in the harness terminal. Delegates to the shared definition in
----utils.shorten_path (~ collapse under $HOME, then full absolute). The per-harness @/range/
----decor is applied by each keymaps file on top of this result.
+---utils.shorten_path (~ collapse under $HOME, then full absolute). Each keymaps file adds its
+---per-harness decoration (an @ prefix, a #L range) on top of this result.
 ---@param file_path string
 ---@return string
 function M.shorten_path(file_path)
@@ -83,7 +83,7 @@ function M.type_into_terminal(text, opts, harness)
   end
 
   local bufnr = vim.api.nvim_win_get_buf(win)
-  -- termopen() sets b:terminal_job_id; bo.channel is the robust fallback.
+  -- termopen() sets b:terminal_job_id; bo.channel is the fallback when it is unset or 0.
   local chan = vim.b[bufnr] and vim.b[bufnr].terminal_job_id
   if not chan or chan == 0 then
     chan = vim.bo[bufnr].channel

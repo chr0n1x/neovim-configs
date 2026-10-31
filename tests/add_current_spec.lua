@@ -11,8 +11,8 @@
 -- end-to-end.
 --
 -- How it works without a live AI process (deterministic, no PTY echo / timing): every harness's
--- <leader>ca is now a LOCAL user-command (or an inline callback) that types into our own per-harness
--- float via context-inject.type_into_terminal - there is no claudecode websocket server to stub.
+-- <leader>ca is a LOCAL user-command (or an inline callback) that types into our own per-harness
+-- float via context-inject.type_into_terminal, so there is no external server to stub.
 -- We open a plain `cat` terminal (no AI process needed) so find_terminal_win() succeeds, then stub
 -- vim.fn.chansend to RECORD the exact payload instead of writing to the PTY. The command's %
 -- expansion and filereadable gate run for real; we assert:
@@ -92,7 +92,7 @@ describe("<leader>ca action: resolves % to a real file and reaches the send stag
 
   ---Force vim.fn.filereadable to a fixed value for the duration of a test. The add
   -- commands gate on filereadable AFTER expanding %; stubbing it lets us exercise both
-  -- branches (readable -> reaches send stage, unreadable -> explicit error) without any
+  -- branches (readable reaches the send stage, unreadable gives an explicit error) without any
   -- timing dependency. Restored in teardown.
   local function force_filereadable(val)
     orig_filereadable = vim.fn.filereadable

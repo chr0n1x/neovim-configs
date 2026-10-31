@@ -1,11 +1,12 @@
--- Per-harness terminal state shared by term.lua and park.lua.
+-- Per-harness terminal state shared by term.lua and park.lua: the snacks.terminal float, the
+-- directory the harness was started in, and its start time (os.time()), keyed by harness name.
 --
---   table[harness] = {
---     inst = snacks.terminal|nil, -- the float; nil until first opened
---     cwd = string|nil,           -- the directory the harness was started in
---     opened_at = number|nil,     -- os.time() when the harness was started
+--   {
+--     maki = { inst = <snacks.terminal>, cwd = "/Users/kran/Code/app", opened_at = 1793376000 },
+--     pi = { inst = nil },
 --   }
 --
+-- inst is nil until the float is first opened; cwd and opened_at are absent until the harness starts.
 -- term owns .inst, .cwd and .opened_at. Where the float is (its layout:
 -- normal, fullscreen, shelved or minimized) lives on the instance, read with layout.get(entry.inst)
 -- and changed only through layout.set.

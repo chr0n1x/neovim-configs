@@ -1,8 +1,7 @@
 -- Maki state adapter: work status + session label.
 --
--- Status: maki has no per-pid status file, so this returns "unknown" and lets
--- agent-state run the shared child check. Tool/bash execution shows as working;
--- pure text generation does not.
+-- Status: maki writes no per-pid status file, so this returns "unknown" and agent-state runs
+-- the shared child-process check (tool and bash runs show as working, text generation does not).
 --
 -- Label: ~/.maki/sessions/cwd_latest.json maps cwd to the session id of the most
 -- recent session started in that dir; the label is the last "t":"meta" line's
@@ -21,7 +20,6 @@ end
 ---@param cwd string
 ---@return "working"|"idle"|"unknown"
 function M.status(_pid, _cwd)
-  -- No per-pid signal; delegate to the child-process check.
   return "unknown"
 end
 

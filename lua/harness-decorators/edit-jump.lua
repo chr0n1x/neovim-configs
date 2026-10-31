@@ -60,8 +60,8 @@ local function get_jump_win()
   return M.jump_win
 end
 
--- The zen window is a float, so the normal-window searches below never pick it, and a jump there
--- would land behind zen.
+-- The zen window is a float, so find_adjacent_window and find_file_window never pick it, and a
+-- jump there would land behind zen.
 local zen_win = require("util.zen").win
 
 ---Perform the actual jump logic.
@@ -188,7 +188,7 @@ local function store_edit_source(data)
     return
   end
 
-  -- Generate timestamp on arrival (epoch-ms via os.time).
+  -- Generate timestamp on arrival (epoch-ms, at os.time's one-second resolution).
   local timestamp = os.time() * 1000
 
   local session_id = utils.extract_session_id(jsonl_path)
@@ -224,7 +224,7 @@ local function store_edit_source(data)
   local last = list[#list]
   if last and last.file_path == file_path then
     local time_diff = math.abs(last.timestamp - timestamp)
-    if time_diff < 5000 then -- within 5 seconds = same edit
+    if time_diff < 5000 then -- within 5 seconds counts as the same edit
       if last.starting_line and not starting_line then
         return -- prefer the record that already has a line number
       end

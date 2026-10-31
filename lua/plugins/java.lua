@@ -23,7 +23,8 @@
 -- 2. hover returns nil for ~15-30 min on first launch while jdtls builds its type index.
 -- 3. nvim-jdtls auto-loads its own lsp/jdtls.lua in nvim 0.11+; it starts before
 --    our autocmd and wins. disable it explicitly via vim.lsp.enable("jdtls", false).
--- 4. lombok (and other annotation processors): set JAVA_INCLUDED_JAR_PATHS (see above).
+-- 4. lombok (and other annotation processors): set JAVA_INCLUDED_JAR_PATHS (see
+--    "configuration" in this header).
 
 -- detect whether java is available on PATH (no JVM startup).
 if vim.fn.exepath("java") == "" then

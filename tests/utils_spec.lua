@@ -84,8 +84,8 @@ describe("utils.extract_session_id", function()
   it("uses the parent dir as the id for copilot's <id>/events.jsonl layout", function()
     -- Flip active.get() to copilot so its session_id adapter method (parent-dir rule) is
     -- in play, then restore. We set the field directly rather than calling switch.switch:
-    -- that restarts the watcher and re-points claudecode state, which a unit spec must not
-    -- do. extract_session_id only reads active.get() to pick the adapter.
+    -- that rebinds keymaps and re-points the watcher, which a unit spec must not do.
+    -- extract_session_id only reads active.get() to pick the adapter.
     local orig = active.get()
     active.set("copilot")
     assert.are.equal("sess-42", utils.extract_session_id("/home/u/.copilot/sess-42/events.jsonl"))
@@ -177,9 +177,9 @@ describe("shorten_path (2-tier display rule, shared across callers)", function()
   end)
 
   it("returns the full path for files under the cwd but outside $HOME (no relative tier)", function()
-    -- The cwd-relative tier was dropped: a subdir under nvim's cwd (e.g. /tmp/foo when nvim
-    -- is in /tmp) must stay absolute, otherwise it resolves against the harness's cwd and
-    -- the tree-add types a bare name that points at a nonexistent path.
+    -- There is no cwd-relative tier: a subdir under nvim's cwd (e.g. /tmp/foo when nvim is in
+    -- /tmp) must stay absolute, otherwise it resolves against the harness's cwd and the
+    -- tree-add types a bare name that points at a nonexistent path.
     local tmpdir = vim.fn.tempname()
     local f = tmpdir .. "/subdir"
     assert.are.equal(f, utils.shorten_path(f))
@@ -194,8 +194,8 @@ describe("shorten_path (2-tier display rule, shared across callers)", function()
     -- buffer was opened with a RELATIVE name (e.g. maki opening "foo.txt" while cwd is
     -- /tmp), returns a relative path like "foo.txt". shorten_path must absolutize it
     -- against cwd, not pass it through - otherwise the typed reference only resolves if
-    -- the harness's cwd happens to equal nvim's cwd. This is the C-t/<leader>ca "just
-    -- types the file name" bug.
+    -- the harness's cwd happens to equal nvim's cwd. Pins the bug where <C-t>/<leader>ca
+    -- typed just the file name.
     local cwd = vim.uv.cwd()
     local rel = "relsub/file.txt"
     local abs = cwd .. "/relsub/file.txt"
@@ -236,8 +236,9 @@ describe("shorten_path (2-tier display rule, shared across callers)", function()
   end)
 
   it("context-inject.shorten_path delegates to the shared definition (no divergence)", function()
-    -- The four harness keymaps call ci.shorten_path; it must produce exactly what the shared
-    -- utils.shorten_path produces, so there is one source of truth for display shortening.
+    -- Every harness's keymaps reach ci.shorten_path (directly or through ci.at_mention); it must
+    -- produce exactly what the shared utils.shorten_path produces, so there is one source of truth
+    -- for display shortening.
     local samples = {
       home, -- the $HOME itself
       home .. "/elsewhere/file.lua", -- ~ tier
@@ -421,8 +422,8 @@ describe("context-inject.type_into_terminal: no visible terminal opens OUR float
 
   it("<C-t> tree-add with no visible terminal opens OUR float, not claudecode's", function()
     -- Same regression as <leader>ca but through the tree-add path: <C-t> in a tree buffer runs the
-    -- harness's *TreeAdd command (e.g. ClaudeTreeAdd), which calls make_tree_add_command's handler ->
-    -- type_into_terminal. With no terminal open, that fallback must open OUR per-harness float via
+    -- harness's *TreeAdd command (e.g. ClaudeTreeAdd), which calls make_tree_add_command's handler,
+    -- then type_into_terminal. With no terminal open, that fallback must open OUR per-harness float via
     -- term.open, NOT claudecode's stock ClaudeCodeOpen (which would spawn a second split pane). We stub
     -- get_tree_selection to return a real path and drive the user command directly.
     opened_harnesses = {} -- reset: shared across tests in this describe block

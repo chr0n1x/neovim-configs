@@ -1,7 +1,7 @@
 -- Specs for the claude adapter's JSONL dialect: parse_tool_result (the source of every
 -- HarnessEdit) and extract_diff (the picker preview). These pin the exact fields the rest of
--- the stack consumes - file_path, operation, starting_line, dedup_key - so a dialect change
--- that silently drops a field fails here instead of surfacing as "no diffs in the picker".
+-- the stack consumes (file_path, operation, starting_line, dedup_key), so a dialect change that
+-- drops a field fails here rather than as "no diffs in the picker".
 
 local claude = require("harness-decorators.claude")
 

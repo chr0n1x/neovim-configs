@@ -56,7 +56,7 @@ describe("lualine session component", function()
 
   it("shows the harness-aware slug (copilot parent dir, not the events.jsonl stem)", function()
     -- The raw path:match("([^/]+)%.jsonl$") would yield "events" here; the correct id is the
-    -- parent dir. This is the bug the refactor fixes.
+    -- parent dir.
     active.set("copilot")
     watcher.pinned_jsonl_path = "/home/u/.copilot/sess-42/events.jsonl"
     assert.are.equal("%#lualine_x_normal#🤖%* sess-42", decorators.session_component("⠋"))
@@ -91,8 +91,8 @@ describe("lualine session component", function()
 
     display._set_agents({ claude = { status = "working", label = nil, pid = 1 } })
     local working = decorators.session_component("⠋")
-    -- The working state animates through the spinner frames (frame 0 -> first frame). It sits right
-    -- after the emoji and before the session id; only the emoji carries the section fill.
+    -- The working state shows the single static spinner glyph, right after the emoji and before the
+    -- session id; only the emoji carries the section fill.
     assert.is_not_nil(
       working:find(
         "%#lualine_x_normal#🤖%* %#" .. display.HL_WORKING .. "#" .. display.spinner[1] .. "%* deadbeef",

@@ -1,4 +1,4 @@
--- Spec for the unified per-harness terminal state (Task 8).
+-- Spec for the unified per-harness terminal state.
 --
 -- The contract under test: there is ONE table holding every annotation about a harness - its live
 -- Snacks instance, cwd and open time - so nothing has to be kept in sync across modules. term.lua
@@ -68,9 +68,8 @@ describe("state: single per-harness record (Task 8)", function()
   end)
 
   it("term.open records the SAME instance on the shared record (no duplicated handle)", function()
-    -- The core Task 8 invariant: the instance term returns and the one stored on state.table must be
-    -- the identical table. If any layer kept its own copy, a later show/hide could act on a stale
-    -- handle - the exact drift the old park.registry[harness].inst write-back guarded against.
+    -- The core invariant: the instance term returns and the one stored on state.table must be the
+    -- identical table. If any layer kept its own copy, a later show/hide could act on a stale handle.
     local inst = term_mod.open(original_harness)
     assert.is_not_nil(inst, "open must return an instance")
 

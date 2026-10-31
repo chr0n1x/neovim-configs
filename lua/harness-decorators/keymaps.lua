@@ -21,7 +21,8 @@ function M.continue_spec(harness)
   }
 end
 
----<C-t>: ft-scoped to TREE_FTS, runs the harness's <Harness>TreeAdd command.
+---<C-t>: mapped only in buffers whose filetype is in TREE_FTS, runs the harness's
+---<Harness>TreeAdd command.
 ---@param harness string
 ---@param tree_cmd string the user command, e.g. "ClaudeTreeAdd"
 ---@return table spec
@@ -48,7 +49,14 @@ function M.history_spec(harness)
   }
 end
 
----Buffer-local ft-mappings written by M.apply (bufnr to list of {mode, lhs}), so M.clear can remove them.
+---Buffer-local filetype mappings written by M.apply, keyed by buffer number, so M.clear can remove
+---them.
+---
+---  {
+---    [14] = { { mode = "n", lhs = "<C-t>" } },
+---  }
+---
+---A buffer appears only once M.apply has mapped a key in it.
 local ft_buf_maps = {}
 
 ---The harness-agnostic switcher key. Appended to every harness's spec list so it
@@ -97,7 +105,7 @@ local function focus_spec(harness)
         harnesses.setup_auto_follow()
       end)
       -- Suppress capture for the WinLeave this press triggers, restore the last
-      -- normal-mode buffer first (the show below then focuses the terminal window
+      -- normal-mode buffer first (the show that follows focuses the terminal window
       -- over it, so the work buffer stays visible underneath), and clear the
       -- suppression once the restore has run.
       local focus = require("harness-decorators.focus")
@@ -167,7 +175,8 @@ function M.clear()
   ft_buf_maps = {}
 end
 
----focus_spec first, then the harness's keys, then the shared switch/overview keys.
+---Build the harness's spec list: focus_spec (<leader>c) first, then the harness's keys, then the
+---shared switch/overview keys.
 ---@param harness string
 function M.build(harness)
   local specs = {}

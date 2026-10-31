@@ -3,7 +3,7 @@
 -- The config loads normally (this file is sourced after startup, so all plugins are
 -- already set up). We wait until the harness layer is loaded, then run busted IN-PROCESS
 -- against the tests/ directory. Running busted inside this same nvim means the full real
--- config is live - exactly option A - and specs can call the vim API directly.
+-- config is live and specs can call the vim API directly.
 --
 -- Why not `require("busted.runner")`: that wrapper parses its file list from the global
 -- `arg` table via cliargs, which fights in-process invocation (it expects a real argv).
@@ -15,10 +15,8 @@ local function wait_until_ready(timeout_ms)
   timeout_ms = timeout_ms or 60000
   local deadline = vim.uv.now() + timeout_ms
   while vim.uv.now() < deadline do
-    -- The harness layer is ready once its core modules load. We used to also gate on
-    -- require("claudecode") (the plugin's setup ran the keymap registration), but that
-    -- plugin is gone - the wiring now lives in harness-decorators.init.setup, reached via
-    -- switch/keymaps. Gating on those two is enough.
+    -- The harness layer is ready once its core modules load: the keymap wiring lives in
+    -- harness-decorators.init.setup, reached via switch/keymaps, so gating on these two is enough.
     local ok_init = pcall(require, "harness-decorators")
     local ok_sw = pcall(require, "harness-decorators.switch")
     if ok_init and ok_sw then

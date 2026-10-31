@@ -1,10 +1,10 @@
 -- Spec for the per-harness agent state adapters (lualine broadcast).
 --
--- The pty -> /proc pid resolution (agent-state.pid_for_buf) is Linux-only and needs a live
--- terminal, so it is not exercised here. What IS pinned is the pure logic that turns a pid +
--- cwd into a status and a label: the shared child-process check, and each adapter's parsing of
--- its on-disk session state (claude json, maki cwd_latest + meta title, copilot events.jsonl
--- turn markers, pi session_info name). Adapters read from $HOME, so we point HOME at a temp dir
+-- agent-state.pid_for_buf is pinned against a real terminal job (the jobpid path, and the /proc
+-- scan on Linux only). The rest pins the pure logic that turns a pid and cwd into a status and a
+-- label: the shared child-process check, and each adapter's parsing of its on-disk session state
+-- (claude json, maki cwd_latest + meta title, copilot events.jsonl turn markers, pi session_info
+-- name). Adapters read from $HOME, so we point HOME at a temp dir
 -- with fixture files and restore it in teardown. sqlite-backed paths (copilot label, crush) have
 -- no lsqlite3 in the container, so their degradation path is what's asserted.
 

@@ -1,12 +1,12 @@
--- Per-harness command selection (Task 7). The strongest form of the A1 assertion: for EVERY
--- harness, when it is active its float must resolve to that harness's OWN env command - never
--- another harness's (the original A1 bug was NVIM_LLM_HARNESS=maki starting claude).
+-- Per-harness command selection: for EVERY harness, when it is active its float must resolve to
+-- that harness's OWN env command - never another harness's (for example NVIM_LLM_HARNESS=maki
+-- starting claude).
 --
--- Under Task 7 there is no global terminal_cmd to re-point: term.lua resolves each harness's
--- command from its env module at open time. We switch to each harness in turn (switch().switch is
--- the same code path <leader>cl drives) and assert the active harness's float would spawn ITS OWN
--- command - catching a regression where, say, maki's env returns "maki" but the open path still
--- resolves claude's command.
+-- There is no global terminal_cmd to re-point: term.lua resolves each harness's command from its
+-- env module at open time. We switch to each harness in turn
+-- (require("harness-decorators.switch").switch is the same code path <leader>cl drives) and
+-- assert the active harness's float would spawn ITS OWN command - catching a regression where,
+-- say, maki's env returns "maki" but the open path still resolves claude's command.
 
 local helper = require("tests.helper")
 local utils = require("harness-decorators.utils")
@@ -52,7 +52,7 @@ describe("command selection: every harness runs its own CLI", function()
         )
       )
 
-      -- Guard against the specific A1 failure mode: a non-claude harness must never end up
+      -- Guard against the maki-starting-claude failure mode: a non-claude harness must never end up
       -- running "claude".
       if harness ~= "claude" then
         assert.is_not.truthy(

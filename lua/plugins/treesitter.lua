@@ -5,8 +5,9 @@ end
 return {
   {
     "nvim-telescope/telescope-fzf-native.nvim",
-    -- not sure why this doesnt work ootb
-    -- have to go into ~/.local/share/nvim/lazy/telescope-fzf-native.nvim/ && make
+    -- The native fzf sorter needs compiling. lazy.nvim runs `make` (build) on install and update,
+    -- but that has not worked out of the box here; if the sorter is missing, run `make` in
+    -- ~/.local/share/nvim/lazy/telescope-fzf-native.nvim/.
     build = "make",
   },
 

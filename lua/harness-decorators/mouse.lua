@@ -9,8 +9,8 @@ local BAR_HEIGHT, drawn_pos = layout.BAR_HEIGHT, layout.drawn_pos
 local repack_dock, minimize_float, bar_hit, bar_button =
   dock.repack_dock, dock.minimize_float, dock.bar_hit, dock.bar_button
 
--- term.lua's float actions the handlers call: { is_live, restore_from_bar, close_harness,
--- shelf_button }. Passed in by setup, since term requires this module.
+-- term.lua's float actions the handlers call (is_live, restore_from_bar, close_harness and
+-- shelf_button, each taking the instance). Passed in by bind, since term requires this module.
 local handlers = {}
 
 -- Mouse drag on a harness float's border: the top border (the title bar) moves the float, and the
@@ -58,8 +58,9 @@ end
 
 ---Apply the in-progress drag to the float: move it, or resize it from the grabbed edges, clamped to
 -- the editor. The new geometry is also written to inst.opts so Snacks keeps it across hide/show and
--- VimResized, and the fullscreen baseline is dropped so the next <C-f> collapse returns here instead
--- of the pre-drag geometry. Dragging a minimized bar moves the bar, and the float reopens there.
+-- VimResized. Unless the drag started at fullscreen, the <C-f> baseline is dropped, so the next <C-f>
+-- collapse returns here instead of the pre-drag geometry. Dragging a minimized bar moves the bar, and
+-- the float reopens there.
 local function drag_to(mouse)
   if not drag then
     return
@@ -114,7 +115,7 @@ end
 
 ---Mouse handlers for the harness floats and their minimized bars. Each takes a getmousepos()-shaped
 -- position and returns the keys the mapping should produce: "" when the event was handled here, or
--- the original mouse key to pass it through. The mappings below call these with vim.fn.getmousepos();
+-- the original mouse key to pass it through. M.setup's mappings call these with vim.fn.getmousepos();
 -- specs call them directly with made-up positions, since headless Neovim gets no real mouse input.
 
 -- True from a press these handlers consumed until its release. The drag and release events of that

@@ -1,10 +1,10 @@
--- Spec for switch.lua (Option A, Task 6; Task 7 rework).
+-- Spec for switch.lua.
 --
--- The core behavior: switching must BACKGROUND the outgoing harness's terminal (hide its OWN float,
--- keeping the PTY alive so it keeps executing) and record it for resume - not kill it. Under Task 7
--- the terminal layer is term.lua (one Snacks float per harness), so this spec drives it by opening a
--- fake per-harness instance via term.open (Snacks.terminal.open stubbed to return a windowless-buffer
--- fake). The assertions are the behavior change itself: after M.switch, the outgoing harness's buffer
+-- The core behavior: switching must BACKGROUND the outgoing harness's terminal (its OWN float stays
+-- open and the PTY alive, so it keeps executing, but it is no longer the active harness) and record
+-- it for resume - not kill it. The terminal layer is term.lua (one Snacks float per harness), so this
+-- spec drives it by opening a fake per-harness instance via term.open (Snacks.terminal.open stubbed
+-- to return a windowless-buffer fake). The assertions: after M.switch, the outgoing harness's buffer
 -- is still valid AND present in the park table (not deleted), and the watcher follows the NEW active
 -- harness. Headless nvim can't drive a real snacks terminal, so the fakes stand in for the floats.
 
@@ -81,9 +81,9 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
     end
     require("harness-decorators.state")._reset()
     -- M.switch changed the active harness (env var + active.get() + current_harness + keymaps).
-    -- Restore all of it directly rather than calling switch again, which would spawn/kill terminals -
-    -- perturbing later specs that assume the config's default harness. Re-apply the original
-    -- harness's keymaps so bindings match the restored current_harness.
+    -- Restore all of it directly rather than calling switch again, which would re-lay out the floats
+    -- and notify the watcher - perturbing later specs that assume the config's default harness.
+    -- Re-apply the original harness's keymaps so bindings match the restored current_harness.
     if orig_env then
       vim.fn.setenv("NVIM_LLM_HARNESS", orig_env)
     end
@@ -102,7 +102,7 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
     assert.is_true(ok, "switch() errored")
     assert.are.equal(target, helper.active_harness(), "switch did not take effect")
 
-    -- The core Option A assertion: the outgoing buffer was NOT deleted (old kill_terminal did).
+    -- The core assertion: the outgoing buffer was NOT deleted.
     assert.is_true(
       vim.api.nvim_buf_is_valid(inst.buf),
       "switch deleted the outgoing harness's terminal buffer (Option A must keep it alive)"
@@ -170,9 +170,9 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
   )
 
   it("resolves the incoming harness's command from its env module at open time (Task 7)", function()
-    -- The whole point of the switch under Task 7: there is no global terminal_cmd to re-point. term.lua
-    -- resolves each harness's command from its env module when its float opens. So after switching to
-    -- `target`, opening ITS float must spawn TARGET's command (helper.env_command reads that env.lua).
+    -- There is no global terminal_cmd to re-point: term.lua resolves each harness's command from its
+    -- env module when its float opens. So after switching to `target`, opening ITS float must spawn
+    -- TARGET's command (helper.env_command reads that env.lua).
     local start_harness = original_harness
     sw.init(start_harness)
 
@@ -195,10 +195,9 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
   end)
 
   it("after_pick opens the newly-selected harness's terminal (picker auto-open)", function()
-    -- The picker used to only switch and leave you to press <leader>c; now selecting one should open
-    -- that harness's terminal too. after_pick is the extracted callback, so drive it directly: after a
-    -- switch, M.after_pick must show the selected (incoming) harness's float - spawning fresh if it has
-    -- no live instance yet.
+    -- Selecting a harness in the picker switches to it and opens its terminal too. after_pick is that
+    -- callback, so drive it directly: after a switch, M.after_pick must show the selected (incoming)
+    -- harness's float - spawning fresh if it has no live instance yet.
     local start_harness = original_harness
     sw.init(start_harness)
     require("harness-decorators.state")._reset()
@@ -214,8 +213,8 @@ describe("switch: backgrounds (parks) instead of kills (Option A, Task 7)", func
   it(
     "Given a harness started from the <C-q> picker, When after_pick runs, Then edit-following is set up like <leader>c does",
     function()
-      -- setup_auto_follow registers the HarnessEdit jump autocmds and starts the watcher; only <leader>c
-      -- called it, so a harness started from the picker never followed its edits.
+      -- setup_auto_follow registers the HarnessEdit jump autocmds and starts the watcher; after_pick must
+      -- call it as <leader>c does, or a harness started from the picker would not follow its edits.
       local decorators = require("harness-decorators")
       local orig_setup = decorators.setup_auto_follow
       local calls = 0

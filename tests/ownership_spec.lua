@@ -1,4 +1,4 @@
--- Spec for the watcher's session-pin logic (Task 17, Option B): the pin locks on the
+-- Spec for the watcher's session-pin logic: the pin locks on the
 -- sessionId DECLARED inside the JSONL, not on cwd. Cwd is only the initial candidate filter;
 -- once a file declares an id we key on that id so a stale same-cwd session cannot hijack the
 -- pin. A genuine mid-work switch (a different declared id writing) re-pins and PRESERVES the
@@ -17,7 +17,7 @@ local active = require("harness-decorators.active")
 local watcher = require("harness-decorators.watcher")
 local edit_jump = require("harness-decorators.edit-jump")
 
--- A claude-style line: top-level cwd + sessionId. Both carries the same id so a two-line
+-- A claude-style line: top-level cwd + sessionId. Both lines carry the same id so a two-line
 -- fixture declares one session unambiguously.
 local function claude_line(session_id, cwd)
   return string.format('{"type":"user","cwd":%q,"sessionId":%q}', cwd, session_id)
@@ -108,7 +108,7 @@ describe("watcher session pin (Option B: pin by declared session id)", function(
     watcher.process_jsonl_write(file_a)
     assert.are.equal("bbbb2222", watcher.pinned_session_id)
 
-    -- The old session's history must survive the switch (user chose "preserve old history").
+    -- The old session's history must survive the switch.
     assert.is_not_nil(edit_jump.edit_sources["aaaa1111"], "old session history must be preserved")
   end)
 

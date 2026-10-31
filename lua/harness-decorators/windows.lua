@@ -1,7 +1,8 @@
 local M = {}
 
----Find the first accepted window in the current tab. Callers own buffer and float eligibility;
----visible filters hidden windows, treating a failed config lookup as potentially visible.
+---The first window in the current tab that `matches` accepts, searching from the last one with
+---opts.reverse. opts.visible skips hidden windows (a window whose config cannot be read counts as
+---visible).
 ---@param matches fun(win: integer): boolean
 ---@param opts? {reverse?: boolean, visible?: boolean}
 ---@return integer? win

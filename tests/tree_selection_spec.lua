@@ -127,8 +127,8 @@ describe("tree selection: get_tree_selection returns real paths", function()
       return
     end
 
-    -- Find the neo-tree window and make it current so our selector sees
-    -- filetype == "neo-tree".
+    -- Find the neo-tree window and make it current, as it is when <C-t> fires there (the
+    -- visual-selection path also checks state.winid against the current window).
     local tree_win = nil
     for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
       if vim.api.nvim_win_is_valid(w) then

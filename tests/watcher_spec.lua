@@ -6,7 +6,7 @@
 -- The real on_edit (which stores into edit_sources and jumps) is registered by
 -- setup_auto_follow on the first <leader>c press; that never happens headless, so this spec
 -- registers its own HarnessEdit handler to capture the dispatched data. That still exercises
--- the full dispatch_change -> nvim_exec_autocmds("User", "HarnessEdit") path, which is where a
+-- the full path from dispatch_change to nvim_exec_autocmds("User", "HarnessEdit"), which is where a
 -- regression would drop diffs before they ever reach the picker.
 
 local utils = require("harness-decorators.utils")
@@ -84,8 +84,8 @@ describe("watcher dispatch: HarnessEdit fires with the parsed fields", function(
     watcher.process_recovered_lines({ edit_line("uuid-first") }, 0)
     assert.are.equal(1, #seen, "first event should fire once")
 
-    -- Now feed the same line twice with an identical uuid => identical dedup_key. The second
-    -- dispatch must be suppressed (dedup), so no additional HarnessEdit fires.
+    -- Now feed the same line twice with an identical uuid, which gives an identical dedup_key.
+    -- The second dispatch must be suppressed (dedup), so no additional HarnessEdit fires.
     watcher.process_recovered_lines({ edit_line("uuid-dup") }, 0)
     watcher.process_recovered_lines({ edit_line("uuid-dup") }, 0)
     assert.are.equal(2, #seen, "the duplicate dedup_key must not fire twice (only the first)")

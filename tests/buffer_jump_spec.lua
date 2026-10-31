@@ -1,8 +1,7 @@
--- Jumping between buffers. Covers PRD priority #3: moving window focus to a buffer must
--- land on the intended buffer and must NOT duplicate it into another window. Buffer
--- duplication is the regression class the focus guards exist to prevent; this test checks
--- the general invariant (one live window per buffer) across normal navigation, independent
--- of the harness terminal.
+-- Jumping between buffers: moving window focus to a buffer must land on the intended buffer
+-- and must NOT duplicate it into another window. Buffer duplication is the regression class the
+-- focus guards exist to prevent; this test checks the general invariant (one live window per
+-- buffer) across normal navigation, independent of the harness terminal.
 
 local helper = require("tests.helper")
 

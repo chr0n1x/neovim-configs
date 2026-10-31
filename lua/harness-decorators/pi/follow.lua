@@ -5,13 +5,13 @@
 -- two kinds of events to THIS nvim over its RPC socket ($NVIM), both via M.ingest():
 --   * "edit"    - on edit/write tool_result: fires the same `User HarnessEdit` autocmd the
 --                 watcher would, so edit-jump.lua consumes it unchanged (jump to file:line).
---   * "session" - on session_start / agent_start / agent_settled / session_shutdown: the real
---                 session id + working/idle status + cwd. pi/state.lua reads this registry to
---                 report accurate status + a uuid label, instead of guessing from file mtimes.
+--   * "session" - on session_start / agent_start / agent_settled / session_shutdown: the
+--                 session id, working/idle status and cwd. pi/state.lua reads this registry
+--                 for the status and uuid label of a pi running inside this nvim.
 --
--- The extension is the only place that can know pi's identity/status (it runs in-process);
--- macOS won't expose a process's env to nvim, which is why the file-mtime guess in pi/state.lua
--- exists as a fallback for pi run OUTSIDE nvim.
+-- The extension is the only place that knows pi's session id and status (it runs in-process,
+-- and macOS does not expose another process's env to nvim). For a pi run outside nvim,
+-- pi/state.lua guesses from session file mtimes.
 --
 -- All the testable logic lives here (see tests/pi_follow_spec.lua); the .ts stays thin.
 local M = {}
@@ -20,10 +20,24 @@ local sidecar = require("harness-decorators.sidecar")
 
 local EXT_NAME = "nvim-harness-follow.ts"
 
--- Session registry, populated by pushed "session" events. Keyed by session id, with a
--- cwd -> latest-session-id index so pi/state.lua (which is handed a cwd) can look up.
-local sessions = {} -- [session_id] = { status, cwd, session_file, updated_at }
-local by_cwd = {} -- [cwd] = session_id (latest start wins)
+-- Session registry filled by pushed "session" events, keyed by session id, plus an index from
+-- cwd to the latest session id there (pi/state.lua is handed a cwd).
+--
+--   sessions = {
+--     ["01a18e96-8d5c-7675-b88f-778acd4cb7ee"] = {
+--       status = "working",
+--       cwd = "/Users/kran/app",
+--       session_file = "/Users/kran/.pi/agent/sessions/--Users-kran-app--/"
+--         .. "2026-10-30T20-53-13-693Z_01a18e96-8d5c-7675-b88f-778acd4cb7ee.jsonl",
+--       updated_at = 1793400000,
+--     },
+--   }
+--   by_cwd = { ["/Users/kran/app"] = "01a18e96-8d5c-7675-b88f-778acd4cb7ee" }
+--
+-- A shutdown event drops the session; an event with no session id is skipped, and one with no
+-- cwd is stored without a by_cwd entry.
+local sessions = {}
+local by_cwd = {}
 
 -- A pushed "working"/"idle" status older than this is treated as stale (unknown), so a pi that
 -- crashed without a shutdown event does not show "working" forever.
@@ -33,7 +47,7 @@ local STALE_SEC = 300
 -- EXTENSION INSTALL (symlink bootstrap)
 -- ==========================================================================
 
----Absolute directory of THIS module (…/lua/harness-decorators/pi).
+---Absolute directory of THIS module (.../lua/harness-decorators/pi).
 ---@return string
 local function this_dir()
   local src = debug.getinfo(1, "S").source

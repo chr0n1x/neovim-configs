@@ -19,11 +19,12 @@ local function command_override(prefix)
   return nil
 end
 
----Build a harness terminal command from its env overrides. Every per-harness env.lua shares this
----shape: honor <HARNESS>_COMMAND as a full override (wrapper script, extra flags), else append an
----optional model flag when <HARNESS>_MODEL is set, else run the bare CLI. Harnesses with no model
----flag (copilot/crush/pi) just pass model_flag = nil. Claude's prepare_env supplies job-local
----Ollama defaults separately; this helper only builds the command string.
+---Build a harness terminal command from its env overrides. The env.lua of claude, copilot, crush and
+---maki share this shape (pi and pig use provider_command): honor <HARNESS>_COMMAND as a full
+---override (wrapper script, extra flags), else append an optional model flag when <HARNESS>_MODEL
+---is set, else run the bare CLI. Harnesses with no model flag (copilot, crush) pass
+---model_flag = nil. Claude's prepare_env supplies job-local Ollama defaults separately; this helper
+---only builds the command string.
 ---@param harness string e.g. "claude" - uppercased to form the env var names
 ---@param cli string the bare CLI name, e.g. "claude"
 ---@param model_flag? string flag prefix before the model value, e.g. "--model " or "-m " (nil = none)
@@ -52,7 +53,7 @@ function M.close_timer(timer)
   return nil
 end
 
----Upper-case the first letter, e.g. "claude" -> "Claude".
+---Upper-case the first letter, e.g. "claude" becomes "Claude".
 ---@param name string
 ---@return string
 function M.capitalize(name)
@@ -418,7 +419,8 @@ function M.shorten_path(file_path)
   return file_path
 end
 
----Drops a message repeated within cooldown_ms.
+---Notify msg, prefixed with the active harness and with $HOME shown as ~, dropping a message
+---repeated within cooldown_ms.
 ---@param msg string The message to log.
 ---@param level? number Log level (passed to vim.notify).
 ---@param notify_opts? table Options passed directly to vim.notify.

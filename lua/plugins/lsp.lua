@@ -5,7 +5,7 @@ end
 return {
   {
     "folke/lazydev.nvim",
-    ft = "lua", -- only load on lua files
+    ft = "lua",
     opts = {
       library = {
         -- See the configuration section for more details
@@ -19,7 +19,7 @@ return {
   -- something like:
   --   https://github.com/mrjosh/helm-ls/releases/download/v0.5.3/helm_ls_linux_arm64
   --
-  -- above is a golang bin; praise be.
+  -- helm_ls is a golang bin; praise be.
   -- YAML LS however requires nodejs sooooo NOPE
   { "qvalentin/helm-ls.nvim", ft = "helm" },
 
@@ -90,7 +90,8 @@ return {
                   },
                   diagnostics = {
                     globals = { "vim" },
-                    -- Treat all diagnostic fields as readonly to avoid false positives.
+                    -- LuaLS has no diagnostics.library setting (it reads library paths from
+                    -- workspace.library), so LuaLS ignores this entry.
                     library = { require("vim.runtime").get_runtime_file() },
                   },
                   workspace = {

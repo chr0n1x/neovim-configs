@@ -1,16 +1,21 @@
--- Spec for the unified harness terminal table (Option A, Task 6; Task 7 rework).
+-- Spec for the harness terminal table park reads (state.table, filled by term.lua with one Snacks
+-- float per harness), keyed by harness name:
 --
--- park is now backed by term.lua (one Snacks float per harness, no claudecode handle). The table maps
--- harness -> { inst = snacks.terminal|nil }. This spec drives the observable routing: show_selected
--- opens the ACTIVE harness's own float (never another's) - the guarantee that fixes "maki shows claude". Snacks.terminal.open is stubbed
--- to return fake instances backed by windowless buffers, so no real PTY or window is created in
--- headless.
+--   {
+--     claude = { inst = <snacks.terminal instance>, cwd = "/Users/kran/Code/app", opened_at = 1767225600 },
+--   }
+--
+-- A record for a harness that was never opened has inst = nil.
+--
+-- This spec drives the observable routing: show_selected opens the ACTIVE harness's own float, never
+-- another's (the "maki shows claude" bug). snacks.terminal.open is stubbed to return fake instances
+-- backed by windowless buffers, so no real PTY or window is created in headless.
 local helper = require("tests.helper")
 local state = require("harness-decorators.state")
 local keymaps = require("harness-decorators.keymaps")
 local active = require("harness-decorators.active")
 
----Reset the shared state table (term and park now share it - one reset clears both).
+---Reset the shared state table (term and park both read it, so one reset clears both).
 local function park_reset_all()
   require("harness-decorators.state")._reset()
 end
@@ -67,7 +72,6 @@ describe("park: unified harness terminal table (Task 6/7)", function()
     local park = require("harness-decorators.park")
     require("harness-decorators.state")._reset()
     local inst = term_mod.open(original_harness)
-    -- list must include it while alive.
     local before = park.list()
     assert.equal(1, #before, "a live harness should appear in list")
     -- Kill the buffer: its process exited.

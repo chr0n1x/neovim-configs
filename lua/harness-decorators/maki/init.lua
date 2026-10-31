@@ -14,10 +14,9 @@ M.title_color = "#6eb9f0"
 -- PATHS
 -- ==========================================================================
 
----Directory containing maki's session JSONLs and cwd_latest.json. Mirrors
----maki's own state dir resolution (maki-storage/src/paths.rs): if ~/.maki
----exists it IS the state dir, otherwise XDG_STATE_HOME/maki. Old and new
----locations can coexist, so check both.
+---Directory containing maki's session JSONLs and cwd_latest.json, resolved the way maki does
+---(maki-storage/src/paths.rs): ~/.maki when it exists, otherwise XDG_STATE_HOME/maki. Both
+---locations can exist at once, so both are checked.
 ---@return string?
 function M.sessions_dir()
   local home = os.getenv("HOME") or ""
@@ -54,7 +53,7 @@ function M.sidecar_name(session_id)
   return "maki-events-session-" .. session_id
 end
 
----Score a sidecar event by how much diff data it contains. Higher = richer.
+---Score a sidecar event by how much diff data it contains (higher is richer).
 ---@param ev table Decoded JSONL line
 ---@return integer score
 function M.score_event(ev)
@@ -142,12 +141,9 @@ function M.extract_cwd(lines)
   end)
 end
 
----Determine whether a JSONL session belongs to this Neovim instance.
----Returns "match", "mismatch", or "unknown".
----Maki: the header line at the top of the file carries the session's cwd. If it
----matches this nvim's cwd, the session is ours by definition (works even when
----the tail has no typed messages). A corrupted/unreadable header falls through
----to "unknown" so a later write can retry.
+---Whether a JSONL session belongs to this nvim, decided by the cwd in the header line at the
+---top of the file (so it works even when the tail has no typed messages). An unreadable header
+---gives "unknown", so a later write retries.
 ---@param nvim_cwd string? CWD of this Neovim instance (nil = unknown)
 ---@param lines string[] JSONL lines to inspect
 ---@param jsonl_path string? Full path of the session JSONL

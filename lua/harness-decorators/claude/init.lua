@@ -24,12 +24,9 @@ end
 -- SESSION IDENTIFICATION
 -- ==========================================================================
 
----Determine whether a JSONL session belongs to this Neovim instance.
----Returns "match", "mismatch", or "unknown".
----Claude: the cwd field on any line is authoritative; other sessions in the
----same project dir have a different cwd, so a mismatched cwd rules them out. A
----session with no cwd evidence yet is "unknown" (retry on the next write), not an
----assumed match - see utils.ownership_from_cwd for the shared tri-state contract.
+---Whether a JSONL session belongs to this nvim, decided by the cwd field on any line (other
+---sessions in the same project dir have a different cwd). A session with no cwd yet is "unknown"
+---(retry on the next write); utils.ownership_from_cwd defines the shared tri-state result.
 ---@param nvim_cwd string? CWD of this Neovim instance (nil = unknown)
 ---@param lines string[] JSONL lines to inspect
 ---@return "match"|"mismatch"|"unknown"
@@ -52,7 +49,7 @@ function M.sidecar_name(session_id)
   return "claude-events-session-" .. session_id
 end
 
----Score a sidecar event by how much diff data it contains. Higher = richer.
+---Score a sidecar event by how much diff data it contains (higher is richer).
 ---@param ev table Decoded JSONL line
 ---@return integer score
 function M.score_event(ev)
@@ -98,7 +95,7 @@ function M.extract_diff(ev)
     if sp.oldLines or sp.newLines then
       table.insert(parts, string.format("%d -> %d lines", sp.oldLines or 0, sp.newLines or 0))
     end
-    table.insert(parts, "") -- blank separator before diff
+    table.insert(parts, "")
     -- The diff content lives in the `lines` array (+/-/space prefixed).
     -- Walk it tracking line numbers: additions advance the new counter,
     -- deletions advance the old counter, context advances both.
@@ -166,9 +163,8 @@ function M.extract_cwd(lines)
   end)
 end
 
----Extract the explicit session id from Claude JSONL lines (the top-level "sessionId" field).
----The watcher pins on it. Returns nil when no line carries one so the caller can fall back
----to path-based inference.
+---Extract the explicit session id from Claude JSONL lines (the top-level "sessionId" field), which
+---the watcher pins on. Returns nil when no line carries one (the caller falls back to the path).
 ---@param lines string[]
 ---@return string?
 function M.session_id_from_lines(lines)
@@ -203,10 +199,10 @@ function M.find_reset_command(lines)
     local ok, entry = pcall(vim.json.decode, line)
     if ok and entry and entry.type == "user" and entry.message then
       local user_text = nil
-      -- Old format.
+      -- Older Claude format: promptSource = "typed".
       if entry.promptSource == "typed" and type(entry.message.content) == "string" then
         user_text = entry.message.content
-      -- Current format.
+      -- Current Claude format: message.role = "user".
       elseif entry.message.role == "user" and type(entry.message.content) == "string" then
         user_text = entry.message.content
       end
@@ -293,8 +289,8 @@ end
 ---Extract change_info from a tool_use (assistant-type invocation entry).
 ---These appear in the JSONL before the tool result is returned, so catching
 ---them enables faster jump-to-edit while the session is still active.
----Note: tool_use entries don't have line numbers - the structuredPatch with
----actual line ranges only arrives in the matching toolUseResult later.
+---tool_use entries carry no line numbers; the structuredPatch with line ranges arrives later
+---in the matching toolUseResult.
 ---@param entry table The decoded JSON object
 ---@param line_number? integer The 1-based line number in the JSONL file
 local function parse_tool_use(entry, line_number)

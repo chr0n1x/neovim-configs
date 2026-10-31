@@ -1,5 +1,5 @@
--- Maki harness env setup: terminal command (CLI + model flags). Honors MAKI_COMMAND for a full
--- override, else appends -m <MAKI_MODEL> when set, else runs `maki` interactively.
+-- Maki harness env setup: terminal command. Honors MAKI_COMMAND for a full override; otherwise
+-- runs `maki`, appending -m <MAKI_MODEL> when MAKI_MODEL is set.
 local utils = require("harness-decorators.utils")
 
 return {

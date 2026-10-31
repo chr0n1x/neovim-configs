@@ -1,10 +1,10 @@
--- Spec for the float's focus/close key handlers (Task 7 follow-up).
+-- Spec for the float's focus/close key handlers.
 --
 -- Two distinct keys, two distinct behaviors:
---   * <C-h> -> term.go_back_key(self): move focus back to the work buffer WITHOUT hiding the float -
---     the panel stays open and its process keeps running. This is the exact regression the user hit
---     ("when I <C-h> the terminal gets hidden"). We assert go_back_key does NOT call self:hide().
---   * <Esc> -> term.close_key(self): exit insert and minimize the float into its docked bar, keeping
+--   * <C-h>, term.go_back_key(self): move focus back to the work buffer WITHOUT hiding the float -
+--     the panel stays open and its process keeps running. Pins the regression the user reported as
+--     "when I <C-h> the terminal gets hidden". We assert go_back_key does NOT call self:hide().
+--   * <Esc>, term.close_key(self): exit insert and minimize the float into its docked bar, keeping
 --     the PTY alive. A fake with no open float falls back to hiding; we assert that fallback calls
 --     self:hide(). The minimize path is covered in tests/term_spec.lua.
 -- Both handlers are exposed on M so they can be driven headless with a fake instance (terminal-mode

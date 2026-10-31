@@ -17,7 +17,7 @@ describe("diff.diff_full_files output format (picker contract)", function()
     for _, line in ipairs(lines) do
       -- %5d right-justifies the number in 5 chars, then two spaces, so the prefix char is
       -- always at string position 8 (the picker reads line:sub(8,8)). Positions 6-7 are the
-      -- two separator spaces; positions 1-5 hold the zero-padded line number.
+      -- two separator spaces; positions 1-5 hold the space-padded line number.
       assert.is_truthy(#line >= 8, ("line too short to carry a prefix at position 8: %q"):format(line))
       assert.are.equal(
         "  ",

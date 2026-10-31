@@ -6,7 +6,7 @@
 -- pinned:
 --   * component() renders "<dot> N agents", empty when disabled or nothing backgrounded
 --   * the active harness is EXCLUDED (it belongs to the separate session section)
---   * the aggregate dot: blue pulse if any working, green if none-working-but-known-idle,
+--   * the aggregate dot: blue dot if any working, green if none-working-but-known-idle,
 --     hollow ring if all unknown
 --   * changed() is a true shallow diff (drives "redraw only on state change")
 --   * toggle() flips enabled and component() honours it
@@ -40,7 +40,7 @@ describe("agent-display: component rendering", function()
     display._set_agents({
       claude = { status = "working", label = "auth", pid = 1 },
     })
-    display._set_active("claude") -- the only agent is the active one -> nothing backgrounded
+    display._set_active("claude") -- the only agent is the active one, so nothing is backgrounded
     assert.are.equal("", display.component())
   end)
 
@@ -70,7 +70,7 @@ describe("agent-display: component rendering", function()
       maki = { status = "idle", label = "tests", pid = 2 },
       copilot = { status = "unknown", label = nil, pid = 3 },
     })
-    display._set_active("claude") -- maki + copilot are backgrounded -> N = 2
+    display._set_active("claude") -- maki and copilot are backgrounded, so N = 2
     local out = display.component()
     assert.is_not_nil(out:find("2 agents in background", 1, true), "must show the count of backgrounded agents")
     -- The dim gear marks the slot as BACKGROUND processes and sits before the status dot.
@@ -85,7 +85,7 @@ describe("agent-display: component rendering", function()
       claude = { status = "working", label = "auth", pid = 1 },
       maki = { status = "idle", label = "tests", pid = 2 },
     })
-    display._set_active("claude") -- only maki is backgrounded -> N = 1
+    display._set_active("claude") -- only maki is backgrounded, so N = 1
     local out = display.component()
     assert.is_not_nil(out:find("1 agent in background$", 1), "single backgrounded agent must read '1 agent' (singular)")
     assert.is_nil(out:find("1 agents", 1, true), "must not pluralize a single agent")
@@ -98,8 +98,7 @@ describe("agent-display: component rendering", function()
     })
     display._set_active("claude") -- maki is backgrounded and working
     local out = display.component()
-    -- frame is 0 after _reset, so the bright phase group is used. The gear leads the status dot.
-    -- The working state animates through the spinner frames (frame 0 after _reset -> first frame).
+    -- The gear leads the status dot, and the working state shows the single static spinner glyph.
     assert.is_not_nil(
       out:find(
         "%#" .. display.HL_BACKGROUND .. "#⚙ %* %#" .. display.HL_WORKING .. "#" .. display.spinner[1] .. "%*",

@@ -63,8 +63,8 @@ describe("M.shutdown: <leader>qq cleans up before :qa!", function()
     -- Real terminal job running a long loop that appends to a marker file on each
     -- tick. After SIGTERM the file must stop growing - proof the process is actually
     -- dead, not merely signalled. jid dies on exit (jobpid raises E900), so the pid
-    -- is captured up front; liveness is probed via uv.kill(pid, 0) (true+0 = alive,
-    -- true+nil = dead).
+    -- is captured up front; liveness is probed via uv.kill(pid, 0) (a 0 result
+    -- means alive, nil means dead).
     marker = "/tmp/shutdown-spec-marker-" .. tostring(vim.fn.getpid()) .. ".txt"
     local cmd = "while true; do date >> '" .. marker .. "'; sleep 0.2; done"
     harness_buf = vim.api.nvim_create_buf(false, true)

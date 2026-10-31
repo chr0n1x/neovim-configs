@@ -8,7 +8,7 @@
 
 local M = {}
 
-local POLL_MS = 8000 -- how often we shell out to ps//proc to detect working/idle transitions
+local POLL_MS = 8000 -- how often we shell out to ps or /proc to detect working/idle transitions
 -- Static working glyph, shared with the statusline (lualine uses it for the session slot and
 -- lsp_status). A single entry so nothing animates.
 local SPINNER = { "●" }
@@ -20,7 +20,15 @@ M.spinner = SPINNER
 local GLYPH = { working = SPINNER[1], idle = "✓", unknown = "○" }
 M.GLYPH = GLYPH
 
--- Live poll results, keyed by harness name: { [name] = {status=, label=, pid=} }.
+-- Live poll results, keyed by harness name.
+--
+--   {
+--     maki = { status = "working", label = "fix tile cycle", session_id = "4f1c9a2e", pid = 48213 },
+--     pi = { status = "idle", pid = 48877 },
+--   }
+--
+-- A harness is absent when it has no live terminal; label and session_id are absent when the
+-- adapter has none.
 local agents = {}
 -- Whether the overview is shown at all (toggled by <leader>co). Defaults on.
 local enabled = true

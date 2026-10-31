@@ -1,4 +1,4 @@
--- Tier 2: focus restore. Codifies the `<C-h` / buffer-duplication regressions.
+-- Focus restore: pins the <C-h> and buffer-duplication regressions.
 --
 -- The focus logic lives in harness-decorators/focus.lua (capture on WinLeave, then
 -- jump_to_saved / restore to return). <C-h> and <leader>c are thin wrappers over it. We
@@ -20,24 +20,22 @@ describe("focus: harness float opens", function()
   local snacks
   local orig_open
 
-  ---A fake Snacks instance backed by a real (windowless) buffer, so the open path runs end to
-  -- end without spawning the real AI CLI (not installed in the container).
   setup(function()
     assert.is_not_nil(helper.active_harness(), "no active harness")
     term_mod = require("harness-decorators.term")
     snacks = require("snacks.terminal")
     orig_open = snacks.open
     -- Collapse to a single window first: prior specs (add_current, go_back, command_selection) may
-    -- leave splits open, and nvim_open_win for the float below E474s ("Invalid argument") when there
-    -- isn't room. A single full-size window guarantees the float fits. Same guard go_back_spec uses.
+    -- leave splits open, and the stub's vsplit fails when there isn't room. Same guard go_back_spec
+    -- uses.
     for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
       if w ~= vim.api.nvim_get_current_win() then
         pcall(vim.api.nvim_win_close, w, true)
       end
     end
     -- Replace the real Snacks float with a lightweight terminal-buftype window so we can assert a
-    -- terminal window appears, without running the (absent) CLI. term.open calls snacks.open(cmd,
-    -- {win=...}); we honor the win opts just enough to make a visible terminal buffer+window.
+    -- terminal window appears, without running the AI CLI (not installed in the container).
+    -- term.open calls snacks.open(cmd, { win = ... }); the stub ignores the opts.
     snacks.open = function(_, opts)
       -- Open a real terminal-buftype window the same way add_current_spec does (vsplit + :terminal),
       -- which is the reliable headless path. nvim_open_win for a float E474s in this container, but a
@@ -64,7 +62,6 @@ describe("focus: harness float opens", function()
       snacks.open = orig_open
     end
     require("harness-decorators.state")._reset()
-    -- Close any terminal window/buffer the test opened.
     for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
       if vim.api.nvim_win_is_valid(w) then
         local b = vim.api.nvim_win_get_buf(w)
@@ -77,8 +74,8 @@ describe("focus: harness float opens", function()
   end)
 
   it("opens a terminal-buftype window via <leader>c (the real focus path)", function()
-    -- Drive the actual keymap callback: <leader>c now routes through park.show_selected -> term.open
-    -- (Task 7), NOT ClaudeCodeFocus. Showing the active harness must produce a terminal-buftype window.
+    -- <leader>c calls park.show_selected, which calls term.open. Showing the active harness must
+    -- produce a terminal-buftype window.
     local park = require("harness-decorators.park")
     local shown = park.show_selected()
     local shown = park.show_selected()
@@ -92,7 +89,7 @@ describe("focus: capture / jump_to_saved / restore mechanics", function()
   local focus = require("harness-decorators.focus")
   local origin_buf, origin_win
 
-  -- Collapse to a single window so the vnew splits below never hit E36 "Not enough room".
+  -- Collapse to a single window so the vnew splits in these cases never hit E36 "Not enough room".
   -- Prior specs (e.g. add_current opening a cat terminal in a vsplit) may leave the buffer
   -- split; go_back_spec and go_back_after_add_spec use this same guard for the same reason.
   local function single_window()
@@ -118,7 +115,6 @@ describe("focus: capture / jump_to_saved / restore mechanics", function()
   end)
 
   it("capture records the current non-terminal window", function()
-    -- Stand in the origin window and capture. focus.last_win must become that window.
     vim.api.nvim_set_current_win(origin_win)
     focus.capture()
     assert.are.equal(origin_win, focus.last_win, "focus.capture did not record the originating window")

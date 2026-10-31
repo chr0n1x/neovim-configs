@@ -38,7 +38,7 @@ if not IN_PERF_MODE then
     group_index = 0, -- set group index to 0 to skip loading LuaLS completions
   })
 
-  -- Tmux source: jump to tmux panes by name.
+  -- Tmux source: completes words from the text in tmux panes (all panes, with scrollback history).
   table.insert(sources_list, {
     name = "tmux",
     keyword_length = 4,
@@ -50,7 +50,7 @@ if not IN_PERF_MODE then
     },
   })
 
-  -- Expand snippets via luasnip when LSP offers completionItem/resolve.
+  -- nvim-cmp calls this to expand an LSP snippet body; luasnip does the expansion.
   snippet_configs["expand"] = function(args)
     require("luasnip").lsp_expand(args.body)
   end

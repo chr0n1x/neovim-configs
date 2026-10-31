@@ -1,7 +1,7 @@
 -- pi edit-following + session-state bridge (pi/follow.lua + pi/state.lua). Covers the testable
 -- halves of the bridge: diff parsing, the ingest() dispatch (edit -> HarnessEdit, session ->
 -- registry), staleness, the symlink bootstrap, and state.lua preferring pushed state over the
--- filename fallback. The extension .ts (thin field-extraction + execFile) is not unit-tested here.
+-- filename fallback. The extension .ts (field extraction and execFile) is not covered here.
 
 local follow = require("harness-decorators.pi.follow")
 
@@ -192,7 +192,7 @@ describe("pi follow bridge", function()
 
     it("treats a stale entry as gone (crashed pi does not stay 'working')", function()
       follow.ingest(b64({ kind = "session", session_id = "sid", cwd = "/repo/d", status = "working" }))
-      -- fresh: present; far-future 'now': stale -> nil
+      -- A fresh entry is returned; with a far-future time it is stale and gone.
       assert.is_not_nil(follow.session_for_cwd("/repo/d", os.time()))
       assert.is_nil(follow.session_for_cwd("/repo/d", os.time() + 3600))
     end)

@@ -1,5 +1,5 @@
--- Generic agent state: work status + session label for each harness, ported
--- from the tmux picker (tmux-agent-pick.sh) so Neovim can broadcast statuses
+-- Generic agent state: work status + session label for each harness, matching
+-- the tmux picker (tmux-agent-pick.sh) so Neovim can broadcast statuses
 -- (lualine etc.) without shelling out to ps/awk per pane.
 --
 -- Per-harness adapters live in harness-decorators.<name>.state and implement:
@@ -245,7 +245,7 @@ function M.pid_for_buf(bufnr)
         for word in rest:gmatch("%S+") do
           fields[#fields + 1] = word
         end
-        -- rest starts at state (field 3); tty_nr is field 7 = index 4.
+        -- rest starts at state (field 3); tty_nr is field 7, index 4.
         if tonumber(fields[4]) == target_rdev then
           matches[#matches + 1] = pid
         end

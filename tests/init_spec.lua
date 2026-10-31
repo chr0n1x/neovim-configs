@@ -1,8 +1,8 @@
--- Idempotency spec for harness-decorators.setup_auto_follow (Task 14). The function is called
--- from the first <leader>c press; before the fix it re-ran its startup resets and re-registered
--- the jump autocmds on EVERY first press, so closing + reopening the terminal in the same nvim
--- session wiped dedup/pin state and re-pinned (duplicate notifications/jumps). This spec pins
--- that a second call is a no-op.
+-- Idempotency spec for harness-decorators.setup_auto_follow. The function is called on every
+-- <leader>c press. Re-running its startup resets and re-registering the jump autocmds on a later
+-- press (e.g. after closing and reopening the terminal in the same nvim session) would wipe dedup
+-- and pin state and re-pin (duplicate notifications and jumps). This spec pins that a second call
+-- is a no-op.
 
 local decorators = require("harness-decorators")
 local utils = require("harness-decorators.utils")

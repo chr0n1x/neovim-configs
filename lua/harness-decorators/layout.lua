@@ -1,5 +1,6 @@
 -- Geometry for harness floats and minimized bars: the editor-relative rects each float layout
--- uses, plus small predicates over window positions. Owns no windows and keeps no per-float state.
+-- uses, small predicates over window positions, and get/set for a float's layout (kept on its
+-- Snacks instance).
 local M = {}
 
 -- Rows a minimized bar takes on screen: its one line of text plus the top and bottom border.
@@ -80,8 +81,8 @@ function M.zen_float_span(screen)
   local zcfg = screen.zen
   if zcfg then
     local zright = math.floor(zcfg.col) + zcfg.width
-    local gap = math.max(0, cols - dock_room - zright) -- the zen-mode gap
-    outer = math.max(3, math.ceil(gap * 0.9)) -- 90% of the gap, at least 3 cols
+    local gap = math.max(0, cols - dock_room - zright)
+    outer = math.max(3, math.ceil(gap * 0.9))
     left = math.floor(zcfg.col) + math.floor(zcfg.width / 4)
   end
   left = math.max(0, math.min(left, cols - dock_room - outer))
@@ -103,9 +104,9 @@ function M.zen_side_span(screen)
     local zright = math.floor(zcfg.col) + zcfg.width + (zborder and 2 or 0) -- first column right of zen
     local dock_room = M.BAR_MIN_TEXT + 2
     local zinner_right = zright - (zborder and 2 or 0) -- zen right edge excluding border
-    local gap = math.max(0, screen.columns - dock_room - zinner_right) -- zen right edge to dock left edge
-    local outer = math.max(3, math.floor(gap * 0.55)) -- 55% of the gap
-    left = zright + 1 -- start just right of the zen window
+    local gap = math.max(0, screen.columns - dock_room - zinner_right)
+    local outer = math.max(3, math.floor(gap * 0.55))
+    left = zright + 1
     return { col = left, width = outer - 2 }
   end
   return { col = left, width = span.width }

@@ -1,21 +1,21 @@
--- Tier 2b: <C-h> "go back to the previous buffer".
+-- <C-h> "go back to the previous buffer".
 --
 -- Contract (docs + user): for every harness, while focus is in the floating terminal,
 -- <C-h> must return focus to the window we came from. Concretely, if you press <C-t> or
 -- <leader>c from neo-tree to jump into the terminal, <C-h> takes you back to neo-tree.
 --
--- The real <C-h> binding (lua/plugins/ai-harness.lua) is a terminal-mode key on the
--- snacks float whose handler is go_back(self). In a headless nvim the float cannot enter
--- terminal mode (no UI backend), so we cannot feed the literal <C-h> in terminal mode.
--- Instead we drive the exact focus path go_back uses: it calls
---   focus.suppress_next_leave() -> (hide float) -> focus.jump_to_saved() [fallback set_prev_win]
--- The hide and the fallback are headless-only concerns; the behavior under test - "return
--- to the originating window" - is precisely what jump_to_saved does, seeded by the WinLeave
--- capture that fires when you leave neo-tree for the terminal. This spec codifies that:
+-- The real <C-h> binding (term.terminal_keys) is a terminal-mode key on the snacks float
+-- whose handler is term.go_back_key. In a headless nvim the float cannot enter terminal mode
+-- (no UI backend), so we cannot feed the literal <C-h> in terminal mode. Instead we drive the
+-- exact focus path term.lua's go_back uses: focus.suppress_next_leave(), then
+-- focus.jump_to_saved(), falling back to float-util.find_base_window. The fallback is a
+-- headless-only concern; the behavior under test - "return to the originating window" - is
+-- precisely what jump_to_saved does, seeded by the WinLeave capture that fires when you leave
+-- neo-tree for the terminal. This spec codifies that:
 --   1. leaving a work buffer (neo-tree stand-in) records it as the restore target, and
 --   2. after focus has moved to the terminal, jumping back lands on that same window.
 --
--- We also assert the fallback (set_prev_win / find_base_window) still finds a base window
+-- We also assert the fallback (find_base_window) still finds a base window
 -- when no saved window exists, so <C-h> never strands you in the float.
 
 local helper = require("tests.helper")
@@ -98,8 +98,9 @@ describe("<C-h>: go back to the previous buffer", function()
     vim.cmd("vnew")
     local term_win = vim.api.nvim_get_current_win()
 
-    -- Reproduce find_base_window's selection logic directly (it is a local in ai-harness.lua):
-    -- pick the last window that is not floating, not the terminal, and shows a file on disk.
+    -- Reproduce float-util.find_base_window's selection logic directly: pick the last window
+    -- that is not the terminal and shows a file on disk (the `cfg.z` check mirrors
+    -- valid_buf's, which never excludes a float because the config field is `zindex`).
     local function valid(win_id)
       local cfg = vim.api.nvim_win_get_config(win_id)
       local buf = vim.api.nvim_win_get_buf(win_id)

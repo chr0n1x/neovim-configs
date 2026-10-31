@@ -1,4 +1,5 @@
--- Claude command and fresh job-local defaults; neither function changes the parent env.
+-- Claude harness env setup: terminal command, plus job-local env defaults (neither function
+-- changes nvim's own env).
 -- NOTE: make sure the model can use tools.
 local utils = require("harness-decorators.utils")
 local M = {}
