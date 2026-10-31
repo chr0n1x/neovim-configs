@@ -122,7 +122,8 @@ describe("keymap callbacks: terminal entry points", function()
     end
   )
 
-  it("Given an open that returns nil, When park shows the selected harness, Then it returns nil", function()
+  it("Given copilot is active and open returns nil, When park shows the active harness, Then it returns nil", function()
+    active.set("copilot")
     local attempted = {}
     term.open = function(harness)
       attempted[#attempted + 1] = harness
@@ -130,6 +131,6 @@ describe("keymap callbacks: terminal entry points", function()
     end
 
     assert.is_nil(park.show_selected())
-    assert.are.same({ "claude" }, attempted, "the selected harness must reach the failed open")
+    assert.are.same({ "copilot" }, attempted, "the active harness must reach the failed open")
   end)
 end)
