@@ -22,8 +22,8 @@ end
 ---Build a harness terminal command from its env overrides. Every per-harness env.lua shares this
 ---shape: honor <HARNESS>_COMMAND as a full override (wrapper script, extra flags), else append an
 ---optional model flag when <HARNESS>_MODEL is set, else run the bare CLI. Harnesses with no model
----flag (copilot/crush/pi) just pass model_flag = nil. The claude harness keeps its Ollama env
----side-effect inline and only uses this for the command string itself.
+---flag (copilot/crush/pi) just pass model_flag = nil. Claude's prepare_env supplies job-local
+---Ollama defaults separately; this helper only builds the command string.
 ---@param harness string e.g. "claude" - uppercased to form the env var names
 ---@param cli string the bare CLI name, e.g. "claude"
 ---@param model_flag? string flag prefix before the model value, e.g. "--model " or "-m " (nil = none)

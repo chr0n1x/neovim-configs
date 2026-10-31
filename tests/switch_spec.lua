@@ -314,7 +314,6 @@ describe("switch activation failure boundaries", function()
   local saved, steps, notes
   local modules = {
     "harness-decorators.pi",
-    "harness-decorators.pi.env",
     "harness-decorators.pi.keymaps",
     "harness-decorators.watcher",
   }
@@ -516,5 +515,128 @@ describe("switch activation failure boundaries", function()
     assert.are.equal(vim.log.levels.WARN, notes[1].level)
     assert.is_truthy(notes[1].message:find("^pi: "))
     assert.is_truthy(notes[1].message:find("hook cannot install extension", 1, true))
+  end)
+end)
+
+describe("switch: activation leaves job environment to spawn", function()
+  local term = require("harness-decorators.term")
+  local state = require("harness-decorators.state")
+  local watcher = require("harness-decorators.watcher")
+  local snacks = require("snacks.terminal")
+  local env_mod = "harness-decorators.copilot.env"
+  local saved, counts, steps, outgoing, env
+
+  before_each(function()
+    saved = {
+      harness = active.get(),
+      selection = os.getenv("NVIM_LLM_HARNESS") or vim.NIL,
+      records = state.table,
+      loaded = package.loaded[env_mod],
+      preload = package.preload[env_mod],
+      open = snacks.open,
+      stop = watcher.stop,
+      start = watcher.start,
+    }
+    counts, steps = { command = 0, prepare = 0, spawn = 0, load = 0 }, {}
+    env = {
+      command = function()
+        counts.command = counts.command + 1
+        return "copilot"
+      end,
+      prepare_env = function()
+        counts.prepare = counts.prepare + 1
+        return {}
+      end,
+    }
+    package.loaded[env_mod] = env
+    package.preload[env_mod] = function()
+      counts.load = counts.load + 1
+      return env
+    end
+    snacks.open = function()
+      counts.spawn = counts.spawn + 1
+      return {
+        buf = vim.api.nvim_create_buf(false, true),
+        buf_valid = function(self)
+          return vim.api.nvim_buf_is_valid(self.buf)
+        end,
+        show = function() end,
+        focus = function() end,
+        close = function(self)
+          pcall(vim.api.nvim_buf_delete, self.buf, { force = true })
+        end,
+      }
+    end
+    state._reset()
+    sw.init("claude")
+    vim.env.NVIM_LLM_HARNESS = "claude"
+    keymaps.clear()
+    keymaps.apply(keymaps.build("claude"))
+    outgoing = term.open("claude")
+    counts.spawn = 0
+    watcher.stop = function()
+      steps[#steps + 1] = "stop"
+    end
+    watcher.start = function()
+      steps[#steps + 1] = "start:" .. active.get()
+    end
+  end)
+
+  after_each(function()
+    term._reset()
+    state.table = saved.records
+    package.loaded[env_mod], package.preload[env_mod] = saved.loaded, saved.preload
+    snacks.open = saved.open
+    watcher.stop, watcher.start = saved.stop, saved.start
+    sw.init(saved.harness)
+    vim.env.NVIM_LLM_HARNESS = saved.selection ~= vim.NIL and saved.selection or nil
+    keymaps.clear()
+    keymaps.apply(keymaps.build(saved.harness))
+  end)
+
+  for _, action in ipairs({ "activate", "switch" }) do
+    it(
+      "Given a live outgoing harness, When "
+        .. action
+        .. " selects Copilot, Then routing changes without preparing env or spawning",
+      function()
+        sw[action]("copilot")
+        assert.are.equal("copilot", sw.current())
+        assert.are.equal("copilot", active.get())
+        assert.are.equal("copilot", vim.env.NVIM_LLM_HARNESS)
+        assert.are.equal("copilot", vim.fn.maparg("<leader>c", "n", false, true).desc)
+        assert.are.same({ "stop", "start:copilot" }, steps)
+        assert.are.equal(0, counts.command)
+        assert.are.equal(0, counts.prepare)
+        assert.are.equal(0, counts.spawn)
+        assert.is_true(rawequal(outgoing, state.table.claude.inst))
+        assert.is_true(vim.api.nvim_buf_is_valid(outgoing.buf))
+      end
+    )
+  end
+
+  it("Given an unloaded env module, When Copilot is activated, Then its env loader is not required", function()
+    package.loaded[env_mod] = nil
+    package.preload[env_mod] = function()
+      counts.load = counts.load + 1
+      error("activation must not load a job environment")
+    end
+    local ok, err = pcall(sw.activate, "copilot")
+    assert.is_true(ok, tostring(err))
+    assert.are.equal(0, counts.load)
+    assert.is_nil(package.loaded[env_mod])
+    assert.are.equal("copilot", active.get())
+  end)
+
+  it("Given a cached env module table, When switching to Copilot, Then its exact table is retained", function()
+    package.preload[env_mod] = function()
+      counts.load = counts.load + 1
+      return { command = env.command, prepare_env = env.prepare_env }
+    end
+    sw.switch("copilot")
+    assert.is_true(rawequal(env, package.loaded[env_mod]))
+    assert.are.equal(0, counts.load)
+    assert.are.equal(0, counts.prepare)
+    assert.are.equal(0, counts.spawn)
   end)
 end)

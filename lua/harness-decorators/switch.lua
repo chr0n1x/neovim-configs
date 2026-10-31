@@ -94,11 +94,9 @@ function M.activate(new_harness)
     return
   end
 
-  -- Finish imports before changing the active harness or bindings so a failed load can be retried.
+  -- Load activation dependencies before changing bindings; job env is resolved only at spawn.
   local adapter = require("harness-decorators." .. new_harness)
   require("harness-decorators.watcher")
-  package.loaded["harness-decorators." .. new_harness .. ".env"] = nil
-  require("harness-decorators." .. new_harness .. ".env")
   local specs = keymaps.build(new_harness)
 
   vim.fn.setenv("NVIM_LLM_HARNESS", new_harness)
