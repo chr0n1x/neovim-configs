@@ -552,6 +552,30 @@ describe("utils.sqlite_open_ro lsqlite3 lookup", function()
       assert.are.equal(2, opens)
     end
   )
+
+  it(
+    "Given a remembered failed lookup, When a module is placed in package.loaded, Then sqlite_open_ro opens through it without searching again",
+    function()
+      assert.is_nil((utils.sqlite_open_ro("/tmp/a.db")))
+      assert.are.equal(1, searches)
+      local closed = false
+      package.loaded["lsqlite3"] = {
+        open = function(uri)
+          return {
+            uri = uri,
+            close = function()
+              closed = true
+            end,
+          }
+        end,
+      }
+      local db, close = utils.sqlite_open_ro("/tmp/b.db")
+      assert.are.equal("file:/tmp/b.db?mode=ro", db.uri)
+      assert.are.equal(1, searches)
+      close()
+      assert.is_true(closed)
+    end
+  )
 end)
 
 describe("utils.newest_by_mtime", function()
