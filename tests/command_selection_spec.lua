@@ -64,33 +64,73 @@ describe("command selection: every harness runs its own CLI", function()
   end
 end)
 
-describe("command selection: <HARNESS>_COMMAND is a full override", function()
-  for _, harness in ipairs(utils.list_harnesses()) do
-    it(("%s honors %s_COMMAND over competing model and provider vars"):format(harness, harness:upper()), function()
+describe("command selection: current override semantics", function()
+  for _, harness in ipairs({ "claude", "copilot", "crush", "maki", "pi", "pig" }) do
+    describe(harness, function()
       local h = harness:upper()
       local env_mod = "harness-decorators." .. harness .. ".env"
       local vars = {
-        [h .. "_COMMAND"] = harness .. " --wrapped",
-        [h .. "_MODEL"] = "competing/model",
-        ["NVIM_LLM_HARNESS_" .. h .. "_PROVIDER_NAME"] = "competing-provider",
-        LLAMA_DEFAULT_MODEL = "competing/llama",
+        h .. "_COMMAND",
+        h .. "_MODEL",
+        "NVIM_LLM_HARNESS_" .. h .. "_PROVIDER_NAME",
+        "LLAMA_DEFAULT_MODEL",
+        "CLAUDE_CODE_TRACKING_ENABLED",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
       }
-      local saved_env, saved_mod = {}, package.loaded[env_mod]
-      for k, v in pairs(vars) do
-        saved_env[k] = vim.fn.getenv(k)
-        vim.fn.setenv(k, v)
-      end
-      local ok, cmd = pcall(helper.env_command, harness)
-      for k, orig in pairs(saved_env) do
-        if orig == vim.NIL or orig == "" then
-          vim.cmd("unlet! $" .. k)
-        else
-          vim.fn.setenv(k, orig)
+      local saved_env, saved_mod
+
+      before_each(function()
+        saved_env, saved_mod = {}, package.loaded[env_mod]
+        for _, k in ipairs(vars) do
+          saved_env[k] = vim.fn.getenv(k)
+          vim.env[k] = nil
         end
+      end)
+
+      after_each(function()
+        for k, orig in pairs(saved_env) do
+          vim.env[k] = orig ~= vim.NIL and orig or nil
+        end
+        package.loaded[env_mod] = saved_mod
+      end)
+
+      it("Given absent overrides, When resolving the command, Then it is the bare CLI", function()
+        assert.are.equal(harness, helper.env_command(harness))
+      end)
+
+      it("Given empty overrides, When resolving the command, Then it is the bare CLI", function()
+        for _, k in ipairs(vars) do
+          vim.env[k] = ""
+        end
+        assert.are.equal(harness, helper.env_command(harness))
+      end)
+
+      it("Given a full command and competing flags, When resolving, Then only the override is used", function()
+        vim.env[h .. "_COMMAND"] = harness .. " --wrapped"
+        vim.env[h .. "_MODEL"] = "competing/model"
+        vim.env["NVIM_LLM_HARNESS_" .. h .. "_PROVIDER_NAME"] = "competing-provider"
+        vim.env.LLAMA_DEFAULT_MODEL = "competing/llama"
+        assert.are.equal(harness .. " --wrapped", helper.env_command(harness))
+      end)
+
+      if harness == "pi" or harness == "pig" then
+        it("Given an empty command and provider/model, When resolving, Then provider precedes model", function()
+          vim.env[h .. "_COMMAND"] = ""
+          vim.env["NVIM_LLM_HARNESS_" .. h .. "_PROVIDER_NAME"] = "local-provider"
+          vim.env.LLAMA_DEFAULT_MODEL = "local/model"
+          vim.env[h .. "_MODEL"] = "ignored/model"
+          assert.are.equal(harness .. " --provider local-provider --model local/model", helper.env_command(harness))
+        end)
+      else
+        it("Given an empty command and a model, When resolving, Then only supported model flags appear", function()
+          vim.env[h .. "_COMMAND"] = ""
+          vim.env[h .. "_MODEL"] = "local/model"
+          local flag = ({ claude = " --model ", maki = " -m " })[harness]
+          assert.are.equal(harness .. (flag and flag .. "local/model" or ""), helper.env_command(harness))
+        end)
       end
-      package.loaded[env_mod] = saved_mod
-      assert.is_true(ok, tostring(cmd))
-      assert.are.equal(harness .. " --wrapped", cmd)
     end)
   end
 end)
