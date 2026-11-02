@@ -649,6 +649,12 @@ local function follow_lifecycle(harness, inst)
       if active() then
         watcher.stop()
         watcher.reset_pin_state()
+        for _, candidate in ipairs(M.list()) do
+          if not follow_paused[candidate.harness] then
+            require("harness-decorators.switch").activate(candidate.harness)
+            break
+          end
+        end
       end
     end,
   })

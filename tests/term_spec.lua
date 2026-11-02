@@ -914,6 +914,50 @@ describe("term: float mouse handling, minimized bars and flash", function()
   )
 
   it(
+    "Given two live harnesses, When the active process exits, Then the survivor is selected and leader-c reuses it",
+    function()
+      local previous = sw.current()
+      local exited = term.open("claude")
+      local survivor = term.open("maki")
+      sw.activate("claude")
+      vim.api.nvim_exec_autocmds("TermClose", { buffer = exited.buf })
+      local selected = sw.current()
+      local spawned = 0
+      local open = snacks.open
+      snacks.open = function(...)
+        spawned = spawned + 1
+        return open(...)
+      end
+      local shown = require("harness-decorators.park").show_selected()
+      snacks.open = open
+      local reused = term.bufnr("maki") == survivor.buf
+      sw.activate(previous)
+      assert.are.equal("maki", selected)
+      assert.are.equal("maki", shown)
+      assert.are.equal(0, spawned)
+      assert.is_true(reused)
+    end
+  )
+
+  it(
+    "Given a background harness has exited, When the active process exits, Then only a live survivor is selected",
+    function()
+      local previous = sw.current()
+      local background = term.open("claude")
+      local exiting = term.open("maki")
+      term.open("crush")
+      sw.activate("maki")
+      vim.api.nvim_exec_autocmds("TermClose", { buffer = background.buf })
+      local after_background_exit = sw.current()
+      vim.api.nvim_exec_autocmds("TermClose", { buffer = exiting.buf })
+      local selected = sw.current()
+      sw.activate(previous)
+      assert.are.equal("maki", after_background_exit)
+      assert.are.equal("crush", selected)
+    end
+  )
+
+  it(
     "Given the active harness's process exits, When it is started again, Then session following stops on exit and restarts on the new start",
     function()
       local watcher = require("harness-decorators.watcher")
