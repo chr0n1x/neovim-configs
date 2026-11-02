@@ -101,6 +101,66 @@ describe("session following across harness exits", function()
   end)
 
   it(
+    "Given real Claude and Maki terminals, When Claude exits successfully and focus returns to the buffer, Then leader-c reuses Maki",
+    function()
+      local claude_env = require("harness-decorators.claude.env")
+      local maki_env = require("harness-decorators.maki.env")
+      local claude_command, maki_command = claude_env.command, maki_env.command
+      local instances = {}
+      term._reset()
+      snacks.open = orig_open
+      claude_env.command = function()
+        return "sh -c 'read line'"
+      end
+      maki_env.command = claude_env.command
+      local ok, err = pcall(function()
+        local base = vim.api.nvim_get_current_win()
+        local claude = term.open("claude")
+        table.insert(instances, claude)
+        local claude_buf = claude.buf
+        local maki = term.open("maki")
+        table.insert(instances, maki)
+        term.tile()
+        term.show("claude")
+        assert.is_true(vim.wait(1000, function()
+          return active.get() == "claude"
+        end, 10))
+        vim.fn.chansend(vim.bo[claude_buf].channel, "/exit\n")
+        local cleaned = vim.wait(2000, function()
+          return not vim.api.nvim_buf_is_valid(claude_buf)
+        end, 10)
+        local remaining = vim.api.nvim_buf_is_valid(claude_buf)
+            and table.concat(vim.api.nvim_buf_get_lines(claude_buf, 0, -1, false), "\n")
+          or ""
+        assert.is_true(cleaned, "successful exit must run Snacks' buffer cleanup: " .. remaining)
+        vim.api.nvim_set_current_win(base)
+        vim.wait(100)
+        assert.are.equal("maki", active.get(), "the surviving harness must be selected: " .. vim.inspect({
+          paused = term.follow_paused("claude"),
+          live = term.list(),
+          maki_buf = maki.buf,
+          maki_valid = maki:buf_valid(),
+          stops = stops,
+          starts = starts,
+        }))
+        assert.is_true(term.follow_paused("claude"), "exit must pause the exited harness")
+        local shown = require("harness-decorators.park").show_selected()
+        assert.are.equal("maki", shown)
+        assert.are.equal(maki.buf, term.bufnr("maki"))
+        assert.is_false(term.is_open("claude"), "leader-c must not respawn Claude")
+      end)
+      claude_env.command, maki_env.command = claude_command, maki_command
+      snacks.open = function()
+        return fake(with_job)
+      end
+      for _, inst in ipairs(instances) do
+        inst:close()
+      end
+      assert.is_true(ok, tostring(err))
+    end
+  )
+
+  it(
     "Given claude's process exited and copilot was activated, When claude's dead float gets focus, Then watcher.start is not called for claude",
     function()
       active.set("claude")

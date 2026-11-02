@@ -27,16 +27,16 @@ local utils = require("harness-decorators.utils")
 
 describe("<leader>ca action: resolves % to a real file and reaches the send stage", function()
   local original_harness
-  local orig_notify -- vim.notify captured once, restored in teardown
-  local orig_filereadable -- vim.fn.filereadable stubbed per-test, restored in teardown
-  local orig_chansend -- vim.fn.chansend stubbed per-test, restored in teardown
+  local orig_notify -- vim.notify captured once, restored after each test
+  local orig_filereadable -- vim.fn.filereadable stubbed per-test, restored after each test
+  local orig_chansend -- vim.fn.chansend stubbed per-test, restored after each test
 
   setup(function()
     original_harness = helper.active_harness()
     assert.is_not_nil(original_harness, "no active harness to start from")
   end)
 
-  teardown(function()
+  after_each(function()
     if orig_notify then
       vim.notify = orig_notify
       orig_notify = nil
@@ -49,6 +49,9 @@ describe("<leader>ca action: resolves % to a real file and reaches the send stag
       vim.fn.chansend = orig_chansend
       orig_chansend = nil
     end
+  end)
+
+  teardown(function()
     -- Collapse to a single window so later specs (which open their own splits and are
     -- sensitive to leftover layout) do not hit E36 "Not enough room". Closing only the
     -- terminal windows is not enough: a non-terminal split left by vsplit still narrows
@@ -64,7 +67,7 @@ describe("<leader>ca action: resolves % to a real file and reaches the send stag
   end)
 
   ---Capture vim.notify (the config wraps it with nvim-notify) for the rest of this
-  -- test. Restored in teardown. Returns the collector table; error-path assertions
+  -- test. Restored after each test. Returns the collector table; error-path assertions
   -- inspect it after driving the command.
   local function capture_notes()
     orig_notify = vim.notify
@@ -93,7 +96,7 @@ describe("<leader>ca action: resolves % to a real file and reaches the send stag
   ---Force vim.fn.filereadable to a fixed value for the duration of a test. The add
   -- commands gate on filereadable AFTER expanding %; stubbing it lets us exercise both
   -- branches (readable reaches the send stage, unreadable gives an explicit error) without any
-  -- timing dependency. Restored in teardown.
+  -- timing dependency. Restored after each test.
   local function force_filereadable(val)
     orig_filereadable = vim.fn.filereadable
     vim.fn.filereadable = function()

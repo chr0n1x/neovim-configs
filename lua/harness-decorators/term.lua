@@ -641,21 +641,32 @@ local function follow_lifecycle(harness, inst)
   if not (inst.buf and vim.api.nvim_buf_is_valid(inst.buf)) then
     return
   end
+  local exited = false
+  local function on_exit()
+    if exited then
+      return
+    end
+    exited = true
+    follow_paused[harness] = true
+    if active() then
+      watcher.stop()
+      watcher.reset_pin_state()
+      for _, candidate in ipairs(M.list()) do
+        if not follow_paused[candidate.harness] then
+          require("harness-decorators.switch").activate(candidate.harness)
+          break
+        end
+      end
+    end
+  end
   vim.api.nvim_create_autocmd("TermClose", {
     buffer = inst.buf,
     once = true,
-    callback = function()
-      follow_paused[harness] = true
-      if active() then
-        watcher.stop()
-        watcher.reset_pin_state()
-        for _, candidate in ipairs(M.list()) do
-          if not follow_paused[candidate.harness] then
-            require("harness-decorators.switch").activate(candidate.harness)
-            break
-          end
-        end
-      end
+    callback = on_exit,
+  })
+  vim.api.nvim_buf_attach(inst.buf, false, {
+    on_detach = function()
+      vim.schedule(on_exit)
     end,
   })
 end
